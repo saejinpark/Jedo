@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+*.xcbkptlist
+
+# Build output
+DerivedData/
+build/
+.build/
+*.ipa
+*.dSYM.zip
+
+# Specimen renders (regenerate with Tools/Specimen/render.sh)
+Tools/Specimen/out/
