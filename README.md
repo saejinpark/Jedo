@@ -10,7 +10,7 @@ CAD가 아니다. 치수 입력, 도형 자동 생성, 레이어는 없다.
 - 필압이 셀수록 굵고 진하며 종이결 골까지 흑연이 들어간다.
 - 펜슬을 50° 아래로 눕히면 심의 옆면이 닿아 넓고 옅은 면이 되고 종이결이 더 드러난다.
 - 같은 자리를 다시 그으면 진해지지만 경도마다 한계 농도가 있다. 6B는 세게 덧칠하면 검정이 되고, HB는 회색에서 멈춘다.
-- 디버그 빌드에는 오른쪽 위에 "종이결 시안" 선택이 있다(강하게 · 은은하게 · 거의 없음). 새로 긋는 획부터 적용된다. 하나로 정해지면 없앤다.
+- 종이결은 "거의 없음"으로 정했다. 빈 종이는 매끈하고 흑연에만 결이 아주 약하게 남는다. 강하게·은은하게 시안과 비교해서 고른 것이다.
 - 실행 취소/다시 실행: 화면 버튼, 또는 ⌘Z / ⇧⌘Z.
 - 종이는 기기에 붙어 있다. 아이패드를 돌리면 연필꽂이와 버튼만 새 방향으로 돌고 그림은 손 아래 그대로 있다.
 
@@ -49,7 +49,7 @@ xcodebuild -project Jedo.xcodeproj -scheme Jedo -destination 'platform=iOS Simul
 | 몇 도부터 심 옆면이 닿는지, 눕혔을 때 얼마나 넓고 옅어지는지 | `PencilDynamics`의 `tiltStartsBelow`, `fullSideBelow`, `sideStretch*`, `sideOpacityDrop`, `sideGrainLift` |
 | 필압이 굵기를 얼마나 바꾸는지 | `PencilDynamics.pressureWidening` |
 | 종이결의 크기·밀도 | `PaperTexture.bumpsPerPixel`, `bumpRadius` |
-| 종이결이 얼마나 드러나는지(빈 종이의 음영, 흑연이 골까지 드는 정도, 심의 거친 정도) | `GrainStyle` 시안 세 가지 |
+| 종이결이 얼마나 드러나는지(빈 종이의 음영, 흑연이 골까지 드는 정도, 심의 거친 정도) | `GrainStyle.standard` |
 | 세게 누를 때 종이결 골이 얼마나 메워지는지 | `PencilDynamics.pressureGrain` |
 | 흑연·종이 색 | `GraphiteShading` |
 

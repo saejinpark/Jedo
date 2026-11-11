@@ -112,16 +112,17 @@ struct DraftingSheetTests {
         #expect(d <= Float(PencilGrade.hb.parameters.maxDensity))
     }
 
-    @Test func gentlerGrainStylesLeaveLessPaperShowing() {
-        var previous: Float = 0
-        for style in GrainStyle.all {
+    /// The first, rejected grain: sharp step, no shift, gritty lead.
+    static let roughGrain = GrainStyle(paperRelief: 0.045, grainSoftness: 0.24, grainShift: 0, leadNoise: 0.12)
+
+    @Test func theChosenGrainLeavesLessPaperShowingThanTheRoughOne() {
+        func fill(_ style: GrainStyle) -> Float {
             let sheet = makeSheet()
             sheet.grainStyle = style
             scribbleBand(sheet, grade: .b2, pressure: 0.4, passes: 1)
-            let d = bandDensity(sheet)
-            #expect(d > previous, "\(style.name) should fill more of the tooth")
-            previous = d
+            return bandDensity(sheet)
         }
+        #expect(fill(.standard) > fill(Self.roughGrain))
     }
 
     @Test func softerGradesLayMoreGraphite() {
@@ -245,16 +246,14 @@ struct GraphiteShadingTests {
         #expect(abs(full.r - GraphiteShading.graphite.r) < 0.01)
     }
 
-    @Test func paperIsWarmWhiteAndItsToothFollowsTheStyle() {
-        var previousSpread = 1.0
-        for style in GrainStyle.all {
-            let pixels = GraphiteShading.paperPixels(PaperTexture(size: 64, seed: 5), relief: style.paperRelief)
-            let colours = pixels.map(GraphiteShading.unpack)
+    @Test func paperIsWarmWhiteWithBarelyVisibleTooth() {
+        func spread(relief: Double) -> Double {
+            let colours = GraphiteShading.paperPixels(PaperTexture(size: 64, seed: 5), relief: relief).map(GraphiteShading.unpack)
             #expect(colours.allSatisfy { $0.a == 1 && $0.r > 0.9 && $0.r >= $0.b })
-            let spread = colours.map(\.g).max()! - colours.map(\.g).min()!
-            #expect(spread < 0.08)
-            #expect(spread <= previousSpread, "\(style.name) should be no rougher than the style before")
-            previousSpread = spread
+            return colours.map(\.g).max()! - colours.map(\.g).min()!
         }
+        let chosen = spread(relief: GrainStyle.standard.paperRelief)
+        #expect(chosen < 0.01, "blank paper looks smooth")
+        #expect(spread(relief: DraftingSheetTests.roughGrain.paperRelief) > chosen)
     }
 }

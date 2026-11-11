@@ -13,9 +13,7 @@ let rowHeight = 210
 let width = 1800
 let height = rowHeight * PencilGrade.allCases.count + 40
 let sheet = DraftingSheet(width: width, height: height, pixelsPerMillimeter: pixelsPerMM)
-// Second argument picks the grain style by index (default: the app's default).
-let style = CommandLine.arguments.count > 2 ? GrainStyle.all[Int(CommandLine.arguments[2])!] : GrainStyle.default
-sheet.grainStyle = style
+
 
 /// Feeds a path to the sheet the way touches arrive: a sample every few pixels.
 func draw(_ grade: PencilGrade, points: [CGPoint], pressure: (Double) -> Double,
@@ -85,7 +83,7 @@ for grade in PencilGrade.allCases {
 }
 
 // Composite graphite over paper into an opaque image.
-let paperPixels = GraphiteShading.paperPixels(sheet.paper, relief: style.paperRelief)
+let paperPixels = GraphiteShading.paperPixels(sheet.paper)
 var image = [UInt32](repeating: 0, count: width * height)
 let tileSize = GraphiteRaster.tileSize
 var tilePixels = [UInt32](repeating: 0, count: GraphiteRaster.tileArea)
@@ -131,7 +129,7 @@ func write(_ pixels: [UInt32], width: Int, height: Int, to path: String, labels:
 }
 
 let outDir = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "."
-write(image, width: width, height: height, to: outDir + "/specimen-\(style.name).png", labels: true)
+write(image, width: width, height: height, to: outDir + "/specimen.png", labels: true)
 
 // A 3× close-up of the 2B row, to judge grain at device-pixel scale.
 let crop = (x: 60, y: 40 + 2 * rowHeight, w: 600, h: rowHeight)
@@ -142,5 +140,5 @@ for y in 0..<(crop.h * zoom) {
         close[y * crop.w * zoom + x] = image[(crop.y + y / zoom) * width + crop.x + x / zoom]
     }
 }
-write(close, width: crop.w * zoom, height: crop.h * zoom, to: outDir + "/specimen-\(style.name)-2B-close.png", labels: false)
-print("wrote specimens for \(style.name)")
+write(close, width: crop.w * zoom, height: crop.h * zoom, to: outDir + "/specimen-2B-close.png", labels: false)
+print("wrote \(outDir)/specimen.png and specimen-2B-close.png")

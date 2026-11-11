@@ -16,9 +16,9 @@ struct DabShape: Equatable, Sendable {
     /// Edge fade as a fraction of the radius.
     var edgeSoftness: Double
     /// Width of the grain threshold's soft step, in paper-height units.
-    var grainSoftness: Double = GrainStyle.default.grainSoftness
+    var grainSoftness: Double = GrainStyle.standard.grainSoftness
     /// Grittiness of the lead itself.
-    var leadNoise: Double = GrainStyle.default.leadNoise
+    var leadNoise: Double = GrainStyle.standard.leadNoise
 
     var minRadius: Double { min(radiusAlong, radiusAcross) }
     var maxRadius: Double { max(radiusAlong, radiusAcross) }
@@ -28,7 +28,7 @@ struct DabShape: Equatable, Sendable {
 struct PencilDynamics: Sendable {
     var grade: PencilGrade
     var pixelsPerMillimeter: Double
-    var style: GrainStyle = .default
+    var style: GrainStyle = .standard
 
     // MARK: Hand-feel knobs
 

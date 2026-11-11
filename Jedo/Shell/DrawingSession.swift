@@ -6,10 +6,6 @@ import SwiftUI
 @Observable
 final class DrawingSession {
     var grade: PencilGrade = .hb
-    /// Draft paper grain being compared on the iPad.
-    var grainStyle: GrainStyle = .default {
-        didSet { canvas?.grainStyle = grainStyle }
-    }
     private(set) var canUndo = false
     private(set) var canRedo = false
     /// Shown briefly when a finger touches the paper.

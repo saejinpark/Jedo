@@ -28,7 +28,7 @@ enum GraphiteShading {
 
     /// Opaque paper pixels for one repeat of the texture. Raised tooth catches
     /// a little more light, valleys sit a little darker.
-    static func paperPixels(_ texture: PaperTexture, relief paperRelief: Double = GrainStyle.default.paperRelief) -> [UInt32] {
+    static func paperPixels(_ texture: PaperTexture, relief paperRelief: Double = GrainStyle.standard.paperRelief) -> [UInt32] {
         texture.heights.map { h in
             let shade = 1 - paperRelief / 2 + paperRelief * Double(h)
             return pack(r: paper.r * shade, g: paper.g * shade, b: paper.b * shade, a: 1)

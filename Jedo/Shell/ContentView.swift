@@ -9,12 +9,6 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
             VStack {
-                #if DEBUG
-                HStack {
-                    Spacer()
-                    GrainDraftPicker(selection: $session.grainStyle)
-                }
-                #endif
                 if session.showsPencilHint {
                     PencilHint()
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -88,35 +82,6 @@ private struct PencilHint: View {
             .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
     }
 }
-
-#if DEBUG
-/// Switches between paper-grain drafts so they can be compared by hand.
-/// Debug builds only; it goes once a style is chosen.
-private struct GrainDraftPicker: View {
-    @Binding var selection: GrainStyle
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Text("종이결 시안")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Palette.ink.opacity(0.5))
-                .padding(.leading, 10)
-            ForEach(GrainStyle.all) { style in
-                Button(style.name) { selection = style }
-                    .buttonStyle(.plain)
-                    .font(.callout.weight(style == selection ? .semibold : .regular))
-                    .foregroundStyle(Palette.ink.opacity(style == selection ? 1 : 0.6))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(style == selection ? AnyShapeStyle(.background) : AnyShapeStyle(.clear), in: Capsule())
-            }
-        }
-        .padding(4)
-        .background(.regularMaterial, in: Capsule())
-        .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
-    }
-}
-#endif
 
 enum Palette {
     static let ink = Color(red: 0.16, green: 0.17, blue: 0.20)

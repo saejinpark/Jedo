@@ -35,7 +35,7 @@ final class DraftingSheet {
     let paper: PaperTexture
 
     /// Applies to strokes started from now on.
-    var grainStyle: GrainStyle = .default
+    var grainStyle: GrainStyle = .standard
 
     private(set) var graphite: GraphiteRaster
     private var stroke: ActiveStroke?
