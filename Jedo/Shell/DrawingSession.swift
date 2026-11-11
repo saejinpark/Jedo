@@ -6,6 +6,14 @@ import SwiftUI
 @Observable
 final class DrawingSession {
     var grade: PencilGrade = .hb
+    /// Whether the ruler is lying on the paper.
+    var rulerOnDesk = false {
+        didSet { canvas?.setRuler(onDesk: rulerOnDesk) }
+    }
+    /// Draft edge behaviour being compared on the iPad.
+    var guideStyle: EdgeGuideStyle = .default {
+        didSet { canvas?.guideStyle = guideStyle }
+    }
     private(set) var canUndo = false
     private(set) var canRedo = false
     /// Shown briefly when a finger touches the paper.

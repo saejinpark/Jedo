@@ -9,6 +9,13 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
             VStack {
+                #if DEBUG
+                HStack {
+                    Spacer()
+                    DraftPicker(title: "자 시안", options: EdgeGuideStyle.all, label: \.name,
+                                selection: $session.guideStyle)
+                }
+                #endif
                 if session.showsPencilHint {
                     PencilHint()
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -30,12 +37,17 @@ struct ContentView: View {
     }
 }
 
-/// Undo and redo, also on ⌘Z and ⇧⌘Z.
+/// The ruler, then undo and redo (also on ⌘Z and ⇧⌘Z).
 private struct HistoryControls: View {
-    let session: DrawingSession
+    @Bindable var session: DrawingSession
 
     var body: some View {
         HStack(spacing: 10) {
+            RoundToolButton(symbol: "ruler", label: session.rulerOnDesk ? "자 치우기" : "자 꺼내기",
+                            enabled: true, selected: session.rulerOnDesk) {
+                session.rulerOnDesk.toggle()
+            }
+            .padding(.trailing, 8)
             RoundToolButton(symbol: "arrow.uturn.backward", label: "실행 취소", enabled: session.canUndo) {
                 session.undo()
             }
@@ -52,6 +64,7 @@ private struct RoundToolButton: View {
     let symbol: String
     let label: String
     let enabled: Bool
+    var selected = false
     let action: () -> Void
 
     var body: some View {
@@ -62,8 +75,9 @@ private struct RoundToolButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(Palette.ink.opacity(enabled ? 0.85 : 0.25))
-        .background(.regularMaterial, in: Circle())
+        .foregroundStyle(selected ? Color.white : Palette.ink.opacity(enabled ? 0.85 : 0.25))
+        .background(selected ? AnyShapeStyle(Palette.ink) : AnyShapeStyle(.regularMaterial), in: Circle())
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .overlay(Circle().strokeBorder(Palette.ink.opacity(0.08)))
         .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
         .disabled(!enabled)
@@ -73,7 +87,7 @@ private struct RoundToolButton: View {
 
 private struct PencilHint: View {
     var body: some View {
-        Label("선은 Apple Pencil로 긋습니다. 손가락은 자를 잡는 데 씁니다.", systemImage: "applepencil.tip")
+        Label("선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡습니다.", systemImage: "applepencil.tip")
             .font(.callout.weight(.medium))
             .foregroundStyle(Palette.ink)
             .padding(.horizontal, 16)
@@ -82,6 +96,38 @@ private struct PencilHint: View {
             .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
     }
 }
+
+#if DEBUG
+/// Switches between drafts of a hand-feel choice so they can be compared on the iPad.
+/// Debug builds only; it goes once a draft is chosen.
+private struct DraftPicker<Option: Identifiable & Equatable>: View {
+    let title: String
+    let options: [Option]
+    let label: KeyPath<Option, String>
+    @Binding var selection: Option
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Palette.ink.opacity(0.5))
+                .padding(.leading, 10)
+            ForEach(options) { option in
+                Button(option[keyPath: label]) { selection = option }
+                    .buttonStyle(.plain)
+                    .font(.callout.weight(option == selection ? .semibold : .regular))
+                    .foregroundStyle(Palette.ink.opacity(option == selection ? 1 : 0.6))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(option == selection ? AnyShapeStyle(.background) : AnyShapeStyle(.clear), in: Capsule())
+            }
+        }
+        .padding(4)
+        .background(.regularMaterial, in: Capsule())
+        .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
+    }
+}
+#endif
 
 enum Palette {
     static let ink = Color(red: 0.16, green: 0.17, blue: 0.20)
