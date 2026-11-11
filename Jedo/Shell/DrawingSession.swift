@@ -10,10 +10,6 @@ final class DrawingSession {
     var rulerOnDesk = false {
         didSet { canvas?.setRuler(onDesk: rulerOnDesk) }
     }
-    /// Draft edge behaviour being compared on the iPad.
-    var guideStyle: EdgeGuideStyle = .default {
-        didSet { canvas?.guideStyle = guideStyle }
-    }
     private(set) var canUndo = false
     private(set) var canRedo = false
     /// Shown briefly when a finger touches the paper.

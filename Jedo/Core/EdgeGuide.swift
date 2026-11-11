@@ -1,25 +1,18 @@
 import CoreGraphics
 import Foundation
 
-/// When the pencil's line follows the ruler's edge. These are drafts to
-/// compare by hand; the app lets you switch between them.
-struct EdgeGuideStyle: Equatable, Identifiable, Sendable {
-    var id: String { name }
-    var name: String
+/// When the pencil's line follows the ruler's edge.
+///
+/// Three drafts were compared on a real iPad: stick until the pencil lifts,
+/// let go when pulled away, and block only (no pull). Letting go was chosen.
+struct EdgeGuideStyle: Equatable, Sendable {
     /// How close outside the edge the pencil must come for the line to take to it.
     var captureMM: Double
     /// How far outside the edge the pencil may wander before the line leaves it.
     var releaseMM: Double
 
-    /// Once the line is on the edge it stays there until the pencil lifts.
-    static let stickUntilLift = EdgeGuideStyle(name: "끝까지 붙음", captureMM: 2.5, releaseMM: .infinity)
-    /// The line follows the edge while the pencil stays near it, and leaves if pulled away.
-    static let letGo = EdgeGuideStyle(name: "떼면 떨어짐", captureMM: 2.5, releaseMM: 4)
-    /// No pull at all: the ruler only stops the pencil from crossing it.
-    static let blockOnly = EdgeGuideStyle(name: "막히기만", captureMM: 0, releaseMM: 0)
-
-    static let all: [EdgeGuideStyle] = [.stickUntilLift, .letGo, .blockOnly]
-    static let `default` = letGo
+    /// Takes to the edge within 2.5 mm and leaves it beyond 4 mm.
+    static let standard = EdgeGuideStyle(captureMM: 2.5, releaseMM: 4)
 }
 
 /// Bends a stroke's samples onto the ruler's edge, the way a pencil slides

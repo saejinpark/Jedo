@@ -86,6 +86,13 @@ struct RigidMotionTests {
     }
 }
 
+/// The two rejected drafts, kept here so the guide's general behaviour stays tested.
+extension EdgeGuideStyle {
+    static let stickUntilLift = EdgeGuideStyle(captureMM: 2.5, releaseMM: .infinity)
+    static let blockOnly = EdgeGuideStyle(captureMM: 0, releaseMM: 0)
+    static let all: [EdgeGuideStyle] = [.stickUntilLift, .standard, .blockOnly]
+}
+
 struct EdgeGuideTests {
     let ppmm = 10.0
     /// 2000 px long, 300 px wide, centred at (1000, 1000); upper edge at y = 850.
@@ -119,16 +126,16 @@ struct EdgeGuideTests {
             let y = 840.0 - Double(i % 3) * 5
             return (x, y)
         }
-        for style in [EdgeGuideStyle.stickUntilLift, .letGo] {
+        for style in [EdgeGuideStyle.stickUntilLift, .standard] {
             let ys = Set(run(style, wobble).map(\.y))
-            #expect(ys == [848], "\(style.name): on the edge, lead centre 2 px outside it")
+            #expect(ys == [848], "on the edge, lead centre 2 px outside it")
         }
     }
 
     @Test func theLeadNeverGoesUnderTheRuler() {
         for style in EdgeGuideStyle.all {
             let path = run(style, [(600, 840), (700, 870), (800, 900), (900, 860)])
-            #expect(path.allSatisfy { !ruler.contains($0) }, "\(style.name)")
+            #expect(path.allSatisfy { !ruler.contains($0) })
         }
     }
 
@@ -144,8 +151,8 @@ struct EdgeGuideTests {
         #expect(path == [CGPoint(x: 600, y: 840), CGPoint(x: 700, y: 845)])
     }
 
-    @Test func letGoLeavesTheEdgeWhenPulledAway() {
-        let path = run(.letGo, [(600, 840), (700, 830), (800, 800), (900, 760)])
+    @Test func theStandardGuideLetsGoWhenPulledAway() {
+        let path = run(.standard, [(600, 840), (700, 830), (800, 800), (900, 760)])
         #expect(path[0].y == 848 && path[1].y == 848, "within 4 mm it stays on the edge")
         #expect(path[2] == CGPoint(x: 800, y: 800), "5 mm away it has let go")
         #expect(path[3] == CGPoint(x: 900, y: 760))
@@ -163,7 +170,7 @@ struct EdgeGuideTests {
     }
 
     @Test func aCopyRunsAheadWithoutChangingTheStroke() {
-        var g = guide(.letGo)
+        var g = guide(.standard)
         _ = g.guide(StrokeSample(location: CGPoint(x: 600, y: 840)), ruler: ruler)
         var lookahead = g
         _ = lookahead.guide(StrokeSample(location: CGPoint(x: 700, y: 500)), ruler: ruler)
@@ -173,7 +180,7 @@ struct EdgeGuideTests {
 
     @Test func followsATurnedRuler() {
         let turned = Ruler(pose: RulerPose(center: CGPoint(x: 0, y: 0), angle: .pi / 4), length: 2000, width: 300)
-        var g = guide(.letGo)
+        var g = guide(.standard)
         // A point 10 px outside the upper edge, half way along.
         let near = turned.pointAlong(.upper, u: 300, offset: 10)
         let out = g.guide(StrokeSample(location: near), ruler: turned).location

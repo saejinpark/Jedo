@@ -9,13 +9,6 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
             VStack {
-                #if DEBUG
-                HStack {
-                    Spacer()
-                    DraftPicker(title: "자 시안", options: EdgeGuideStyle.all, label: \.name,
-                                selection: $session.guideStyle)
-                }
-                #endif
                 if session.showsPencilHint {
                     PencilHint()
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -96,38 +89,6 @@ private struct PencilHint: View {
             .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
     }
 }
-
-#if DEBUG
-/// Switches between drafts of a hand-feel choice so they can be compared on the iPad.
-/// Debug builds only; it goes once a draft is chosen.
-private struct DraftPicker<Option: Identifiable & Equatable>: View {
-    let title: String
-    let options: [Option]
-    let label: KeyPath<Option, String>
-    @Binding var selection: Option
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Palette.ink.opacity(0.5))
-                .padding(.leading, 10)
-            ForEach(options) { option in
-                Button(option[keyPath: label]) { selection = option }
-                    .buttonStyle(.plain)
-                    .font(.callout.weight(option == selection ? .semibold : .regular))
-                    .foregroundStyle(Palette.ink.opacity(option == selection ? 1 : 0.6))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(option == selection ? AnyShapeStyle(.background) : AnyShapeStyle(.clear), in: Capsule())
-            }
-        }
-        .padding(4)
-        .background(.regularMaterial, in: Capsule())
-        .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
-    }
-}
-#endif
 
 enum Palette {
     static let ink = Color(red: 0.16, green: 0.17, blue: 0.20)

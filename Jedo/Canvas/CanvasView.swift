@@ -13,8 +13,6 @@ final class CanvasView: UIView {
     var onHistoryChange: ((_ canUndo: Bool, _ canRedo: Bool) -> Void)?
     /// Called when a finger touches the paper away from any tool.
     var onFingerTouch: (() -> Void)?
-    /// When the line takes to the ruler's edge.
-    var guideStyle: EdgeGuideStyle = .default
 
     /// The ruler, if it is on the paper. Canvas pixels.
     private(set) var ruler: Ruler?
@@ -215,7 +213,7 @@ final class CanvasView: UIView {
         activeTouch = touch
         pending = PendingSampleQueue()
         let grade = currentGrade()
-        guide = EdgeGuide(style: guideStyle, pixelsPerMillimeter: sheet.pixelsPerMillimeter,
+        guide = EdgeGuide(style: .standard, pixelsPerMillimeter: sheet.pixelsPerMillimeter,
                           contactOffset: grade.parameters.lineWidthMM / 2 * sheet.pixelsPerMillimeter)
         sheet.beginStroke(grade: grade)
         feed(touch, event: event)
