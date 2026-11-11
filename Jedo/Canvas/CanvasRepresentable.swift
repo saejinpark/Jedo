@@ -1,18 +1,19 @@
 import SwiftUI
 
-struct CanvasRepresentable: UIViewRepresentable {
+struct CanvasRepresentable: UIViewControllerRepresentable {
     let session: DrawingSession
 
-    func makeUIView(context: Context) -> CanvasView {
-        let view = CanvasView()
+    func makeUIViewController(context: Context) -> PaperDeskController {
+        let controller = PaperDeskController()
+        let view = controller.canvas
         view.currentGrade = { [weak session] in session?.grade ?? .hb }
         view.onHistoryChange = { [weak session] canUndo, canRedo in
             session?.historyChanged(canUndo: canUndo, canRedo: canRedo)
         }
         view.onFingerTouch = { [weak session] in session?.fingerTouchedPaper() }
         session.canvas = view
-        return view
+        return controller
     }
 
-    func updateUIView(_ view: CanvasView, context: Context) {}
+    func updateUIViewController(_ controller: PaperDeskController, context: Context) {}
 }

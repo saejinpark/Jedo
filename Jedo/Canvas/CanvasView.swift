@@ -58,14 +58,20 @@ final class CanvasView: UIView {
         super.didMoveToWindow()
         guard sheet == nil, let screen = window?.windowScene?.screen else { return }
         scale = screen.scale
-        // A square sheet as long as the screen's long side, so turning the iPad
-        // never cuts off a drawing.
+        // A square sheet as long as the screen's long side. The desk keeps it
+        // centred and turns it back when the interface turns.
         let side = Int(max(screen.nativeBounds.width, screen.nativeBounds.height).rounded(.up))
         let ppmm = DisplayDensity.pixelsPerMillimeter(nativeLongSidePixels: Double(side))
         let sheet = DraftingSheet(width: side, height: side, pixelsPerMillimeter: ppmm)
         self.sheet = sheet
         layPaper(for: sheet)
+        superview?.setNeedsLayout()
         notifyHistory()
+    }
+
+    /// Side of the square sheet in points, once it exists.
+    var sideInPoints: CGFloat? {
+        sheet.map { CGFloat($0.width) / scale }
     }
 
     private func layPaper(for sheet: DraftingSheet) {
