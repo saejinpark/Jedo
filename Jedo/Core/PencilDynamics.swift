@@ -15,6 +15,10 @@ struct DabShape: Equatable, Sendable {
     var grainThreshold: Double
     /// Edge fade as a fraction of the radius.
     var edgeSoftness: Double
+    /// Width of the grain threshold's soft step, in paper-height units.
+    var grainSoftness: Double = GrainStyle.default.grainSoftness
+    /// Grittiness of the lead itself.
+    var leadNoise: Double = GrainStyle.default.leadNoise
 
     var minRadius: Double { min(radiusAlong, radiusAcross) }
     var maxRadius: Double { max(radiusAlong, radiusAcross) }
@@ -24,6 +28,7 @@ struct DabShape: Equatable, Sendable {
 struct PencilDynamics: Sendable {
     var grade: PencilGrade
     var pixelsPerMillimeter: Double
+    var style: GrainStyle = .default
 
     // MARK: Hand-feel knobs
 
@@ -39,6 +44,9 @@ struct PencilDynamics: Sendable {
     static let sideOpacityDrop = 0.9
     /// On its side the lead skims the tooth, so more paper shows through.
     static let sideGrainLift = 0.12
+    /// How far pressure moves the grain threshold either side of medium.
+    /// Pressing hard flattens the tooth so graphite fills the valleys.
+    static let pressureGrain = 0.6
     /// Pressing harder squashes the point a little wider.
     static let pressureWidening = 0.5
     /// Never thinner than this, so the lightest touch still shows.
@@ -64,15 +72,18 @@ struct PencilDynamics: Sendable {
         let opacity = min(params.passOpacity * pressureResponse / (1 + Self.sideOpacityDrop * side), 1)
 
         // Pressing fills the valleys of the paper; a light hand only touches the peaks.
-        let threshold = params.grainThreshold + 0.30 * (0.5 - p) + Self.sideGrainLift * side
+        let threshold = params.grainThreshold + style.grainShift
+            + Self.pressureGrain * (0.5 - p) + Self.sideGrainLift * side
 
         return DabShape(
             radiusAlong: tipRadius * (1 + (Self.sideStretchAlong - 1) * side),
             radiusAcross: tipRadius * (1 + (Self.sideStretchAcross - 1) * side),
             angle: sample.azimuth.isFinite ? sample.azimuth : 0,
             opacity: opacity,
-            grainThreshold: min(max(threshold, 0.02), 0.95),
-            edgeSoftness: min(params.edgeSoftness + 0.3 * side, 0.9)
+            grainThreshold: min(max(threshold, -0.6), 0.95),
+            edgeSoftness: min(params.edgeSoftness + 0.3 * side, 0.9),
+            grainSoftness: style.grainSoftness,
+            leadNoise: style.leadNoise
         )
     }
 

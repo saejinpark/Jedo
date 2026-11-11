@@ -81,19 +81,31 @@ struct DabRasterizerTests {
         #expect(once.tiles == twice.tiles)
     }
 
-    @Test func peaksCatchGraphiteValleysDoNot() {
+    /// Mean deposit on the paper's peaks and in its valleys under one big dab.
+    func peaksAndValleys(grainSoftness: Double) -> (peaks: Float, valleys: Float) {
         var r = GraphiteRaster(width: 64, height: 64)
-        DabRasterizer.stamp(center: CGPoint(x: 32, y: 32), shape: shape(radius: 30, threshold: 0.5),
-                            into: &r, paper: Self.paper, seed: 1)
+        var s = shape(radius: 30, threshold: 0.5)
+        s.grainSoftness = grainSoftness
+        DabRasterizer.stamp(center: CGPoint(x: 32, y: 32), shape: s, into: &r, paper: Self.paper, seed: 1)
         var high: [Float] = [], low: [Float] = []
         for y in 20..<44 { for x in 20..<44 {
             let h = Self.paper.height(x: x, y: y)
             if h > 0.9 { high.append(r.value(x: x, y: y)) }
             if h < 0.1 { low.append(r.value(x: x, y: y)) }
         } }
-        #expect(!high.isEmpty && !low.isEmpty)
-        #expect(high.reduce(0, +) / Float(high.count) > 0.35)
-        #expect(low.allSatisfy { $0 == 0 })
+        return (high.reduce(0, +) / Float(max(high.count, 1)), low.reduce(0, +) / Float(max(low.count, 1)))
+    }
+
+    @Test func peaksCatchGraphiteValleysDoNot() {
+        let sharp = peaksAndValleys(grainSoftness: 0.2)
+        #expect(sharp.peaks > 0.35)
+        #expect(sharp.valleys == 0)
+    }
+
+    @Test func aGentlerGrainStepLetsSomeGraphiteIntoTheValleys() {
+        let gentle = peaksAndValleys(grainSoftness: 0.6)
+        #expect(gentle.valleys > 0)
+        #expect(gentle.valleys < gentle.peaks)
     }
 
     @Test func tiltedPatchStretchesAlongItsAngle() {

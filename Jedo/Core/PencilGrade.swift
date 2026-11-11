@@ -36,7 +36,8 @@ struct GradeParameters: Equatable, Sendable {
     /// Graphite one pass leaves at medium pressure, before paper grain (0...1).
     var passOpacity: Double
     /// The darkest this lead can make the paper, however often you go over it.
-    /// Hard leads burnish and stop taking graphite well before soft ones.
+    /// Hard leads burnish and stop taking graphite well before soft ones;
+    /// 6B pressed hard and gone over fills the paper black.
     var maxDensity: Double
     /// Paper height (0...1) below which this lead skips the valleys at medium pressure.
     /// Harder leads ride the tooth more, so more paper shows through.
@@ -46,12 +47,12 @@ struct GradeParameters: Equatable, Sendable {
 
     static let table: [GradeParameters] = [
         //                lineWidthMM  passOpacity  maxDensity  grainThreshold  edgeSoftness
-        GradeParameters(lineWidthMM: 0.30, passOpacity: 0.40, maxDensity: 0.60, grainThreshold: 0.26, edgeSoftness: 0.30), // HB
-        GradeParameters(lineWidthMM: 0.34, passOpacity: 0.47, maxDensity: 0.67, grainThreshold: 0.23, edgeSoftness: 0.32), // B
-        GradeParameters(lineWidthMM: 0.38, passOpacity: 0.54, maxDensity: 0.73, grainThreshold: 0.20, edgeSoftness: 0.34), // 2B
-        GradeParameters(lineWidthMM: 0.43, passOpacity: 0.61, maxDensity: 0.79, grainThreshold: 0.17, edgeSoftness: 0.36), // 3B
-        GradeParameters(lineWidthMM: 0.49, passOpacity: 0.68, maxDensity: 0.84, grainThreshold: 0.14, edgeSoftness: 0.38), // 4B
-        GradeParameters(lineWidthMM: 0.56, passOpacity: 0.75, maxDensity: 0.89, grainThreshold: 0.11, edgeSoftness: 0.40), // 5B
-        GradeParameters(lineWidthMM: 0.64, passOpacity: 0.82, maxDensity: 0.93, grainThreshold: 0.08, edgeSoftness: 0.42), // 6B
+        GradeParameters(lineWidthMM: 0.30, passOpacity: 0.40, maxDensity: 0.70, grainThreshold: 0.26, edgeSoftness: 0.30), // HB
+        GradeParameters(lineWidthMM: 0.34, passOpacity: 0.47, maxDensity: 0.76, grainThreshold: 0.23, edgeSoftness: 0.32), // B
+        GradeParameters(lineWidthMM: 0.38, passOpacity: 0.54, maxDensity: 0.82, grainThreshold: 0.20, edgeSoftness: 0.34), // 2B
+        GradeParameters(lineWidthMM: 0.43, passOpacity: 0.61, maxDensity: 0.87, grainThreshold: 0.17, edgeSoftness: 0.36), // 3B
+        GradeParameters(lineWidthMM: 0.49, passOpacity: 0.68, maxDensity: 0.92, grainThreshold: 0.14, edgeSoftness: 0.38), // 4B
+        GradeParameters(lineWidthMM: 0.56, passOpacity: 0.75, maxDensity: 0.96, grainThreshold: 0.11, edgeSoftness: 0.40), // 5B
+        GradeParameters(lineWidthMM: 0.64, passOpacity: 0.82, maxDensity: 1.00, grainThreshold: 0.08, edgeSoftness: 0.42), // 6B
     ]
 }

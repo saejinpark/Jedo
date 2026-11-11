@@ -83,6 +83,47 @@ struct DraftingSheetTests {
         #expect(thrice - twice < twice - once, "each pass adds less")
     }
 
+    /// Mean density over the middle of a band of overlapping strokes.
+    func bandDensity(_ sheet: DraftingSheet) -> Float {
+        var total: Float = 0, count = 0
+        for y in 120..<140 { for x in 100..<300 { total += sheet.graphite.value(x: x, y: y); count += 1 } }
+        return total / Float(count)
+    }
+
+    func scribbleBand(_ sheet: DraftingSheet, grade: PencilGrade, pressure: Double, passes: Int) {
+        for _ in 0..<passes {
+            for y in stride(from: 110.0, through: 150, by: 2) {
+                line(sheet, grade: grade, from: CGPoint(x: 80, y: y), to: CGPoint(x: 320, y: y), pressure: pressure)
+            }
+        }
+    }
+
+    @Test func sixBPressedHardAndGoneOverTurnsBlack() {
+        let sheet = makeSheet()
+        scribbleBand(sheet, grade: .b6, pressure: 1, passes: 3)
+        #expect(bandDensity(sheet) > 0.97)
+    }
+
+    @Test func hbNeverTurnsBlackHoweverHardYouPress() {
+        let sheet = makeSheet()
+        scribbleBand(sheet, grade: .hb, pressure: 1, passes: 4)
+        let d = bandDensity(sheet)
+        #expect(d > 0.6)
+        #expect(d <= Float(PencilGrade.hb.parameters.maxDensity))
+    }
+
+    @Test func gentlerGrainStylesLeaveLessPaperShowing() {
+        var previous: Float = 0
+        for style in GrainStyle.all {
+            let sheet = makeSheet()
+            sheet.grainStyle = style
+            scribbleBand(sheet, grade: .b2, pressure: 0.4, passes: 1)
+            let d = bandDensity(sheet)
+            #expect(d > previous, "\(style.name) should fill more of the tooth")
+            previous = d
+        }
+    }
+
     @Test func softerGradesLayMoreGraphite() {
         var previous: Float = 0
         for grade in PencilGrade.allCases {
@@ -204,11 +245,16 @@ struct GraphiteShadingTests {
         #expect(abs(full.r - GraphiteShading.graphite.r) < 0.01)
     }
 
-    @Test func paperIsWarmWhiteWithFaintTooth() {
-        let pixels = GraphiteShading.paperPixels(PaperTexture(size: 64, seed: 5))
-        let colours = pixels.map(GraphiteShading.unpack)
-        #expect(colours.allSatisfy { $0.a == 1 && $0.r > 0.9 && $0.r >= $0.b })
-        let spread = colours.map(\.g).max()! - colours.map(\.g).min()!
-        #expect(spread > 0.02 && spread < 0.08)
+    @Test func paperIsWarmWhiteAndItsToothFollowsTheStyle() {
+        var previousSpread = 1.0
+        for style in GrainStyle.all {
+            let pixels = GraphiteShading.paperPixels(PaperTexture(size: 64, seed: 5), relief: style.paperRelief)
+            let colours = pixels.map(GraphiteShading.unpack)
+            #expect(colours.allSatisfy { $0.a == 1 && $0.r > 0.9 && $0.r >= $0.b })
+            let spread = colours.map(\.g).max()! - colours.map(\.g).min()!
+            #expect(spread < 0.08)
+            #expect(spread <= previousSpread, "\(style.name) should be no rougher than the style before")
+            previousSpread = spread
+        }
     }
 }

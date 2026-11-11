@@ -13,6 +13,14 @@ final class CanvasView: UIView {
     var onHistoryChange: ((_ canUndo: Bool, _ canRedo: Bool) -> Void)?
     /// Called when a finger touches the paper, which does not draw.
     var onFingerTouch: (() -> Void)?
+    /// How strongly the paper's tooth shows. New strokes use it; the blank paper changes at once.
+    var grainStyle: GrainStyle = .default {
+        didSet {
+            guard grainStyle != oldValue else { return }
+            sheet?.grainStyle = grainStyle
+            if let sheet { shadePaper(sheet.paper) }
+        }
+    }
 
     private(set) var sheet: DraftingSheet?
     private var scale: CGFloat = 2
@@ -63,6 +71,7 @@ final class CanvasView: UIView {
         let side = Int(max(screen.nativeBounds.width, screen.nativeBounds.height).rounded(.up))
         let ppmm = DisplayDensity.pixelsPerMillimeter(nativeLongSidePixels: Double(side))
         let sheet = DraftingSheet(width: side, height: side, pixelsPerMillimeter: ppmm)
+        sheet.grainStyle = grainStyle
         self.sheet = sheet
         layPaper(for: sheet)
         superview?.setNeedsLayout()
@@ -78,13 +87,11 @@ final class CanvasView: UIView {
         paperLayers.forEach { $0.removeFromSuperlayer() }
         paperLayers.removeAll()
         let texture = sheet.paper
-        guard let image = Self.makeImage(pixels: GraphiteShading.paperPixels(texture), width: texture.size, height: texture.size) else { return }
         let step = CGFloat(texture.size) / scale
         let count = (sheet.width + texture.size - 1) / texture.size
         for row in 0..<count {
             for column in 0..<count {
                 let layer = CALayer()
-                layer.contents = image
                 layer.contentsScale = scale
                 layer.magnificationFilter = .nearest
                 layer.isOpaque = true
@@ -94,6 +101,16 @@ final class CanvasView: UIView {
                 paperLayers.append(layer)
             }
         }
+        shadePaper(texture)
+    }
+
+    private func shadePaper(_ texture: PaperTexture) {
+        let pixels = GraphiteShading.paperPixels(texture, relief: grainStyle.paperRelief)
+        guard let image = Self.makeImage(pixels: pixels, width: texture.size, height: texture.size) else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        paperLayers.forEach { $0.contents = image }
+        CATransaction.commit()
     }
 
     // MARK: Undo

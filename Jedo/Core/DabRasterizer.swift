@@ -8,10 +8,6 @@ import Foundation
 /// Darkening from going over a line again happens later, when strokes are
 /// composited onto the sheet.
 enum DabRasterizer {
-    /// How strongly the lead itself is grainy, on top of the paper's tooth.
-    static let leadNoise: Float = 0.12
-    /// Width of the grain threshold's soft step, in paper-height units.
-    static let grainSoftness: Float = 0.24
 
     /// Pixels a dab can touch.
     static func bounds(center: CGPoint, shape: DabShape) -> PixelRect {
@@ -44,6 +40,8 @@ enum DabRasterizer {
         let outerSquared = outer * outer
         let opacity = Float(shape.opacity)
         let threshold = Float(shape.grainThreshold)
+        let grainSoftness = Float(shape.grainSoftness)
+        let leadNoise = Float(shape.leadNoise)
         let grainLow = threshold - grainSoftness
         let grainHigh = threshold + grainSoftness
         let size = GraphiteRaster.tileSize

@@ -23,13 +23,18 @@ struct PencilGradeTests {
         }
     }
 
+    @Test func only6BFillsThePaperBlack() {
+        #expect(PencilGrade.b6.parameters.maxDensity == 1)
+        #expect(PencilGrade.hb.parameters.maxDensity <= 0.75, "HB burnishes long before black")
+    }
+
     @Test func parametersStayInPhysicalRanges() {
         for grade in PencilGrade.allCases {
             let p = grade.parameters
             #expect((0.1...1.5).contains(p.lineWidthMM))
             #expect((0...1).contains(p.passOpacity))
             #expect((0...1).contains(p.maxDensity))
-            #expect(p.maxDensity < 1, "graphite never reaches pure black")
+            #expect(p.maxDensity <= 1)
             #expect((0...1).contains(p.grainThreshold))
             #expect((0...1).contains(p.edgeSoftness))
         }

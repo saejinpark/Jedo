@@ -34,6 +34,9 @@ final class DraftingSheet {
     let pixelsPerMillimeter: Double
     let paper: PaperTexture
 
+    /// Applies to strokes started from now on.
+    var grainStyle: GrainStyle = .default
+
     private(set) var graphite: GraphiteRaster
     private var stroke: ActiveStroke?
     private var prediction: GraphiteRaster
@@ -67,7 +70,7 @@ final class DraftingSheet {
         if stroke != nil { cancelStroke() }
         strokeCounter &+= 1
         stroke = ActiveStroke(
-            dynamics: PencilDynamics(grade: grade, pixelsPerMillimeter: pixelsPerMillimeter),
+            dynamics: PencilDynamics(grade: grade, pixelsPerMillimeter: pixelsPerMillimeter, style: grainStyle),
             buffer: GraphiteRaster(width: width, height: height),
             seed: strokeCounter &* 0x9E37_79B9,
             maxDensity: Float(grade.parameters.maxDensity)

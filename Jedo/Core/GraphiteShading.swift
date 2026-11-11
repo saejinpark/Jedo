@@ -3,12 +3,10 @@ import Foundation
 /// Colours of graphite and paper, as 32-bit little-endian BGRA
 /// (`premultipliedFirst | byteOrder32Little`): the native iOS pixel layout.
 enum GraphiteShading {
-    /// Graphite is a cool, slightly blue dark grey, never pure black.
-    static let graphite: (r: Double, g: Double, b: Double) = (0.115, 0.118, 0.135)
+    /// Fully laid graphite: black with a faint cool cast.
+    static let graphite: (r: Double, g: Double, b: Double) = (0.05, 0.05, 0.06)
     /// Warm white drawing paper.
     static let paper: (r: Double, g: Double, b: Double) = (0.965, 0.955, 0.925)
-    /// How much the paper's tooth shows as light and shade.
-    static let paperRelief = 0.045
 
     static let levels = 1024
 
@@ -30,7 +28,7 @@ enum GraphiteShading {
 
     /// Opaque paper pixels for one repeat of the texture. Raised tooth catches
     /// a little more light, valleys sit a little darker.
-    static func paperPixels(_ texture: PaperTexture) -> [UInt32] {
+    static func paperPixels(_ texture: PaperTexture, relief paperRelief: Double = GrainStyle.default.paperRelief) -> [UInt32] {
         texture.heights.map { h in
             let shade = 1 - paperRelief / 2 + paperRelief * Double(h)
             return pack(r: paper.r * shade, g: paper.g * shade, b: paper.b * shade, a: 1)

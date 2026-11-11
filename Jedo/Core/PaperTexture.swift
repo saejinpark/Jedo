@@ -13,13 +13,13 @@ struct PaperTexture: Sendable {
 
     /// Paper tooth is modelled as many small rounded bumps scattered over the
     /// sheet, plus a faint lengthwise wave for the direction of the fibres.
-    static let bumpsPerPixel = 1.0 / 5.0
-    static let bumpRadius: ClosedRange<Float> = 0.9...2.4
+    static let bumpsPerPixel = 1.0 / 3.0
+    static let bumpRadius: ClosedRange<Float> = 0.7...1.6
     /// Lattice period in x and y (pixels) and weight of the slow undulation.
     static let octaves: [(periodX: Int, periodY: Int, weight: Float)] = [
-        (16, 8, 0.10),
-        (64, 32, 0.06),
-        (256, 256, 0.05),
+        (16, 8, 0.035),
+        (64, 32, 0.02),
+        (256, 256, 0.015),
     ]
 
     init(size: Int = 512, seed: UInt64 = 0x5EED_CAFE) {

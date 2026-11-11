@@ -6,4 +6,4 @@ root=$here/../..
 mkdir -p $here/out
 swiftc -O -module-name Specimen \
   $root/Jedo/Core/*.swift $here/main.swift -o $here/out/specimen 2>&1 | grep -v "^$" || true
-time $here/out/specimen $here/out
+for i in 0 1 2; do $here/out/specimen $here/out $i; done
