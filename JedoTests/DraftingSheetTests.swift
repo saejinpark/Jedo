@@ -58,6 +58,17 @@ struct DraftingSheetTests {
         #expect((198...202).allSatisfy { sheet.graphite.value(x: 130, y: $0) == 0 }, "prediction never commits")
     }
 
+    @Test func provisionalSamplesShowButOnlyFinalOnesCommit() {
+        let sheet = makeSheet()
+        sheet.beginStroke(grade: .b2)
+        sheet.extendStroke(with: [], predicted: [StrokeSample(location: CGPoint(x: 50, y: 50)),
+                                                 StrokeSample(location: CGPoint(x: 90, y: 50))])
+        #expect((48...52).contains { sheet.displayedDensity(x: 70, y: $0) > 0 })
+        sheet.endStroke()
+        #expect(sheet.graphite.isEmpty)
+        #expect(!sheet.canUndo, "nothing was laid, so there is nothing to undo")
+    }
+
     @Test func goingOverALineAgainDarkensIt() {
         let sheet = makeSheet()
         let a = CGPoint(x: 20, y: 80), b = CGPoint(x: 380, y: 80)

@@ -62,7 +62,8 @@ final class DraftingSheet {
 
     // MARK: Drawing
 
-    func beginStroke(grade: PencilGrade, at sample: StrokeSample) {
+    /// Starts a stroke. Its first sample arrives through `extendStroke`.
+    func beginStroke(grade: PencilGrade) {
         if stroke != nil { cancelStroke() }
         strokeCounter &+= 1
         stroke = ActiveStroke(
@@ -71,6 +72,11 @@ final class DraftingSheet {
             seed: strokeCounter &* 0x9E37_79B9,
             maxDensity: Float(grade.parameters.maxDensity)
         )
+    }
+
+    /// Convenience for starting a stroke with its first sample.
+    func beginStroke(grade: PencilGrade, at sample: StrokeSample) {
+        beginStroke(grade: grade)
         extendStroke(with: [sample], predicted: [])
     }
 
