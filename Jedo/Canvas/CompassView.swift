@@ -39,8 +39,8 @@ final class CompassView: UIView {
 
     func hide() { isHidden = true }
 
-    /// Draws the compass. Canvas pixels in, points out.
-    func show(_ compass: Compass, scale: CGFloat, pixelsPerMillimeter: Double) {
+    /// Draws the compass, faded while it only lies on the paper. Canvas pixels in, points out.
+    func show(_ compass: Compass, planted: Bool, scale: CGFloat, pixelsPerMillimeter: Double) {
         let mm = CGFloat(pixelsPerMillimeter) / scale
         let needle = CGPoint(x: compass.needle.x / scale, y: compass.needle.y / scale)
         let lead = compass.lead.map { CGPoint(x: $0.x / scale, y: $0.y / scale) }
@@ -48,7 +48,19 @@ final class CompassView: UIView {
         let legs = UIBezierPath()
         let handle = UIBezierPath()
         let hinge: CGPoint
-        if let lead, hypot(lead.x - needle.x, lead.y - needle.y) > 0.5 {
+        if !planted, lead == nil {
+            // Lying on the paper with its legs closed, handle where the needle will go.
+            hinge = needle
+            let angle = CGFloat.pi / 2 + 0.35
+            let along = CGPoint(x: cos(angle), y: sin(angle))
+            let across = CGPoint(x: -along.y, y: along.x)
+            let reach = Self.closedLengthMM * mm
+            func tip(_ side: CGFloat) -> CGPoint {
+                CGPoint(x: hinge.x + along.x * reach + across.x * side * mm, y: hinge.y + along.y * reach + across.y * side * mm)
+            }
+            legs.append(Self.leg(from: hinge, to: tip(-1.4), root: 2.6 * mm, tip: 0.35 * mm))
+            legs.append(Self.leg(from: hinge, to: tip(1.4), root: 2.6 * mm, tip: 0.9 * mm))
+        } else if let lead, hypot(lead.x - needle.x, lead.y - needle.y) > 0.5 {
             hinge = CGPoint(x: (needle.x + lead.x) / 2, y: (needle.y + lead.y) / 2)
             legs.append(Self.leg(from: hinge, to: needle, root: 1.7 * mm, tip: 0.35 * mm))
             legs.append(Self.leg(from: hinge, to: lead, root: 1.7 * mm, tip: 0.9 * mm))
@@ -76,14 +88,18 @@ final class CompassView: UIView {
         legsLayer.path = legs.cgPath
         handle.append(grip.reversing())
         handleLayer.path = handle.cgPath
-        needleLayer.path = needlePath.cgPath
+        needleLayer.path = planted ? needlePath.cgPath : nil
         needleLayer.fillRule = .evenOdd
         leadLayer.path = lead.map {
             UIBezierPath(ovalIn: CGRect(x: $0.x - 0.45 * mm, y: $0.y - 0.45 * mm, width: 0.9 * mm, height: 0.9 * mm)).cgPath
         }
         CATransaction.commit()
+        alpha = planted ? 1 : 0.45
         isHidden = false
     }
+
+    /// How long the legs are, seen lying closed on the paper.
+    private static let closedLengthMM: CGFloat = 90
 
     /// A leg tapering from `root` wide at the hinge to `tip` wide at its point.
     private static func leg(from hinge: CGPoint, to end: CGPoint, root: CGFloat, tip: CGFloat) -> UIBezierPath {

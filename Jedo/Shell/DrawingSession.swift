@@ -35,7 +35,7 @@ final class DrawingSession {
         var text: String {
             switch self {
             case .pencil: "선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡고 컴퍼스 바늘을 꽂습니다."
-            case .compass: "손가락으로 종이를 길게 누르면 컴퍼스 바늘이 꽂힙니다."
+            case .compass: "손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다."
             }
         }
 

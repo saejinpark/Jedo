@@ -27,6 +27,7 @@ struct ContentView: View {
             if session.compassOnDesk {
                 CompassDraftPicker(session: session)
                     .padding(20)
+                    .padding(.top, 60) // below the hint
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
             #endif
