@@ -8,16 +8,12 @@ final class DrawingSession {
     var grade: PencilGrade = .hb
     /// Tools lying on the paper.
     private(set) var toolsOnDesk: Set<ToolKind> = []
-    /// Whether the hand holds the eraser.
+    /// Whether the hand holds the eraser, so a finger rubbing the paper erases.
     var eraserInHand = false {
         didSet {
             canvas?.eraserInHand = eraserInHand
-            if eraserInHand { show(.eraser(eraserHand)) }
+            if eraserInHand { show(.eraser) }
         }
-    }
-    /// Which hand rubs with the eraser: a draft being tried.
-    var eraserHand: EraserHand = .finger {
-        didSet { canvas?.eraserHand = eraserHand }
     }
     /// Whether the compass is out, so a finger held still plants its needle.
     var compassOnDesk = false {
@@ -41,14 +37,13 @@ final class DrawingSession {
         /// The compass just came out.
         case compass
         /// The eraser was picked up.
-        case eraser(EraserHand)
+        case eraser
 
         var text: String {
             switch self {
             case .pencil: "선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡고 컴퍼스 바늘을 꽂습니다."
             case .compass: "손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다."
-            case .eraser(.finger): "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
-            case .eraser(.pencil): "펜슬로 문지르면 지워집니다. 다시 그으려면 지우개를 내려놓으세요."
+            case .eraser: "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
             }
         }
 
@@ -71,16 +66,6 @@ final class DrawingSession {
         let onDesk = !toolsOnDesk.contains(kind)
         if onDesk { toolsOnDesk.insert(kind) } else { toolsOnDesk.remove(kind) }
         canvas?.setTool(kind, onDesk: onDesk)
-    }
-
-    /// Apple Pencil's own tap switches to the eraser and back, if the pencil is
-    /// what rubs and the person set the tap to do that.
-    func pencilTapped() {
-        guard eraserHand == .pencil else { return }
-        switch UIPencilInteraction.preferredTapAction {
-        case .switchEraser, .switchPrevious: eraserInHand.toggle()
-        default: break
-        }
     }
 
     func undo() { canvas?.undo() }

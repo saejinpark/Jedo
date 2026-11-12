@@ -51,10 +51,10 @@ final class CompassView: UIView {
         if !planted, lead == nil {
             // Lying on the paper with its legs closed, handle where the needle will go.
             hinge = needle
-            let angle = CGFloat.pi / 2 + 0.35
+            let angle = CGFloat(Compass.closedAngle)
             let along = CGPoint(x: cos(angle), y: sin(angle))
             let across = CGPoint(x: -along.y, y: along.x)
-            let reach = Self.closedLengthMM * mm
+            let reach = CGFloat(Compass.closedLengthMM) * mm
             func tip(_ side: CGFloat) -> CGPoint {
                 CGPoint(x: hinge.x + along.x * reach + across.x * side * mm, y: hinge.y + along.y * reach + across.y * side * mm)
             }
@@ -94,12 +94,9 @@ final class CompassView: UIView {
             UIBezierPath(ovalIn: CGRect(x: $0.x - 0.45 * mm, y: $0.y - 0.45 * mm, width: 0.9 * mm, height: 0.9 * mm)).cgPath
         }
         CATransaction.commit()
-        alpha = planted ? 1 : 0.45
+        alpha = planted ? 1 : 0.4
         isHidden = false
     }
-
-    /// How long the legs are, seen lying closed on the paper.
-    private static let closedLengthMM: CGFloat = 90
 
     /// A leg tapering from `root` wide at the hinge to `tip` wide at its point.
     private static func leg(from hinge: CGPoint, to end: CGPoint, root: CGFloat, tip: CGFloat) -> UIBezierPath {

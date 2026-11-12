@@ -40,6 +40,21 @@ struct CompassTests {
         #expect(abs(fresh! - (200 + 3 * ppmm)) < 1e-9)
     }
 
+    @Test func aFingerCanTakeHoldOfTheCompassLyingClosed() {
+        let compass = Compass(needle: needle)
+        let alongLegs = around(needle, radius: 30 * ppmm, angle: Compass.closedAngle)
+        #expect(compass.bodyContains(needle, margin: 0, pixelsPerMillimeter: ppmm))
+        #expect(compass.bodyContains(alongLegs, margin: 0, pixelsPerMillimeter: ppmm))
+        #expect(!compass.bodyContains(around(needle, radius: 30 * ppmm, angle: Compass.closedAngle + .pi / 2),
+                                      margin: 0, pixelsPerMillimeter: ppmm))
+    }
+
+    @Test func openLegsAreHeldAlongTheirLength() {
+        let compass = Compass(needle: needle, spread: 300, leadAngle: 0)
+        #expect(compass.bodyContains(CGPoint(x: 650, y: 505), margin: 0, pixelsPerMillimeter: ppmm))
+        #expect(!compass.bodyContains(CGPoint(x: 650, y: 560), margin: 0, pixelsPerMillimeter: ppmm))
+    }
+
     @Test func theLeadRestsWhereItLastWas() {
         let compass = Compass(needle: needle, spread: 100, leadAngle: .pi / 2)
         #expect(distance(compass.lead!, CGPoint(x: 500, y: 600)) < 1e-9)
@@ -199,6 +214,15 @@ struct LongPressTests {
         #expect(lp.move(1, to: CGPoint(x: 30, y: 0)) == false, "reported once")
         #expect(lp.due(at: 5).isEmpty)
         #expect(lp.end(1, time: 5) == .other)
+    }
+
+    @Test func remembersWhereAMovedPressBegan() {
+        var lp = press()
+        lp.begin(1, at: CGPoint(x: 3, y: 4), time: 0)
+        _ = lp.move(1, to: CGPoint(x: 40, y: 4))
+        #expect(lp.start(of: 1) == CGPoint(x: 3, y: 4))
+        lp.cancel(1)
+        #expect(lp.start(of: 1) == nil)
     }
 
     @Test func aQuickStillTouchIsATap() {

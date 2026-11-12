@@ -12,8 +12,6 @@ struct CanvasRepresentable: UIViewControllerRepresentable {
         }
         view.onFingerTouch = { [weak session] in session?.fingerTouchedPaper() }
         view.compassStyle = session.compassStyle
-        view.eraserHand = session.eraserHand
-        view.onPencilTap = { [weak session] in session?.pencilTapped() }
         session.canvas = view
         return controller
     }

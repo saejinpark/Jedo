@@ -47,6 +47,9 @@ struct LongPress<Key: Hashable> {
         return !press.moved && time - press.time < tapDuration ? .tap : .other
     }
 
+    /// Where a press still being followed began.
+    func start(of key: Key) -> CGPoint? { presses[key]?.start }
+
     mutating func cancel(_ key: Key) {
         presses.removeValue(forKey: key)
     }

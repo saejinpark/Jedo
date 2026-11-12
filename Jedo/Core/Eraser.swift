@@ -1,15 +1,9 @@
 import CoreGraphics
 import Foundation
 
-/// Which hand rubs with the eraser. A hand-feel draft still being compared.
-enum EraserHand: Equatable, Sendable, CaseIterable {
-    /// The eraser is a tool, so fingers hold it: a finger rubs, the pencil still draws.
-    case finger
-    /// The pencil turns into the eraser, as when the pencil is flipped over.
-    case pencil
-}
-
-/// How a rub of the eraser takes graphite off.
+/// How a rub of the eraser takes graphite off. A finger rubs with it; the
+/// pencil keeps drawing. (Turning the pencil into the eraser was the other
+/// draft compared on the iPad; rubbing with a finger was chosen.)
 struct EraserDynamics: Sendable {
     let pixelsPerMillimeter: Double
 

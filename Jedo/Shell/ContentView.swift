@@ -24,7 +24,7 @@ struct ContentView: View {
             .animation(.spring(duration: 0.35), value: session.hint)
 
             #if DEBUG
-            if session.compassOnDesk || session.eraserInHand {
+            if session.compassOnDesk {
                 DraftPicker(session: session)
                     .padding(20)
                     .padding(.top, 60) // below the hint
@@ -198,19 +198,6 @@ private struct DraftPicker: View {
                 }
                 .pickerStyle(.segmented)
             }
-            }
-            if session.eraserInHand {
-                GridRow {
-                    Text("지우개 시안").font(.caption.weight(.semibold)).gridCellColumns(2)
-                }
-                GridRow {
-                    Text("손").font(.caption)
-                    Picker("손", selection: $session.eraserHand) {
-                        Text("손가락으로 문지름").tag(EraserHand.finger)
-                        Text("펜슬이 지우개").tag(EraserHand.pencil)
-                    }
-                    .pickerStyle(.segmented)
-                }
             }
         }
         .foregroundStyle(Palette.ink)

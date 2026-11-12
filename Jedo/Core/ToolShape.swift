@@ -28,6 +28,13 @@ struct ToolShape: Equatable, Sendable {
         var alongside: Bool
         /// Where the lead's centre sits resting against the edge.
         var point: CGPoint
+        /// The edge's direction there, a unit vector on the paper (either way along it).
+        var tangent: (x: Double, y: Double)
+
+        static func == (a: Contact, b: Contact) -> Bool {
+            a.distance == b.distance && a.alongside == b.alongside && a.point == b.point
+                && a.tangent.x == b.tangent.x && a.tangent.y == b.tangent.y
+        }
     }
 
     var pose: ToolPose
@@ -55,6 +62,12 @@ struct ToolShape: Equatable, Sendable {
         let dx = Double(p.x - pose.center.x), dy = Double(p.y - pose.center.y)
         let c = cos(pose.angle), s = sin(pose.angle)
         return CGPoint(x: dx * c + dy * s, y: -dx * s + dy * c)
+    }
+
+    /// A direction in the tool's frame, turned onto the paper.
+    func worldDirection(_ d: (x: Double, y: Double)) -> (x: Double, y: Double) {
+        let c = cos(pose.angle), s = sin(pose.angle)
+        return (d.x * c - d.y * s, d.x * s + d.y * c)
     }
 
     func world(_ q: CGPoint) -> CGPoint {
@@ -89,7 +102,8 @@ struct ToolShape: Equatable, Sendable {
             let s = side(at: i, q)
             let point = CGPoint(x: Double(s.a.x) + s.dir.x * s.t + s.normal.x * offset,
                                 y: Double(s.a.y) + s.dir.y * s.t + s.normal.y * offset)
-            return Contact(distance: s.distance, alongside: s.t >= 0 && s.t <= s.length, point: world(point))
+            return Contact(distance: s.distance, alongside: s.t >= 0 && s.t <= s.length, point: world(point),
+                           tangent: worldDirection(s.dir))
         case .hole(let i):
             let hole = holes[i]
             var vx = Double(q.x - hole.center.x), vy = Double(q.y - hole.center.y)
@@ -98,7 +112,8 @@ struct ToolShape: Equatable, Sendable {
             let reach = hole.radius - offset
             let point = CGPoint(x: Double(hole.center.x) + vx / max(r, 1e-9) * reach,
                                 y: Double(hole.center.y) + vy / max(r, 1e-9) * reach)
-            return Contact(distance: hole.radius - r, alongside: true, point: world(point))
+            return Contact(distance: hole.radius - r, alongside: true, point: world(point),
+                           tangent: worldDirection((x: -vy / max(r, 1e-9), y: vx / max(r, 1e-9))))
         }
     }
 

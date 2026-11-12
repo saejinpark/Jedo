@@ -24,11 +24,8 @@ final class CanvasView: UIView {
         }
     }
 
-    /// Called when Apple Pencil is tapped (double-tap or squeeze-tap on the pencil itself).
-    var onPencilTap: (() -> Void)?
-    /// Whether the hand holds the eraser, and which hand rubs with it.
+    /// Whether the hand holds the eraser, so a finger rubbing the paper erases.
     var eraserInHand = false
-    var eraserHand: EraserHand = .finger
 
     /// Tools lying on the paper, bottom first. Canvas pixels.
     private(set) var tools: [DeskTool] = []
@@ -44,6 +41,8 @@ final class CanvasView: UIView {
     /// Whether the needle is in the paper, so the compass guides the pencil.
     private var needleIn = false
     private let compassView = CompassView()
+    /// A finger dragging the compass while it lies on the paper, and where it was last.
+    private var compassCarrier: (touch: UITouch, point: CGPoint)?
     /// The finger that planted the needle, while it stays down, and where it was last.
     private var needleFinger: (touch: UITouch, point: CGPoint)?
     /// Until the compass first draws, the planting finger can still nudge the needle.
@@ -86,7 +85,6 @@ final class CanvasView: UIView {
         inkLayer.actions = Self.noAnimations
         layer.addSublayer(inkLayer)
         addSubview(compassView)
-        addInteraction(UIPencilInteraction(delegate: self))
         memoryWarningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -294,8 +292,8 @@ final class CanvasView: UIView {
             return
         }
         guard compass == nil, let window else { return }
-        // Above the middle, so it doesn't land on the ruler.
-        let spot = CGPoint(x: window.bounds.midX, y: window.bounds.midY - window.bounds.height * 0.22)
+        // Off to the right, out of the way of the ruler and the drawing.
+        let spot = CGPoint(x: window.bounds.width * 0.86, y: window.bounds.height * 0.3)
         let here = convert(spot, from: window)
         var compass = Compass(needle: CGPoint(x: here.x * scale, y: here.y * scale))
         if compassStyle.spread == .kept, let keptSpread {
@@ -314,6 +312,7 @@ final class CanvasView: UIView {
         if compassStyle.spread == .eachTouch { compass.spread = nil }
         self.compass = compass
         needleIn = true
+        compassCarrier = nil
         needleFinger = (finger, point)
         needleSettled = false
         pullNeedleAfterStroke = false
@@ -330,6 +329,26 @@ final class CanvasView: UIView {
         }
         needleIn = false
         pullNeedleAfterStroke = false
+        showCompass()
+    }
+
+    /// A fingertip on the compass lying on the paper picks it up to move it.
+    private func grabCompass(_ touch: UITouch) -> Bool {
+        guard let compass, !needleIn, compassCarrier == nil, let sheet else { return false }
+        let point = pixelLocation(touch)
+        let margin = Self.gripMarginMM * sheet.pixelsPerMillimeter
+        guard compass.bodyContains(point, margin: margin, pixelsPerMillimeter: sheet.pixelsPerMillimeter) else { return false }
+        compassCarrier = (touch, point)
+        return true
+    }
+
+    private func carryCompass(with finger: UITouch) {
+        guard let carrier = compassCarrier, carrier.touch == finger, var compass else { return }
+        let now = pixelLocation(finger)
+        compass.needle.x += now.x - carrier.point.x
+        compass.needle.y += now.y - carrier.point.y
+        self.compass = compass
+        compassCarrier?.point = now
         showCompass()
     }
 
@@ -398,34 +417,36 @@ final class CanvasView: UIView {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         let now = CACurrentMediaTime()
-        let fingerErases = eraserInHand && eraserHand == .finger
-        var rubbingFinger: UITouch?
         for touch in touches where isFinger(touch, event) {
-            if grabTool(touch) { continue }
             guard touch.majorRadius < Self.fingertipRadius else { continue }
-            if fingerErases, activeTouch == nil, rubbingFinger == nil {
-                rubbingFinger = touch
+            if grabCompass(touch) {
+                // Held still on the compass, it plants the needle there.
+                presses.begin(touch, at: pixelLocation(touch), time: now)
+                scheduleLongPressCheck()
                 continue
             }
+            if grabTool(touch) { continue }
+            // A finger held still may plant the needle; once it moves it may rub with the eraser.
             presses.begin(touch, at: pixelLocation(touch), time: now)
             scheduleLongPressCheck()
         }
-        guard activeTouch == nil else { return }
-        if let finger = rubbingFinger {
-            startStroke(finger, erasing: true, event: event)
-        } else if let touch = touches.first(where: { draws($0, event) }) {
-            startStroke(touch, erasing: eraserInHand && eraserHand == .pencil, event: event)
-        }
+        guard activeTouch == nil, let touch = touches.first(where: { draws($0, event) }) else { return }
+        startStroke(touch, erasing: false, event: event)
     }
 
-    private func startStroke(_ touch: UITouch, erasing: Bool, event: UIEvent?) {
+    /// Starts a line, or with `erasing` a rub that began at `start`.
+    private func startStroke(_ touch: UITouch, erasing: Bool, from start: CGPoint? = nil, event: UIEvent?) {
         guard let sheet else { return }
         activeTouch = touch
         pending = PendingSampleQueue()
         lastPredicted = []
         if erasing {
-            guide = .rub(RubTracker(pixelsPerMillimeter: sheet.pixelsPerMillimeter))
+            var tracker = RubTracker(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
             sheet.beginErasing()
+            if let start {
+                sheet.extendStroke(with: [tracker.track(StrokeSample(location: start))], predicted: [])
+            }
+            guide = .rub(tracker)
         } else {
             let grade = currentGrade()
             guide = makeGuide(startingAt: sample(touch).location, grade: grade, sheet: sheet)
@@ -453,6 +474,7 @@ final class CanvasView: UIView {
         releaseTools(touches)
         let now = CACurrentMediaTime()
         for touch in touches where touch.type == .direct {
+            if let carrier = compassCarrier, carrier.touch == touch { compassCarrier = nil }
             if let held = needleFinger, held.touch == touch {
                 needleFinger = nil
                 if compassStyle.needle == .whileHeld { pullNeedle() }
@@ -474,7 +496,7 @@ final class CanvasView: UIView {
 
     /// A fingertip on the paper while the pencil is idle, not a palm resting as you draw.
     private func isDeliberateFinger(_ touch: UITouch) -> Bool {
-        guard !Self.mouseDraws, touch.type == .direct, activeTouch == nil else { return false }
+        guard !Self.mouseDraws, !eraserInHand, touch.type == .direct, activeTouch == nil else { return false }
         let pencilIdle = CACurrentMediaTime() - lastPencilActivity > Self.palmGrace
         return pencilIdle && touch.majorRadius < Self.fingertipRadius
     }
@@ -490,8 +512,16 @@ final class CanvasView: UIView {
         for touch in touches where touch.type == .direct && touch != activeTouch {
             if let held = needleFinger, held.touch == touch {
                 moveNeedle(with: touch)
-            } else if presses.move(touch, to: pixelLocation(touch)), isDeliberateFinger(touch) {
-                onFingerTouch?() // rubbing the paper as if to draw
+            } else if let carrier = compassCarrier, carrier.touch == touch {
+                _ = presses.move(touch, to: pixelLocation(touch))
+                carryCompass(with: touch)
+            } else if presses.move(touch, to: pixelLocation(touch)) {
+                if eraserInHand, activeTouch == nil {
+                    startStroke(touch, erasing: true, from: presses.start(of: touch), event: event)
+                    presses.cancel(touch)
+                } else if isDeliberateFinger(touch) {
+                    onFingerTouch?() // rubbing the paper as if to draw
+                }
             }
         }
         guard let touch = activeTouch, touches.contains(touch) else { return }
@@ -651,10 +681,4 @@ private final class GraphiteTile {
     let layer: CALayer
     var pixels = [UInt32](repeating: 0, count: GraphiteRaster.tileArea)
     init(layer: CALayer) { self.layer = layer }
-}
-
-extension CanvasView: UIPencilInteractionDelegate {
-    func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
-        onPencilTap?()
-    }
 }

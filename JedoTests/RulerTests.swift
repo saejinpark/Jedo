@@ -154,8 +154,8 @@ struct EdgeGuideTests {
     @Test func theStandardGuideLetsGoWhenPulledAway() {
         let path = run(.standard, [(600, 840), (700, 830), (800, 800), (900, 760)])
         #expect(path[0].y == 848 && path[1].y == 848, "within 4 mm it stays on the edge")
-        #expect(path[2] == CGPoint(x: 800, y: 800), "5 mm away it has let go")
-        #expect(path[3] == CGPoint(x: 900, y: 760))
+        #expect(path[2].y < 848 && path[2].y > 800, "5 mm away it has let go, easing off the edge")
+        #expect(path[3] == CGPoint(x: 900, y: 760), "and soon follows the pencil again")
     }
 
     @Test func stickUntilLiftHoldsEvenWhenPulledAway() {
@@ -164,9 +164,10 @@ struct EdgeGuideTests {
     }
 
     @Test func pastTheEndsTheRulerStopsGuiding() {
-        let path = run(.stickUntilLift, [(1900, 840), (2100, 842)])
+        let path = run(.stickUntilLift, [(1900, 840), (2100, 842), (2300, 842)])
         #expect(path[0].y == 848)
-        #expect(path[1] == CGPoint(x: 2100, y: 842))
+        #expect(path[1].x == 2100 && abs(path[1].y - 842) <= 8)
+        #expect(path[2] == CGPoint(x: 2300, y: 842))
     }
 
     @Test func aCopyRunsAheadWithoutChangingTheStroke() {
@@ -186,5 +187,67 @@ struct EdgeGuideTests {
         let out = g.guide(StrokeSample(location: near), ruler: turned).location
         let expected = turned.pointAlong(.upper, u: 300, offset: 2)
         #expect(abs(out.x - expected.x) < 1e-9 && abs(out.y - expected.y) < 1e-9)
+    }
+}
+
+
+struct EdgeEasingTests {
+    let ppmm = 10.0
+    /// Upper edge at y = 850, from x = 0 to 2000.
+    let ruler = Ruler(pose: RulerPose(center: CGPoint(x: 1000, y: 1000), angle: 0), length: 2000, width: 300)
+
+    func run(_ points: [(Double, Double)]) -> [CGPoint] {
+        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: ppmm, contactOffset: 2)
+        return points.map { g.guide(StrokeSample(location: CGPoint(x: $0.0, y: $0.1)), ruler: ruler).location }
+    }
+
+    /// The largest step the line takes beyond the step the pencil took.
+    func worstJump(_ input: [(Double, Double)], _ output: [CGPoint]) -> Double {
+        var worst = 0.0
+        for i in 1..<input.count {
+            let moved = hypot(input[i].0 - input[i - 1].0, input[i].1 - input[i - 1].1)
+            let drawn = hypot(Double(output[i].x - output[i - 1].x), Double(output[i].y - output[i - 1].y))
+            worst = max(worst, drawn - moved)
+        }
+        return worst
+    }
+
+    @Test func theLineNeverJumpsTakingToOrLeavingAnEdge() {
+        // Along the edge 1 mm out, then drifting away until it lets go, in 1 px steps.
+        let path: [(Double, Double)] = (0..<300).map { i in
+            let x = 300 + Double(i)
+            let y = i < 100 ? 840 : 840 - Double(i - 100) * 0.4
+            return (x, y)
+        }
+        let out = run(path)
+        #expect(out[50].y == 848)
+        #expect(out.last!.y == CGFloat(path.last!.1), "well away, it follows the pencil")
+        #expect(worstJump(path, out) < 1.5, "never more than half a pixel beyond the pencil's own step")
+    }
+
+    @Test func aLineDrawnTowardAnEdgeAndAwayIsLeftAlone() {
+        // A V whose point comes within 1.5 mm of the edge, mid-stroke.
+        var path: [(Double, Double)] = []
+        for i in 0..<60 { path.append((500 + Double(i) * 2, 700 + Double(i) * 2.25)) }
+        for i in 1..<60 { path.append((620 + Double(i) * 2, 835 - Double(i) * 2.25)) }
+        let out = run(path)
+        for (input, output) in zip(path, out) {
+            let expected = CGPoint(x: input.0, y: input.1)
+            #expect(output == expected)
+        }
+    }
+
+    @Test func runningAlongAnEdgeTakesToItMidStroke() {
+        // Starts 5 mm away, out of reach, and drifts in while running along it.
+        var path: [(Double, Double)] = []
+        for i in 0..<200 {
+            let x = 300 + Double(i) * 3
+            let y = 800 + min(Double(i), 40)
+            path.append((x, y))
+        }
+        let out = run(path)
+        #expect(out[0] == CGPoint(x: 300, y: 800))
+        #expect(out.suffix(50).allSatisfy { $0.y == 848 }, "eased onto the edge")
+        #expect(worstJump(path, out) < 1.5)
     }
 }
