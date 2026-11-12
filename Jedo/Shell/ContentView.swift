@@ -64,9 +64,10 @@ private struct ToolControls: View {
                 }
             }
             HStack(spacing: 8) {
-                RoundToolButton(icon: .symbol("squareshape.split.3x3"), label: session.graphPaper ? "백지로" : "모눈종이로",
-                                enabled: true, selected: session.graphPaper) {
-                    session.graphPaper.toggle()
+                SheetMenu(session: session)
+                RoundToolButton(icon: .symbol("square.fill"), label: session.carbonOnDesk ? "먹지 치우기" : "먹지 깔기",
+                                enabled: true, selected: session.carbonOnDesk) {
+                    session.carbonOnDesk.toggle()
                 }
                 RoundToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
                                 enabled: true, selected: session.compassOnDesk) {
@@ -165,6 +166,35 @@ private struct ToolSetMenu: View {
         .buttonStyle(.plain)
         .menuActionDismissBehavior(.disabled)
         .accessibilityLabel(title)
+    }
+}
+
+/// Transparent grid sheets: lay on as many as you like, take any away.
+private struct SheetMenu: View {
+    @Bindable var session: DrawingSession
+
+    var body: some View {
+        Menu {
+            Section("얹기") {
+                ForEach(GridPattern.allCases, id: \.self) { pattern in
+                    Button(pattern.name) { session.addSheet(pattern) }
+                }
+            }
+            if !session.gridSheets.isEmpty {
+                Section("치우기 (그린 것도 함께)") {
+                    ForEach(session.gridSheets.reversed()) { sheet in
+                        Button(role: .destructive) { session.removeSheet(sheet.id) } label: {
+                            Text(session.sheetName(sheet.id))
+                        }
+                    }
+                }
+            }
+        } label: {
+            RoundToolFace(icon: .symbol("squareshape.split.3x3"), enabled: true, selected: !session.gridSheets.isEmpty)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("모눈종이")
     }
 }
 

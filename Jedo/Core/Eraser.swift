@@ -26,14 +26,19 @@ struct EraserDynamics: Sendable {
 /// Lays one dab of an eraser rub into a stroke buffer: how much of the
 /// graphite to take off at each pixel. Within a pass the strongest rub wins.
 enum EraserRasterizer {
+    /// Pixels a dab can touch.
+    static func bounds(center: CGPoint, radius: Double) -> PixelRect {
+        guard center.x.isFinite, center.y.isFinite else { return .empty }
+        let reach = radius + 1
+        return PixelRect(minX: Int((Double(center.x) - reach).rounded(.down)), minY: Int((Double(center.y) - reach).rounded(.down)),
+                         maxX: Int((Double(center.x) + reach).rounded(.up)) + 1, maxY: Int((Double(center.y) + reach).rounded(.up)) + 1)
+    }
+
     @discardableResult
     static func stamp(center: CGPoint, radius: Double, strength: Double, into raster: inout GraphiteRaster,
                       paper: PaperTexture) -> PixelRect {
         guard center.x.isFinite, center.y.isFinite, radius > 0, strength > 0 else { return .empty }
-        let reach = radius + 1
-        let area = PixelRect(minX: Int((Double(center.x) - reach).rounded(.down)), minY: Int((Double(center.y) - reach).rounded(.down)),
-                             maxX: Int((Double(center.x) + reach).rounded(.up)) + 1, maxY: Int((Double(center.y) + reach).rounded(.up)) + 1)
-            .intersection(raster.bounds)
+        let area = bounds(center: center, radius: radius).intersection(raster.bounds)
         guard !area.isEmpty else { return .empty }
 
         let cx = Float(center.x), cy = Float(center.y)

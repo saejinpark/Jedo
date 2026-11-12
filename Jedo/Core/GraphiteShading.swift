@@ -16,6 +16,15 @@ enum GraphiteShading {
         return pack(r: graphite.r * d, g: graphite.g * d, b: graphite.b * d, a: d)
     }
 
+    /// What carbon copies onto the paper: a deep blue-black, flatter than graphite.
+    static let carbon: (r: Double, g: Double, b: Double) = (0.07, 0.08, 0.17)
+
+    /// Premultiplied carbon at each density step.
+    static let carbonLookup: [UInt32] = (0..<levels).map { level in
+        let d = Double(level) / Double(levels - 1)
+        return pack(r: carbon.r * d, g: carbon.g * d, b: carbon.b * d, a: d)
+    }
+
     static func pack(r: Double, g: Double, b: Double, a: Double) -> UInt32 {
         func byte(_ v: Double) -> UInt32 { UInt32(min(max(v, 0), 1) * 255 + 0.5) }
         return byte(a) << 24 | byte(r) << 16 | byte(g) << 8 | byte(b)

@@ -55,14 +55,33 @@ final class CanvasView: UIView {
     private var presses = LongPress<UITouch>(slop: 20)
 
     private var guide: StrokeGuide?
+    /// Holds the paper's own graphite and what the carbon copied onto it.
     private let inkLayer = CALayer()
-    /// Graph-paper rulings, printed on the paper: under the graphite, never erased.
-    private let gridLayer = CALayer()
 
+    /// The drawing paper.
     private(set) var sheet: DraftingSheet?
+    private var paperSurface: GraphiteSurface?
+    /// What the carbon has copied onto the paper, kept apart so it can be its own colour.
+    private var copySurface: GraphiteSurface?
     private var scale: CGFloat = 2
     private var paperLayers: [CALayer] = []
-    private var tiles: [TileCoord: GraphiteTile] = [:]
+
+    /// Soft sheets on the paper, bottom first: the carbon (if out) and then grid sheets.
+    private(set) var layers: [PaperLayer] = []
+    private var layerViews: [Int: PaperLayerView] = [:]
+    /// Each grid sheet's own drawing, which moves with it.
+    private var layerSurfaces: [Int: GraphiteSurface] = [:]
+    /// Fingers holding each sheet by its edge.
+    private var layerHolders: [Int: [(touch: UITouch, point: CGPoint)]] = [:]
+    private var nextLayerID = 1
+    /// Under the tools, above the paper.
+    private let sheetsView = UIView()
+    /// Surfaces the stroke in progress is marking.
+    private var marking: [SurfaceID] = []
+    private var markingErases = false
+    /// Strokes and rubs, newest last, by the surfaces each one changed.
+    private var undoStack: [[SurfaceID]] = []
+    private var redoStack: [[SurfaceID]] = []
     private var activeTouch: UITouch?
     private var pending = PendingSampleQueue<NSNumber>()
     private var lastPredicted: [StrokeSample] = []
@@ -86,10 +105,9 @@ final class CanvasView: UIView {
         accessibilityLabel = "제도 용지"
         // Graphite tiles live in their own layer, between the paper and the tools.
         inkLayer.actions = Self.noAnimations
-        gridLayer.actions = Self.noAnimations
-        gridLayer.isHidden = true
-        layer.addSublayer(gridLayer)
         layer.addSublayer(inkLayer)
+        sheetsView.isUserInteractionEnabled = false
+        addSubview(sheetsView)
         addSubview(compassView)
         memoryWarningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
@@ -118,6 +136,13 @@ final class CanvasView: UIView {
         let ppmm = DisplayDensity.pixelsPerMillimeter(nativeLongSidePixels: longSide)
         let sheet = DraftingSheet(width: side, height: side, pixelsPerMillimeter: ppmm)
         self.sheet = sheet
+        let paperSurface = GraphiteSurface(sheet: sheet, scale: scale)
+        let copySurface = GraphiteSurface(sheet: DraftingSheet(width: side, height: side, pixelsPerMillimeter: ppmm),
+                                          scale: scale, shading: GraphiteShading.carbonLookup)
+        inkLayer.addSublayer(paperSurface.layer)
+        inkLayer.addSublayer(copySurface.layer)
+        self.paperSurface = paperSurface
+        self.copySurface = copySurface
         presses = LongPress(slop: Self.pressSlopMM * ppmm)
         layPaper(for: sheet)
         superview?.setNeedsLayout()
@@ -127,6 +152,7 @@ final class CanvasView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         compassView.frame = bounds
+        sheetsView.frame = bounds
     }
 
     /// Side of the square sheet in points, once it exists.
@@ -156,60 +182,26 @@ final class CanvasView: UIView {
         }
     }
 
-    // MARK: Graph paper
-
-    /// Prints graph-paper rulings on the sheet (1 mm, 5 mm and 10 mm), or plain paper.
-    func setGraphPaper(_ on: Bool) {
-        guard let sheet else { return }
-        if on, gridLayer.sublayers == nil { ruleGrid(sheet) }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        gridLayer.isHidden = !on
-        CATransaction.commit()
-    }
-
-    private func ruleGrid(_ sheet: DraftingSheet) {
-        let side = CGFloat(sheet.width) / scale
-        let mm = CGFloat(sheet.pixelsPerMillimeter) / scale
-        gridLayer.frame = CGRect(x: 0, y: 0, width: side, height: side)
-        let colour = UIColor(red: 0.42, green: 0.52, blue: 0.40, alpha: 1)
-        for (every, alpha, width) in [(1, 0.16, 0.3), (5, 0.28, 0.45), (10, 0.42, 0.65)] as [(Int, CGFloat, CGFloat)] {
-            let path = CGMutablePath()
-            let count = Int(side / mm)
-            for k in 0...count where k % every == 0 && (every == 10 || k % (every * (every == 1 ? 5 : 2)) != 0) {
-                let at = CGFloat(k) * mm
-                path.move(to: CGPoint(x: at, y: 0))
-                path.addLine(to: CGPoint(x: at, y: side))
-                path.move(to: CGPoint(x: 0, y: at))
-                path.addLine(to: CGPoint(x: side, y: at))
-            }
-            let lines = CAShapeLayer()
-            lines.frame = gridLayer.bounds
-            lines.path = path
-            lines.strokeColor = colour.withAlphaComponent(alpha).cgColor
-            lines.lineWidth = width
-            lines.fillColor = nil
-            lines.actions = Self.noAnimations
-            gridLayer.addSublayer(lines)
-        }
-    }
-
     // MARK: Undo
 
     func undo() {
-        guard sheet?.undo() == true else { return }
+        guard activeTouch == nil, let step = undoStack.popLast() else { return }
+        for id in step { _ = surface(id)?.sheet.undo() }
+        redoStack.append(step)
         refresh()
         notifyHistory()
     }
 
     func redo() {
-        guard sheet?.redo() == true else { return }
+        guard activeTouch == nil, let step = redoStack.popLast() else { return }
+        for id in step { _ = surface(id)?.sheet.redo() }
+        undoStack.append(step)
         refresh()
         notifyHistory()
     }
 
     private func notifyHistory() {
-        onHistoryChange?(sheet?.canUndo ?? false, sheet?.canRedo ?? false)
+        onHistoryChange?(!undoStack.isEmpty && activeTouch == nil, !redoStack.isEmpty && activeTouch == nil)
         onOverviewChange?()
     }
 
@@ -219,7 +211,10 @@ final class CanvasView: UIView {
     /// A small picture of the drawing, `size` pixels square, in the sheet's own orientation.
     func overviewImage(size: Int) -> CGImage? {
         guard let sheet else { return nil }
-        let densities = sheet.overview(size: size)
+        var densities = sheet.overview(size: size)
+        if let copied = copySurface?.sheet.overview(size: size) {
+            for i in densities.indices where copied[i] > densities[i] { densities[i] = copied[i] }
+        }
         let paper = (r: 0.965, g: 0.955, b: 0.925), lead = (r: 0.05, g: 0.05, b: 0.06)
         let pixels = densities.map { d -> UInt32 in
             let t = Double(min(d * 1.4, 1)) // thin lines vanish when shrunk, so darken a little
@@ -234,7 +229,10 @@ final class CanvasView: UIView {
     var toolOutlines: [[CGPoint]] {
         guard let sheet else { return [] }
         let side = Double(sheet.width)
-        return toolShapes.map { shape in
+        let sheets = layers.map { layer in
+            layer.outline(pixelsPerMillimeter: sheet.pixelsPerMillimeter).map { CGPoint(x: Double($0.x) / side, y: Double($0.y) / side) }
+        }
+        return sheets + toolShapes.map { shape in
             shape.outline.map { q in
                 let p = shape.world(q)
                 return CGPoint(x: Double(p.x) / side, y: Double(p.y) / side)
@@ -243,7 +241,7 @@ final class CanvasView: UIView {
     }
 
     private func trimHistoryForMemoryWarning() {
-        sheet?.trimHistory(toBytes: DraftingSheet.defaultHistoryBudget / 4)
+        for surface in allSurfaces { surface.sheet.trimHistory(toBytes: DraftingSheet.defaultHistoryBudget / 8) }
         notifyHistory()
     }
 
@@ -259,16 +257,20 @@ final class CanvasView: UIView {
             toolsChanged()
             return
         }
-        guard !tools.contains(where: { $0.kind == kind }), let window else { return }
-        let spot = Self.restingSpot(kind)
-        let onScreen = CGPoint(x: window.bounds.width * spot.x, y: window.bounds.height * spot.y)
-        let here = convert(onScreen, from: window)
-        let right = convert(CGPoint(x: onScreen.x + 100, y: onScreen.y), from: window)
-        let pose = ToolPose(center: CGPoint(x: here.x * scale, y: here.y * scale),
-                            angle: atan2(Double(right.y - here.y), Double(right.x - here.x)))
+        guard !tools.contains(where: { $0.kind == kind }), let pose = screenPose(at: Self.restingSpot(kind)) else { return }
         tools.append(DeskTool(kind: kind, pose: pose))
         showTool(tools[tools.count - 1], sheet: sheet)
         raise(kind)
+    }
+
+    /// A spot on the screen (as fractions of its size) on the paper, lying level with the screen.
+    private func screenPose(at spot: CGPoint) -> ToolPose? {
+        guard let window else { return nil }
+        let onScreen = CGPoint(x: window.bounds.width * spot.x, y: window.bounds.height * spot.y)
+        let here = convert(onScreen, from: window)
+        let right = convert(CGPoint(x: onScreen.x + 100, y: onScreen.y), from: window)
+        return ToolPose(center: CGPoint(x: here.x * scale, y: here.y * scale),
+                        angle: atan2(Double(right.y - here.y), Double(right.x - here.x)))
     }
 
     /// Where on the screen each tool is first laid, as fractions of its size.
@@ -336,7 +338,7 @@ final class CanvasView: UIView {
         let margin = Self.gripMarginMM * sheet.pixelsPerMillimeter
         guard let i = tools.indices.last(where: {
             toolShapes[$0].outlineContains(point, margin: margin) && holders[tools[$0].kind, default: []].count < 2
-        }) else { return false }
+        }) else { return grabLayer(touch, at: point) }
         let kind = tools[i].kind
         if holders[kind, default: []].isEmpty { stacked[kind] = overlapping(kind) }
         holders[kind, default: []].append((touch, point))
@@ -384,10 +386,155 @@ final class CanvasView: UIView {
 
     private func releaseTools(_ touches: Set<UITouch>) {
         for kind in holders.keys { holders[kind]?.removeAll { touches.contains($0.touch) } }
+        for id in layerHolders.keys { layerHolders[id]?.removeAll { touches.contains($0.touch) } }
+        layerHolders = layerHolders.filter { !$0.value.isEmpty }
     }
 
     /// How far outside a tool a fingertip still catches it.
     private static let gripMarginMM = 4.0
+
+    // MARK: Sheets
+
+    /// Lays a new grid sheet on the paper, a little apart from the last one. Returns its id.
+    func addGridLayer(_ pattern: GridPattern) -> Int? {
+        guard let sheet else { return nil }
+        let count = layers.filter { if case .grid = $0.kind { true } else { false } }.count
+        guard var pose = screenPose(at: CGPoint(x: 0.5, y: 0.5)) else { return nil }
+        let step = Self.sheetCascadeMM * sheet.pixelsPerMillimeter * Double(count % 6)
+        pose.center.x += step
+        pose.center.y += step
+        let layer = PaperLayer(id: nextLayerID, kind: .grid(pattern), pose: pose)
+        nextLayerID += 1
+        let size = layer.rasterSize(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
+        let surface = GraphiteSurface(sheet: DraftingSheet(width: size.width, height: size.height,
+                                                           pixelsPerMillimeter: sheet.pixelsPerMillimeter,
+                                                           paper: sheet.paper, historyBudgetBytes: DraftingSheet.defaultHistoryBudget / 4),
+                                      scale: scale)
+        layerSurfaces[layer.id] = surface
+        layers.append(layer)
+        showLayer(layer, surface: surface, sheet: sheet)
+        layersChanged()
+        return layer.id
+    }
+
+    /// Takes a grid sheet off the paper, with what was drawn on it.
+    func removeGridLayer(_ id: Int) {
+        guard activeTouch == nil || !marking.contains(.sheet(id)) else { return }
+        layers.removeAll { $0.id == id }
+        layerViews.removeValue(forKey: id)?.removeFromSuperview()
+        layerSurfaces[id] = nil
+        layerHolders[id] = nil
+        undoStack = undoStack.map { $0.filter { $0 != .sheet(id) } }.filter { !$0.isEmpty }
+        redoStack = redoStack.map { $0.filter { $0 != .sheet(id) } }.filter { !$0.isEmpty }
+        layersChanged()
+        notifyHistory()
+    }
+
+    /// Slips the carbon under everything on the paper, or takes it out.
+    func setCarbon(onDesk: Bool) {
+        guard let sheet else { return }
+        let id = Self.carbonID
+        guard onDesk else {
+            layers.removeAll { $0.id == id }
+            layerViews.removeValue(forKey: id)?.removeFromSuperview()
+            layerHolders[id] = nil
+            layersChanged()
+            return
+        }
+        guard !layers.contains(where: { $0.id == id }), let pose = screenPose(at: CGPoint(x: 0.5, y: 0.5)) else { return }
+        let layer = PaperLayer(id: id, kind: .carbon, pose: pose)
+        layers.insert(layer, at: 0)
+        showLayer(layer, surface: nil, sheet: sheet)
+        layersChanged()
+    }
+
+    private func showLayer(_ layer: PaperLayer, surface: GraphiteSurface?, sheet: DraftingSheet) {
+        let view = PaperLayerView(layer: layer, surface: surface, scale: scale, pixelsPerMillimeter: sheet.pixelsPerMillimeter)
+        layerViews[layer.id] = view
+        sheetsView.addSubview(view)
+        view.place(layer, scale: scale)
+    }
+
+    /// Restacks the sheets' views in the order the sheets lie.
+    private func layersChanged() {
+        for layer in layers { if let view = layerViews[layer.id] { sheetsView.bringSubviewToFront(view) } }
+        onOverviewChange?()
+    }
+
+    /// A fingertip on a sheet's edge picks it up and lays it over the other grid sheets.
+    private func grabLayer(_ touch: UITouch, at point: CGPoint) -> Bool {
+        guard let sheet else { return false }
+        let ppmm = sheet.pixelsPerMillimeter
+        guard let i = layers.indices.last(where: {
+            layers[$0].edgeBandContains(point, inner: Self.sheetGripMM * ppmm, outer: Self.gripMarginMM * ppmm, pixelsPerMillimeter: ppmm)
+                && layerHolders[layers[$0].id, default: []].count < 2
+        }) else { return false }
+        let id = layers[i].id
+        layerHolders[id, default: []].append((touch, point))
+        // The carbon stays at the bottom; a grid sheet comes up over the others.
+        if activeTouch == nil, layers[i].kind != .carbon {
+            layers.append(layers.remove(at: i))
+            layersChanged()
+        }
+        return true
+    }
+
+    private func moveLayers(_ touches: Set<UITouch>) {
+        var moved = false
+        for (id, held) in layerHolders where held.contains(where: { touches.contains($0.touch) }) {
+            guard let i = layers.firstIndex(where: { $0.id == id }) else { continue }
+            let now = held.map { pixelLocation($0.touch) }
+            var pose = layers[i].pose
+            switch held.count {
+            case 1: pose = RigidMotion.slide(pose, from: held[0].point, to: now[0])
+            default: pose = RigidMotion.slideAndTurn(pose, from: (held[0].point, held[1].point), to: (now[0], now[1]))
+            }
+            layers[i].pose = pose
+            layerHolders[id] = zip(held, now).map { ($0.touch, $1) }
+            layerViews[id]?.place(layers[i], scale: scale)
+            moved = true
+        }
+        if moved { onOverviewChange?() }
+    }
+
+    /// The sheets as the pencil meets them.
+    private func layerStack() -> LayerStack {
+        guard let sheet else { return LayerStack() }
+        let ppmm = sheet.pixelsPerMillimeter
+        var stack = LayerStack()
+        for layer in layers {
+            switch layer.kind {
+            case .carbon: stack.carbon = layer.outline(pixelsPerMillimeter: ppmm)
+            case .grid: stack.sheets.append((layer.id, layer.outline(pixelsPerMillimeter: ppmm)))
+            }
+        }
+        return stack
+    }
+
+    private func surface(_ id: SurfaceID) -> GraphiteSurface? {
+        switch id {
+        case .paper: paperSurface
+        case .carbonCopy: copySurface
+        case .sheet(let i): layerSurfaces[i]
+        }
+    }
+
+    private var allSurfaces: [GraphiteSurface] {
+        [paperSurface, copySurface].compactMap { $0 } + Array(layerSurfaces.values)
+    }
+
+    /// A sample or mask on the paper, moved onto the surface it marks.
+    private func onSurface(_ id: SurfaceID) -> ((CGPoint) -> CGPoint, (StrokeSample) -> StrokeSample) {
+        guard case .sheet(let i) = id, let sheet, let layer = layers.first(where: { $0.id == i }) else { return ({ $0 }, { $0 }) }
+        let ppmm = sheet.pixelsPerMillimeter
+        return ({ layer.surfacePoint($0, pixelsPerMillimeter: ppmm) }, { layer.surfaceSample($0, pixelsPerMillimeter: ppmm) })
+    }
+
+    static let carbonID = 0
+    /// How far in from its edge a fingertip still picks up a sheet.
+    private static let sheetGripMM = 12.0
+    /// Each new grid sheet lies this much further down and right.
+    private static let sheetCascadeMM = 10.0
 
     // MARK: Compass
 
@@ -504,24 +651,59 @@ final class CanvasView: UIView {
     }
 
     /// Starts a line, or with `erasing` a rub that began at `start`.
+    /// The pencil marks whatever lies on top where it goes, and presses through the carbon.
     private func startStroke(_ touch: UITouch, erasing: Bool, from start: CGPoint? = nil, event: UIEvent?) {
         guard let sheet else { return }
         activeTouch = touch
         pending = PendingSampleQueue()
         lastPredicted = []
+        let grade = currentGrade()
+        marking = []
+        markingErases = erasing
+        for (id, mask) in layerStack().targets(erasing: erasing) {
+            guard let target = surface(id)?.sheet else { continue }
+            let local = mask.mapped(onSurface(id).0)
+            if erasing { target.beginErasing(mask: local) } else { target.beginStroke(grade: grade, mask: local) }
+            marking.append(id)
+        }
         if erasing {
             var tracker = RubTracker(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
-            sheet.beginErasing()
-            if let start {
-                sheet.extendStroke(with: [tracker.track(StrokeSample(location: start))], predicted: [])
-            }
+            if let start { lay([tracker.track(StrokeSample(location: start))], predicted: []) }
             guide = .rub(tracker)
         } else {
-            let grade = currentGrade()
             guide = makeGuide(startingAt: sample(touch).location, grade: grade, sheet: sheet)
-            sheet.beginStroke(grade: grade)
         }
+        notifyHistory()
         feed(touch, event: event)
+    }
+
+    /// Lays samples on the paper into every surface the stroke is marking.
+    private func lay(_ samples: [StrokeSample], predicted: [StrokeSample]) {
+        // A sheet held while drawing moves its edge under the pencil.
+        let masks = layerHolders.isEmpty ? nil : Dictionary(layerStack().targets(erasing: markingErases).map { ($0.surface, $0.mask) },
+                                                            uniquingKeysWith: { a, _ in a })
+        for id in marking {
+            guard let target = surface(id)?.sheet else { continue }
+            let (point, sample) = onSurface(id)
+            if let mask = masks?[id] { target.setStrokeMask(mask.mapped(point)) }
+            target.extendStroke(with: samples.map(sample), predicted: predicted.map(sample))
+        }
+        refresh()
+    }
+
+    /// Lays the stroke down on every surface it marked, as one step to undo.
+    private func finishMarking() {
+        let changed = marking.filter { surface($0)?.sheet.endStroke() == true }
+        marking = []
+        if !changed.isEmpty {
+            undoStack.append(changed)
+            redoStack.removeAll()
+        }
+    }
+
+    private func cancelMarking() {
+        for id in marking { surface(id)?.sheet.cancelStroke() }
+        marking = []
     }
 
     /// The compass if its lead can reach where the pencil landed, otherwise the ruler's edge.
@@ -577,6 +759,7 @@ final class CanvasView: UIView {
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         moveTools(touches)
+        moveLayers(touches)
         for touch in touches where touch.type == .direct && touch != activeTouch {
             if let held = needleFinger, held.touch == touch {
                 moveNeedle(with: touch)
@@ -595,11 +778,11 @@ final class CanvasView: UIView {
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         let pencil = activeTouch
-        if let touch = activeTouch, touches.contains(touch), let sheet {
+        if let touch = activeTouch, touches.contains(touch) {
             feed(touch, event: event, predicting: false)
             // Whatever is still estimated goes in as it is; the pencil has lifted.
             extend(with: pending.flush())
-            sheet.endStroke()
+            finishMarking()
             activeTouch = nil
             finishCompassStroke(drew: true)
             refresh()
@@ -610,8 +793,8 @@ final class CanvasView: UIView {
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         let pencil = activeTouch
-        if let touch = activeTouch, touches.contains(touch), let sheet {
-            sheet.cancelStroke()
+        if let touch = activeTouch, touches.contains(touch) {
+            cancelMarking()
             _ = pending.flush()
             lastPredicted = []
             activeTouch = nil
@@ -655,7 +838,6 @@ final class CanvasView: UIView {
     /// or compass) into the stroke. Samples still waiting and predicted ones
     /// go through a copy of the guide, so they never change the real one.
     private func extend(with released: [StrokeSample]) {
-        guard let sheet else { return }
         var final = released
         var ahead = pending.provisional + lastPredicted
         if var guide {
@@ -669,8 +851,7 @@ final class CanvasView: UIView {
                 showCompass()
             }
         }
-        sheet.extendStroke(with: final, predicted: ahead)
-        refresh()
+        lay(final, predicted: ahead)
     }
 
     private func pixelLocation(_ touch: UITouch) -> CGPoint {
@@ -698,33 +879,10 @@ final class CanvasView: UIView {
     // MARK: Drawing graphite
 
     private func refresh() {
-        guard let sheet else { return }
-        let regions = sheet.takeDirtyRegions()
-        guard !regions.isEmpty else { return }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        for (coord, rect) in regions {
-            let tile = tiles[coord] ?? makeTile(coord)
-            tile.pixels.withUnsafeMutableBufferPointer { sheet.renderGraphite(tile: coord, rect: rect, into: $0) }
-            tile.layer.contents = Self.makeImage(pixels: tile.pixels, width: GraphiteRaster.tileSize, height: GraphiteRaster.tileSize)
-        }
-        CATransaction.commit()
+        for surface in allSurfaces { surface.refresh() }
     }
 
-    private func makeTile(_ coord: TileCoord) -> GraphiteTile {
-        let side = CGFloat(GraphiteRaster.tileSize) / scale
-        let layer = CALayer()
-        layer.frame = CGRect(x: CGFloat(coord.x) * side, y: CGFloat(coord.y) * side, width: side, height: side)
-        layer.contentsScale = scale
-        layer.magnificationFilter = .nearest
-        layer.actions = Self.noAnimations
-        inkLayer.addSublayer(layer)
-        let tile = GraphiteTile(layer: layer)
-        tiles[coord] = tile
-        return tile
-    }
-
-    private static let noAnimations: [String: CAAction] = [
+    static let noAnimations: [String: CAAction] = [
         "contents": NSNull(), "position": NSNull(), "bounds": NSNull(), "hidden": NSNull(),
     ]
 
@@ -739,11 +897,4 @@ final class CanvasView: UIView {
             provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
         )
     }
-}
-
-/// One tile of graphite on screen and the pixels behind it.
-private final class GraphiteTile {
-    let layer: CALayer
-    var pixels = [UInt32](repeating: 0, count: GraphiteRaster.tileArea)
-    init(layer: CALayer) { self.layer = layer }
 }

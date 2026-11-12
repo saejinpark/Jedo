@@ -33,6 +33,8 @@ final class DraftingSheet {
         var buffer: GraphiteRaster
         var seed: UInt32
         var maxDensity: Float
+        /// Where on the sheet the stroke may leave a mark.
+        var mask: StrokeMask = .everywhere
         /// Tiles as they were before the stroke, kept once an earlier pass has been laid down.
         var before: [TileCoord: [Float]?] = [:]
 
@@ -78,28 +80,35 @@ final class DraftingSheet {
     // MARK: Drawing
 
     /// Starts a stroke. Its first sample arrives through `extendStroke`.
-    func beginStroke(grade: PencilGrade) {
+    func beginStroke(grade: PencilGrade, mask: StrokeMask = .everywhere) {
         if stroke != nil { cancelStroke() }
         strokeCounter &+= 1
         stroke = ActiveStroke(
             lead: .pencil(PencilDynamics(grade: grade, pixelsPerMillimeter: pixelsPerMillimeter, style: grainStyle)),
             buffer: GraphiteRaster(width: width, height: height),
             seed: strokeCounter &* 0x9E37_79B9,
-            maxDensity: Float(grade.parameters.maxDensity)
+            maxDensity: Float(grade.parameters.maxDensity),
+            mask: mask
         )
     }
 
     /// Starts rubbing with the eraser. Samples arrive through `extendStroke`;
     /// each pass lifts a share of the graphite under it.
-    func beginErasing() {
+    func beginErasing(mask: StrokeMask = .everywhere) {
         if stroke != nil { cancelStroke() }
         strokeCounter &+= 1
         stroke = ActiveStroke(
             lead: .eraser(EraserDynamics(pixelsPerMillimeter: pixelsPerMillimeter)),
             buffer: GraphiteRaster(width: width, height: height),
             seed: strokeCounter &* 0x9E37_79B9,
-            maxDensity: 1
+            maxDensity: 1,
+            mask: mask
         )
+    }
+
+    /// Moves where the stroke in progress may mark, as when a sheet over it moves.
+    func setStrokeMask(_ mask: StrokeMask) {
+        stroke?.mask = mask
     }
 
     /// Convenience for starting a stroke with its first sample.
@@ -114,36 +123,63 @@ final class DraftingSheet {
         guard var active = stroke else { return }
         for sample in samples {
             if sample.beginsPass { layPass(&active) }
-            stamp(sample, spacer: &active.spacer, lead: active.lead, into: &active.buffer, seed: active.seed)
+            stamp(sample, spacer: &active.spacer, lead: active.lead, mask: active.mask, into: &active.buffer, seed: active.seed)
         }
 
         clearPrediction()
         var lookahead = active.spacer
         for sample in predicted {
-            stamp(sample, spacer: &lookahead, lead: active.lead, into: &prediction, seed: active.seed)
+            stamp(sample, spacer: &lookahead, lead: active.lead, mask: active.mask, into: &prediction, seed: active.seed)
         }
         stroke = active
     }
 
-    private func stamp(_ sample: StrokeSample, spacer: inout DabSpacer, lead: Lead,
+    private func stamp(_ sample: StrokeSample, spacer: inout DabSpacer, lead: Lead, mask: StrokeMask,
                        into raster: inout GraphiteRaster, seed: UInt32) {
         switch lead {
         case .pencil(let dynamics):
             for dab in spacer.append(sample, spacing: { dynamics.spacing(for: dynamics.shape(for: $0)) }) {
-                markDirty(DabRasterizer.stamp(center: dab.location, shape: dynamics.shape(for: dab),
-                                              into: &raster, paper: paper, seed: seed))
+                let shape = dynamics.shape(for: dab)
+                let coverage = mask.coverage(DabRasterizer.bounds(center: dab.location, shape: shape))
+                guard coverage != .none else { continue }
+                let rect = DabRasterizer.stamp(center: dab.location, shape: shape, into: &raster, paper: paper, seed: seed)
+                if coverage == .part { Self.clip(&raster, rect, to: mask) }
+                markDirty(rect)
             }
         case .eraser(let eraser):
             for dab in spacer.append(sample, spacing: { _ in eraser.spacing }) {
-                markDirty(EraserRasterizer.stamp(center: dab.location, radius: eraser.radius,
-                                                 strength: eraser.strength(for: dab), into: &raster, paper: paper))
+                let coverage = mask.coverage(EraserRasterizer.bounds(center: dab.location, radius: eraser.radius))
+                guard coverage != .none else { continue }
+                let rect = EraserRasterizer.stamp(center: dab.location, radius: eraser.radius,
+                                                  strength: eraser.strength(for: dab), into: &raster, paper: paper)
+                if coverage == .part { Self.clip(&raster, rect, to: mask) }
+                markDirty(rect)
+            }
+        }
+    }
+
+    /// Takes back whatever a dab put outside the mask, like a line running off a sheet's edge.
+    private static func clip(_ raster: inout GraphiteRaster, _ rect: PixelRect, to mask: StrokeMask) {
+        guard !rect.isEmpty else { return }
+        let size = GraphiteRaster.tileSize
+        for coord in raster.tileCoords(overlapping: rect) where raster.tile(coord) != nil {
+            let area = raster.rect(of: coord).intersection(rect)
+            raster.withMutableTile(coord) { values in
+                for y in area.minY..<area.maxY {
+                    let row = (y - coord.y * size) * size - coord.x * size
+                    for x in area.minX..<area.maxX where values[row + x] > 0 {
+                        if !mask.contains(CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)) { values[row + x] = 0 }
+                    }
+                }
             }
         }
     }
 
     /// Lays the stroke onto the sheet as one undoable step, every pass of it.
-    func endStroke() {
-        guard var active = stroke else { return }
+    /// Returns whether it changed anything (and so was recorded).
+    @discardableResult
+    func endStroke() -> Bool {
+        guard var active = stroke else { return false }
         stroke = nil
         clearPrediction()
         layPass(&active)
@@ -152,9 +188,10 @@ final class DraftingSheet {
         for (coord, before) in active.before {
             changes[coord] = TileChange(before: before, after: graphite.tile(coord))
         }
-        guard !changes.isEmpty else { return }
+        guard !changes.isEmpty else { return false }
         let edit = TileEdit(changes: changes)
         history.record(edit, cost: edit.cost)
+        return true
     }
 
     /// Throws the stroke away, as when the system takes the touch.
@@ -262,7 +299,8 @@ final class DraftingSheet {
 
     /// Writes premultiplied graphite pixels (to lay over the paper) for `rect`
     /// of a tile. `pixels` is one tile, row-major, `GraphiteRaster.tileSize` wide.
-    func renderGraphite(tile coord: TileCoord, rect: PixelRect, into pixels: UnsafeMutableBufferPointer<UInt32>) {
+    func renderGraphite(tile coord: TileCoord, rect: PixelRect, into pixels: UnsafeMutableBufferPointer<UInt32>,
+                        shading lut: [UInt32] = GraphiteShading.lookup) {
         let size = GraphiteRaster.tileSize
         let area = rect.intersection(graphite.rect(of: coord))
         guard !area.isEmpty, pixels.count >= GraphiteRaster.tileArea else { return }
@@ -273,7 +311,6 @@ final class DraftingSheet {
         let predictedTile = stroke == nil ? nil : prediction.tile(coord)
         let maxDensity = stroke?.maxDensity ?? 0
         let erases = stroke?.erases ?? false
-        let lut = GraphiteShading.lookup
 
         for py in area.minY..<area.maxY {
             let row = (py - originY) * size - originX

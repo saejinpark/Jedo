@@ -8,9 +8,16 @@ final class DrawingSession {
     var grade: PencilGrade = .hb
     /// Tools lying on the paper.
     private(set) var toolsOnDesk: Set<ToolKind> = []
-    /// Graph paper instead of plain.
-    var graphPaper = false {
-        didSet { canvas?.setGraphPaper(graphPaper) }
+    /// Transparent grid sheets lying on the paper, bottom first.
+    private(set) var gridSheets: [GridSheet] = []
+
+    struct GridSheet: Identifiable {
+        let id: Int
+        let pattern: GridPattern
+    }
+    /// Whether the carbon lies under everything, copying what is pressed above it.
+    var carbonOnDesk = false {
+        didSet { canvas?.setCarbon(onDesk: carbonOnDesk) }
     }
     /// Whether the hand holds the eraser, so a finger rubbing the paper erases.
     var eraserInHand = false {
@@ -70,6 +77,26 @@ final class DrawingSession {
         let onDesk = !toolsOnDesk.contains(kind)
         if onDesk { toolsOnDesk.insert(kind) } else { toolsOnDesk.remove(kind) }
         canvas?.setTool(kind, onDesk: onDesk)
+    }
+
+    /// Lays a new grid sheet on the paper.
+    func addSheet(_ pattern: GridPattern) {
+        guard let id = canvas?.addGridLayer(pattern) else { return }
+        gridSheets.append(GridSheet(id: id, pattern: pattern))
+    }
+
+    /// Takes a grid sheet away, with what was drawn on it.
+    func removeSheet(_ id: Int) {
+        canvas?.removeGridLayer(id)
+        gridSheets.removeAll { $0.id == id }
+    }
+
+    /// How a grid sheet is called in the menu: its pattern, numbered when there are several.
+    func sheetName(_ id: Int) -> String {
+        guard let sheet = gridSheets.first(where: { $0.id == id }) else { return "" }
+        let same = gridSheets.filter { $0.pattern == sheet.pattern }
+        guard same.count > 1, let n = same.firstIndex(where: { $0.id == id }) else { return sheet.pattern.name }
+        return "\(sheet.pattern.name) \(n + 1)"
     }
 
     func undo() { canvas?.undo() }
