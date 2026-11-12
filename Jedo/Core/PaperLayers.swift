@@ -48,6 +48,8 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
     case isometric
     /// A round sheet: rings every 5 mm and a ray every 15°.
     case polar
+    /// Clear in the middle, with a band of 1 mm grid around the edge to line it up by.
+    case plain
 
     var name: String {
         switch self {
@@ -55,6 +57,7 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
         case .square5: "방안 5mm"
         case .isometric: "등각 5mm"
         case .polar: "극좌표"
+        case .plain: "민무늬"
         }
     }
 
@@ -65,6 +68,7 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
         case .square5: (140, 100)
         case .isometric: (110, 110)
         case .polar: (120, 120)
+        case .plain: (140, 140)
         }
     }
 
@@ -352,6 +356,8 @@ enum GridRulings {
             return square(width: w, height: h, step: 5) { $0 % 5 == 0 ? .medium : .fine }
         case .isometric:
             return isometric(width: w, height: h, spacing: 5)
+        case .plain:
+            return edgeBand(width: w, height: h, band: plainBandMM)
         case .polar:
             let r = w / 2
             return stride(from: 0, to: 360, by: 15).map { degrees in
@@ -361,6 +367,9 @@ enum GridRulings {
             }
         }
     }
+
+    /// How wide the grid band around a plain sheet is.
+    static let plainBandMM = 10.0
 
     static func rings(_ pattern: GridPattern) -> [Ring] {
         guard pattern == .polar else { return [] }
@@ -381,6 +390,37 @@ enum GridRulings {
         for i in 0...Int((height / step).rounded(.down)) {
             let y = Double(i) * step
             out.append(Line(from: CGPoint(x: 0, y: y), to: CGPoint(x: width, y: y), weight: weight(i)))
+        }
+        return out
+    }
+
+    /// 1 mm grid only within `band` of the edges, heavier every 5 and 10 mm
+    /// and along the band's inner edge; the middle is left clear.
+    private static func edgeBand(width: Double, height: Double, band: Double) -> [Line] {
+        var out: [Line] = []
+        func weight(_ i: Int, _ at: Double, _ size: Double) -> Weight {
+            if i % 10 == 0 || abs(at - band) < 1e-9 || abs(at - (size - band)) < 1e-9 || abs(at - size) < 1e-9 { return .bold }
+            return i % 5 == 0 ? .medium : .fine
+        }
+        for i in 0...Int(width.rounded(.down)) {
+            let x = Double(i)
+            let w = weight(i, x, width)
+            if x <= band || x >= width - band {
+                out.append(Line(from: CGPoint(x: x, y: 0), to: CGPoint(x: x, y: height), weight: w))
+            } else {
+                out.append(Line(from: CGPoint(x: x, y: 0), to: CGPoint(x: x, y: band), weight: w))
+                out.append(Line(from: CGPoint(x: x, y: height - band), to: CGPoint(x: x, y: height), weight: w))
+            }
+        }
+        for i in 0...Int(height.rounded(.down)) {
+            let y = Double(i)
+            let w = weight(i, y, height)
+            if y <= band || y >= height - band {
+                out.append(Line(from: CGPoint(x: 0, y: y), to: CGPoint(x: width, y: y), weight: w))
+            } else {
+                out.append(Line(from: CGPoint(x: 0, y: y), to: CGPoint(x: band, y: y), weight: w))
+                out.append(Line(from: CGPoint(x: width - band, y: y), to: CGPoint(x: width, y: y), weight: w))
+            }
         }
         return out
     }

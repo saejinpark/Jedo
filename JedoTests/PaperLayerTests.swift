@@ -213,6 +213,23 @@ struct GridRulingTests {
         #expect(angles == [90, 30, 150])
     }
 
+    @Test func thePlainSheetIsClearInsideItsEdgeBand() {
+        let (w, h) = GridPattern.plain.sizeMM
+        let band = GridRulings.plainBandMM
+        let lines = GridRulings.lines(.plain)
+        #expect(!lines.isEmpty)
+        // No ruling passes through the clear middle.
+        for line in lines {
+            let mid = CGPoint(x: (line.from.x + line.to.x) / 2, y: (line.from.y + line.to.y) / 2)
+            let inMiddle = mid.x > band + 1e-6 && mid.x < w - band - 1e-6 && mid.y > band + 1e-6 && mid.y < h - band - 1e-6
+            #expect(!inMiddle)
+        }
+        // The outer edge and the band's inner edge are both drawn heavy.
+        #expect(lines.contains { $0.weight == .bold && $0.from.x == band && $0.to.x == band })
+        #expect(lines.contains { $0.weight == .bold && $0.from.y == 0 && $0.to.y == 0 })
+        #expect(GridRulings.rings(.plain).isEmpty)
+    }
+
     @Test func polarRingsAndRays() {
         #expect(GridRulings.rings(.polar).count == 12)
         #expect(GridRulings.lines(.polar).count == 24)
