@@ -276,53 +276,51 @@ struct CurveToolTests {
     @Test func curvedToolsGuideAsOneEdgePlusTheirSlots() {
         #expect(shape(.hipCurve).guidingEdges == [.boundary])
         #expect(shape(.frenchCurveA).guidingEdges == [.boundary, .cutout(0)])
-        #expect(shape(.frenchCurveC).guidingEdges == [.boundary, .cutout(0), .cutout(1)])
         #expect(shape(.ruler).guidingEdges == [.side(0), .side(2)])
     }
 
-    @Test func theSetHasFourDifferentCurves() {
+    @Test func theSetIsTheThreeTracedPieces() {
         #expect(FrenchCurve.forms.map(\.kind) == ToolKind.frenchCurves)
-        let turns = FrenchCurve.forms.map { form -> Double in
-            let spine = form.profile.spine()
-            return spine[spine.count - 1].angle - spine[0].angle
+        func size(_ kind: ToolKind) -> CGSize {
+            let o = FrenchCurve.outline(kind)
+            return CGSize(width: o.map(\.x).max()! - o.map(\.x).min()!, height: o.map(\.y).max()! - o.map(\.y).min()!)
         }
-        #expect(Set(turns.map { ($0 * 10).rounded() }).count == 4)
+        // As drawn: about 80 × 267, 66 × 143 and 61 × 117 mm.
+        #expect(abs(size(.frenchCurveA).height - 267) < 1 && abs(size(.frenchCurveA).width - 80) < 1)
+        #expect(abs(size(.frenchCurveB).height - 143) < 1)
+        #expect(abs(size(.frenchCurveC).height - 117) < 1)
+        for kind in ToolKind.frenchCurves { #expect(FrenchCurve.slots(kind).count == 1) }
     }
 
-    @Test func theSCurveBendsBothWays() {
-        let spine = FrenchCurve.form(.frenchCurveB)!.profile.spine()
-        let angles = spine.map(\.angle)
-        let lowest = angles.min()!
-        #expect(lowest < angles.first! - 0.1, "first it bends up")
-        #expect(angles.last! > lowest + 0.5, "then back down, further")
-    }
-
-    @Test func theScrollTightensTowardItsTip() {
-        // The bend grows steadily: the second half of the bend turns three times the first.
-        let form = FrenchCurve.form(.frenchCurveA)!
-        let spine = form.profile.spine()
-        let bendStart = Int(35 / 0.5)
-        let mid = (bendStart + spine.count - 1) / 2
-        let first = abs(spine[mid].angle - spine[bendStart].angle)
-        let second = abs(spine[spine.count - 1].angle - spine[mid].angle)
-        #expect(abs(second / first - 3) < 0.1)
-        #expect(spine[0].width > spine[spine.count - 1].width * 4)
+    @Test func theSetNumberSitsWellInsideThePlastic() {
+        for kind in ToolKind.frenchCurves {
+            let s = ToolShape(pose: ToolPose(center: .zero, angle: 0), outline: FrenchCurve.outline(kind), smooth: true,
+                              cutouts: FrenchCurve.slots(kind))
+            let spot = FrenchCurve.labelSpot(kind)
+            #expect(s.covers(spot))
+            #expect(-s.contact(.boundary, at: spot, offset: 0).distance > 4)
+        }
     }
 
     @Test func everySlotIsOpenPaperThatGuides() {
         for kind in ToolKind.frenchCurves {
             let s = shape(kind)
             for (index, slot) in FrenchCurve.slots(kind).enumerated() {
-                let rim = slot[slot.count / 4], opposite = slot[slot.count * 3 / 4]
-                let middle = CGPoint(x: (rim.x + opposite.x) / 2, y: (rim.y + opposite.y) / 2)
-                #expect(!s.covers(s.world(middle.scaled(Self.ppmm))), "the slot's middle is paper")
-                // 1.5 mm in from the rim, toward the middle: within reach of the rim.
-                let toward = (x: Double(middle.x - rim.x), y: Double(middle.y - rim.y))
-                let len = hypot(toward.x, toward.y)
-                let near = CGPoint(x: Double(rim.x) + toward.x / len * 1.5, y: Double(rim.y) + toward.y / len * 1.5)
-                var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
-                let out = g.guide(StrokeSample(location: s.world(near.scaled(Self.ppmm))), tools: [s]).location
-                #expect(abs(s.contact(.cutout(index), at: out, offset: 0).distance - 2) < 0.05)
+                for k in stride(from: 0, to: slot.count - 1, by: 9) {
+                    let q = slot[k], r = slot[k + 1]
+                    let dx = Double(r.x - q.x), dy = Double(r.y - q.y), len = max(hypot(dx, dy), 1e-9)
+                    let mid = CGPoint(x: (Double(q.x) + Double(r.x)) / 2, y: (Double(q.y) + Double(r.y)) / 2)
+                    // 1 mm in from the rim, on the paper side.
+                    var near = CGPoint(x: Double(mid.x) + dy / len, y: Double(mid.y) - dx / len)
+                    if s.covers(s.world(near.scaled(Self.ppmm))) {
+                        near = CGPoint(x: Double(mid.x) - dy / len, y: Double(mid.y) + dx / len)
+                    }
+                    let p = s.world(near.scaled(Self.ppmm))
+                    #expect(!s.covers(p), "inside the cutout is paper")
+                    var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+                    let out = g.guide(StrokeSample(location: p), tools: [s]).location
+                    #expect(abs(s.contact(.cutout(index), at: out, offset: 0).distance - 2) < 0.05)
+                }
             }
         }
     }
@@ -334,7 +332,7 @@ struct CurveToolTests {
                 for q in slot {
                     let p = s.world(q.scaled(Self.ppmm))
                     #expect(s.outlineContains(p))
-                    #expect(abs(s.contact(.boundary, at: p, offset: 0).distance) > 2 * Self.ppmm, "at least 2 mm of plastic round a slot")
+                    #expect(abs(s.contact(.boundary, at: p, offset: 0).distance) > 1.5 * Self.ppmm, "plastic all round a cutout")
                 }
             }
         }
@@ -484,19 +482,20 @@ struct OverviewTests {
 struct ShapeTemplateTests {
     static let ppmm = 10.0
     static let kinds: [ToolKind] = [.ellipseTemplate, .squareTemplate, .hexTemplate]
+    static let all: [ToolKind] = kinds + [.arcTemplate]
 
     @Test func cutsFitInsideTheSheetWithoutTouching() {
-        for kind in Self.kinds {
+        for kind in Self.all {
             let size = ShapeTemplate.size(kind)
             let cuts = ShapeTemplate.cuts(kind)
             #expect(cuts.count >= 10)
-            #expect(size.width <= 165, "fits across an 11-inch screen held upright")
+            if kind != .arcTemplate { #expect(size.width <= 165, "fits across an 11-inch screen held upright") }
             for cut in cuts {
                 for p in cut.outline {
                     #expect(abs(p.x) < size.width / 2 - 2 && abs(p.y) < size.height / 2 - 2)
                 }
             }
-            for i in cuts.indices { for j in cuts.indices where j > i {
+            for i in cuts.indices { for j in cuts.indices where j > i && kind != .arcTemplate {
                 let a = cuts[i], b = cuts[j]
                 let apartX = abs(a.center.x - b.center.x) - a.halfSize.width - b.halfSize.width
                 let apartY = abs(a.center.y - b.center.y) - a.halfSize.height - b.halfSize.height
@@ -534,5 +533,53 @@ struct ShapeTemplateTests {
         // A 20 mm square's sides sit 10.25 mm from its centre.
         let cut = ShapeTemplate.cuts(.squareTemplate).first { $0.label == "20" }!
         #expect(abs(Double(cut.halfSize.width) - 10.25) < 1e-9)
+    }
+}
+
+
+struct RadiusTemplateTests {
+    static let ppmm = 10.0
+
+    func shape() -> ToolShape {
+        DeskTool(kind: .arcTemplate, pose: ToolPose(center: CGPoint(x: 3000, y: 3000), angle: 0)).shape(pixelsPerMillimeter: Self.ppmm)
+    }
+
+    @Test func slotsAreQuarterCirclesRoundOneCentre() {
+        let cuts = ShapeTemplate.cuts(.arcTemplate)
+        #expect(cuts.map { Double($0.halfSize.width) - ShapeTemplate.arcSlotWidthMM / 2 } == ShapeTemplate.arcRadiiMM)
+        let c = ShapeTemplate.arcCentre
+        for (cut, r) in zip(cuts, ShapeTemplate.arcRadiiMM) {
+            for p in cut.outline {
+                let d = hypot(Double(p.x - c.x), Double(p.y - c.y))
+                #expect(abs(d - r) <= ShapeTemplate.arcSlotWidthMM / 2 + 1e-6)
+                #expect(p.x >= c.x - 1.3 && p.y <= c.y + 1.3, "only the quarter toward the plate's middle")
+            }
+        }
+    }
+
+    @Test func slotsDoNotTouchEachOther() {
+        let radii = ShapeTemplate.arcRadiiMM
+        for (a, b) in zip(radii, radii.dropFirst()) {
+            #expect(b - a - ShapeTemplate.arcSlotWidthMM > 5)
+        }
+    }
+
+    @Test func aPencilInASlotDrawsAnArcAboutTheCentre() {
+        let s = shape()
+        let index = ShapeTemplate.arcRadiiMM.firstIndex(of: 100)!
+        let centre = s.world(ShapeTemplate.arcCentre.scaled(Self.ppmm))
+        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+        var radii: [Double] = []
+        for k in 0..<40 {
+            let a = -Double.pi / 2 + 0.15 + Double(k) / 40 * 1.2
+            // Pressed toward the slot's outer rim, wobbling inside the slot.
+            let r = (100.5 + 0.3 * sin(Double(k))) * Self.ppmm
+            let p = CGPoint(x: Double(centre.x) + cos(a) * r, y: Double(centre.y) + sin(a) * r)
+            let out = g.guide(StrokeSample(location: p), tools: [s]).location
+            #expect(abs(s.contact(.cutout(index), at: out, offset: 0).distance - 2) < 0.05)
+            radii.append(hypot(Double(out.x - centre.x), Double(out.y - centre.y)))
+        }
+        // Against the outer rim, the lead's centre sits 0.2 mm inside it.
+        #expect(radii.allSatisfy { abs($0 - ((100 + ShapeTemplate.arcSlotWidthMM / 2) * Self.ppmm - 2)) < 0.05 })
     }
 }

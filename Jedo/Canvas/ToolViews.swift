@@ -191,15 +191,22 @@ final class FrenchCurveView: OutlineToolView {
 
     override func bodyPath() -> UIBezierPath {
         let path = super.bodyPath()
+        let outward = Self.signedArea(outlineMM) > 0
         for outline in FrenchCurve.slots(kind) {
+            // A hole must wind the other way, or the shadow fills it.
+            let ordered = (Self.signedArea(outline) > 0) == outward ? outline.reversed() : outline
             let slot = UIBezierPath()
-            for (i, p) in outline.enumerated() {
+            for (i, p) in ordered.enumerated() {
                 i == 0 ? slot.move(to: pt(p)) : slot.addLine(to: pt(p))
             }
             slot.close()
-            path.append(slot.reversing())
+            path.append(slot)
         }
         return path
+    }
+
+    static func signedArea(_ points: [CGPoint]) -> Double {
+        zip(points, points.dropFirst() + points.prefix(1)).reduce(0) { $0 + Double($1.0.x * $1.1.y - $1.1.x * $1.0.y) } / 2
     }
 
     override func draw(_ rect: CGRect) {
@@ -224,16 +231,8 @@ final class FrenchCurveView: OutlineToolView {
         }
     }
 
-    /// Somewhere on the broad part of the body, clear of the slots.
-    private func labelSpot() -> CGPoint {
-        guard let form = FrenchCurve.form(kind) else { return .zero }
-        let spine = form.profile.spine(step: 0.5)
-        let firstSlotEnd = form.slots.first?.to ?? 0
-        let along = min(firstSlotEnd + 9, form.profile.lengthMM * 0.6)
-        let shift = CurveTools.centre(of: CurveTools.band(spine, every: 2))
-        let p = spine[min(Int(along / 0.5), spine.count - 1)].point
-        return pt(p.minus(shift))
-    }
+    /// The widest part of the plastic.
+    private func labelSpot() -> CGPoint { pt(FrenchCurve.labelSpot(kind)) }
 }
 
 /// A long bamboo hip curve: opaque, with its grain and a centimetre scale
@@ -370,6 +369,7 @@ final class ShapeTemplateView: OutlineToolView {
         switch kind {
         case .ellipseTemplate: UIColor(red: 0.70, green: 0.88, blue: 0.70, alpha: 0.34)
         case .squareTemplate: UIColor(red: 0.66, green: 0.80, blue: 0.95, alpha: 0.34)
+        case .arcTemplate: UIColor(red: 0.98, green: 0.76, blue: 0.22, alpha: 0.42)
         default: UIColor(red: 0.95, green: 0.72, blue: 0.80, alpha: 0.34)
         }
     }
@@ -412,10 +412,26 @@ final class ShapeTemplateView: OutlineToolView {
             }
             let label = cut.label as NSString
             let size = label.size(withAttributes: attributes)
-            let top = pt(CGPoint(x: cut.center.x, y: cut.center.y - half.height - 1.2))
-            label.draw(at: CGPoint(x: top.x - size.width / 2, y: top.y - size.height), withAttributes: attributes)
+            if let spot = cut.labelAt {
+                let at = pt(spot)
+                label.draw(at: CGPoint(x: at.x - size.width / 2, y: at.y - size.height / 2), withAttributes: attributes)
+            } else {
+                let top = pt(CGPoint(x: cut.center.x, y: cut.center.y - half.height - 1.2))
+                label.draw(at: CGPoint(x: top.x - size.width / 2, y: top.y - size.height), withAttributes: attributes)
+            }
         }
         ctx.strokePath()
+
+        if kind == .arcTemplate {
+            let c = ShapeTemplate.arcCentre
+            Self.ink.setStroke()
+            ctx.setLineWidth(0.6)
+            ctx.move(to: pt(CGPoint(x: c.x - 4, y: c.y)))
+            ctx.addLine(to: pt(CGPoint(x: c.x + 4, y: c.y)))
+            ctx.move(to: pt(CGPoint(x: c.x, y: c.y - 4)))
+            ctx.addLine(to: pt(CGPoint(x: c.x, y: c.y + 4)))
+            ctx.strokePath()
+        }
 
         let title = ShapeTemplate.name(kind) as NSString
         let titleAttributes: [NSAttributedString.Key: Any] = [

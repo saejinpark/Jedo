@@ -4,9 +4,9 @@ import Foundation
 /// The rigid tools that can lie on the paper.
 enum ToolKind: String, CaseIterable, Hashable, Sendable {
     /// The templates are taken out from one button.
-    static let templates: [ToolKind] = [.circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate]
+    static let templates: [ToolKind] = [.circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate]
     /// The French curves are taken out from one button.
-    static let frenchCurves: [ToolKind] = [.frenchCurveA, .frenchCurveB, .frenchCurveC, .frenchCurveD]
+    static let frenchCurves: [ToolKind] = [.frenchCurveA, .frenchCurveB, .frenchCurveC]
 
     case ruler
     /// 45° set square.
@@ -14,9 +14,9 @@ enum ToolKind: String, CaseIterable, Hashable, Sendable {
     /// 30°/60° set square.
     case setSquare60
     /// Templates (형판): sheets of round, elliptical and angular cut-outs.
-    case circleTemplate, ellipseTemplate, squareTemplate, hexTemplate
-    /// The French curves (운형자) of the set, each a different sweep of bends.
-    case frenchCurveA, frenchCurveB, frenchCurveC, frenchCurveD
+    case circleTemplate, ellipseTemplate, squareTemplate, hexTemplate, arcTemplate
+    /// The French curves (운형자) of the classic three-piece set.
+    case frenchCurveA, frenchCurveB, frenchCurveC
     /// A long bamboo hip curve, gently bending, as used in pattern drafting.
     case hipCurve
     /// A half-round protractor, turning about the centre of its base line.
@@ -43,7 +43,7 @@ struct DeskTool: Equatable, Sendable {
                     ToolShape.Hole(center: $0.center.scaled(ppmm), radius: CircleTemplate.holeRadiusMM($0.diameter) * ppmm)
                 }
             )
-        case .ellipseTemplate, .squareTemplate, .hexTemplate:
+        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate:
             let size = ShapeTemplate.size(kind)
             let w = Double(size.width) / 2 * ppmm, h = Double(size.height) / 2 * ppmm
             return ToolShape(
@@ -51,7 +51,7 @@ struct DeskTool: Equatable, Sendable {
                 outline: [CGPoint(x: -w, y: -h), CGPoint(x: w, y: -h), CGPoint(x: w, y: h), CGPoint(x: -w, y: h)],
                 cutouts: ShapeTemplate.cuts(kind).map { $0.outline.map { $0.scaled(ppmm) } }
             )
-        case .frenchCurveA, .frenchCurveB, .frenchCurveC, .frenchCurveD:
+        case .frenchCurveA, .frenchCurveB, .frenchCurveC:
             return ToolShape(pose: pose, outline: FrenchCurve.outline(kind).map { $0.scaled(ppmm) }, smooth: true,
                              cutouts: FrenchCurve.slots(kind).map { $0.map { $0.scaled(ppmm) } })
         case .hipCurve:

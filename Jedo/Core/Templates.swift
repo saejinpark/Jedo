@@ -12,6 +12,8 @@ struct TemplateCut: Sendable {
     var halfSize: CGSize
     /// Whether short marks on its axes help line it up with centre lines.
     var axisMarks: Bool
+    /// Where its size is printed, if not just above it.
+    var labelAt: CGPoint? = nil
 }
 
 /// The shape templates (형판) other than the circle template: thin tinted
@@ -42,6 +44,7 @@ enum ShapeTemplate {
         case .ellipseTemplate: "타원"
         case .squareTemplate: "사각·삼각"
         case .hexTemplate: "육각·팔각"
+        case .arcTemplate: "원주 1/4"
         default: "원"
         }
     }
@@ -121,8 +124,50 @@ enum ShapeTemplate {
             }
             out[kind] = (CGSize(width: width, height: height), cuts)
         }
+        out[.arcTemplate] = arcLayout()
         return out
     }()
+
+    // MARK: Quarter-circle radius template (원주 형판)
+
+    /// A square plate with quarter-circle slots round one corner, for arcs
+    /// too big for a circle template. The pencil runs in a slot; its marked
+    /// radius is the slot's middle.
+    static let arcPlateMM = 250.0
+    /// The slots' common centre, in from the plate's lower left corner.
+    static let arcCentreInsetMM = 12.0
+    static let arcRadiiMM: [Double] = [25, 40, 55, 70, 85, 100, 115, 130, 145, 160, 175, 190, 205, 220]
+    static let arcSlotWidthMM = 2.5
+    /// Each slot stops short of the plate's edges by this angle, so the plate holds together.
+    static let arcEndDegrees = 3.0
+
+    static var arcCentre: CGPoint {
+        CGPoint(x: -arcPlateMM / 2 + arcCentreInsetMM, y: arcPlateMM / 2 - arcCentreInsetMM)
+    }
+
+    private static func arcLayout() -> (size: CGSize, cuts: [TemplateCut]) {
+        let c = arcCentre, w = arcSlotWidthMM / 2
+        // Up the left side (−90°, pointing up) round to the bottom (0°, pointing right).
+        let from = (-90 + arcEndDegrees) * .pi / 180, to = -arcEndDegrees * .pi / 180
+        func at(_ r: Double, _ a: Double) -> CGPoint { CGPoint(x: Double(c.x) + cos(a) * r, y: Double(c.y) + sin(a) * r) }
+        let cuts = arcRadiiMM.map { r -> TemplateCut in
+            let steps = max(Int((to - from) * r / 1.0), 24)
+            var rim: [CGPoint] = (0...steps).map { at(r + w, from + (to - from) * Double($0) / Double(steps)) }
+            // Round end at `to`, from the outer rim to the inner.
+            rim += (1..<12).map { k in
+                let end = at(r, to), a = to + Double(k) / 12 * .pi
+                return CGPoint(x: Double(end.x) + cos(a) * w, y: Double(end.y) + sin(a) * w)
+            }
+            rim += (0...steps).map { at(r - w, to - (to - from) * Double($0) / Double(steps)) }
+            rim += (1..<12).map { k in
+                let end = at(r, from), a = from + .pi + Double(k) / 12 * .pi
+                return CGPoint(x: Double(end.x) + cos(a) * w, y: Double(end.y) + sin(a) * w)
+            }
+            return TemplateCut(outline: rim, center: c, label: "R\(Int(r))", halfSize: CGSize(width: r + w, height: r + w),
+                               axisMarks: false, labelAt: at(r + 6.5, -.pi / 4))
+        }
+        return (CGSize(width: arcPlateMM, height: arcPlateMM), cuts)
+    }
 
     static func size(_ kind: ToolKind) -> CGSize { layouts[kind]?.size ?? .zero }
     static func cuts(_ kind: ToolKind) -> [TemplateCut] { layouts[kind]?.cuts ?? [] }

@@ -188,10 +188,16 @@ private struct ToolGlyph: View {
                 path.addEllipse(in: CGRect(x: 4, y: 9, width: 4, height: 4))
                 path.addEllipse(in: CGRect(x: 10, y: 8.5, width: 5, height: 5))
                 path.addEllipse(in: CGRect(x: 16.5, y: 8, width: 6, height: 6).insetBy(dx: 0.5, dy: 0.5))
-            case .frenchCurveA, .frenchCurveB, .frenchCurveC, .frenchCurveD:
+            case .frenchCurveA, .frenchCurveB, .frenchCurveC:
                 let outline = FrenchCurve.outline(kind)
                 path = Self.fitted(outline, in: size)
                 for slot in FrenchCurve.slots(kind) { path.addPath(Self.fitted(slot, in: size, like: outline)) }
+            case .arcTemplate:
+                path.addRect(CGRect(x: 2, y: 2, width: w - 4, height: h - 4))
+                for r in [6.0, 11, 16] {
+                    path.move(to: CGPoint(x: 4, y: h - 4 - r))
+                    path.addArc(center: CGPoint(x: 4, y: h - 4), radius: r, startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
+                }
             case .ellipseTemplate, .squareTemplate, .hexTemplate:
                 let sheet = ShapeTemplate.size(kind)
                 let frame = [CGPoint(x: -sheet.width / 2, y: -sheet.height / 2), CGPoint(x: sheet.width / 2, y: sheet.height / 2)]
@@ -233,8 +239,8 @@ extension ToolKind {
         case .setSquare45: "45° 삼각자"
         case .setSquare60: "30°·60° 삼각자"
         case .circleTemplate: "원 형판"
-        case .ellipseTemplate, .squareTemplate, .hexTemplate: "\(ShapeTemplate.name(self)) 형판"
-        case .frenchCurveA, .frenchCurveB, .frenchCurveC, .frenchCurveD:
+        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate: "\(ShapeTemplate.name(self)) 형판"
+        case .frenchCurveA, .frenchCurveB, .frenchCurveC:
             "운형자 \((ToolKind.frenchCurves.firstIndex(of: self) ?? 0) + 1) · \(FrenchCurve.form(self)?.name ?? "")"
         case .hipCurve: "대나무 곡자"
         case .protractor: "각도기"

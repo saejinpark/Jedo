@@ -110,59 +110,57 @@ enum CurveTools {
     static let hipCurveMM: [CGPoint] = hipCurveEdgesMM.scale + hipCurveEdgesMM.inner.reversed()
 }
 
-/// A set of French curves (운형자): each a broad body sweeping into curves of
-/// steadily changing bend, with slots through it whose rims also guide.
-/// Between them, somewhere along an edge is a match for almost any curve.
+/// The classic set of three French curves (운형자), traced from a
+/// public-domain drawing (see `FrenchCurveData`). Each has an outline of
+/// steadily changing curvature and a cutout whose rim also guides.
 enum FrenchCurve {
-    struct Slot: Sendable {
-        var from: Double
-        var to: Double
-        var width: Double
-    }
-
     struct Form: Sendable {
         let kind: ToolKind
         /// What it is called in the set.
         let name: String
-        let profile: CurveProfile
-        let slots: [Slot]
+        /// About the outline's middle, in millimetres.
+        let outline: [CGPoint]
+        let slots: [[CGPoint]]
     }
 
     static let forms: [Form] = [
-        Form(kind: .frenchCurveA, name: "말림",
-             profile: CurveProfile(lengthMM: 150, bends: [(0, 0), (35, 0), (150, 1 / 18.0)], width: (46, 9), widthExponent: 1.3),
-             slots: [Slot(from: 12, to: 62, width: 10)]),
-        Form(kind: .frenchCurveB, name: "S자",
-             profile: CurveProfile(lengthMM: 170, bends: [(0, 1 / 55.0), (60, 0), (170, -1 / 24.0)], width: (36, 10), widthExponent: 1.2),
-             slots: [Slot(from: 18, to: 66, width: 8)]),
-        Form(kind: .frenchCurveC, name: "완만",
-             profile: CurveProfile(lengthMM: 210, bends: [(0, 1 / 600.0), (210, 1 / 48.0)], width: (30, 12)),
-             slots: [Slot(from: 22, to: 105, width: 9), Slot(from: 125, to: 165, width: 6)]),
-        Form(kind: .frenchCurveD, name: "작은 말림",
-             profile: CurveProfile(lengthMM: 100, bends: [(0, 0), (100, 1 / 14.0)], width: (30, 7), widthExponent: 1.4),
-             slots: [Slot(from: 10, to: 40, width: 7)]),
+        form(.frenchCurveA, "큰 것", FrenchCurveData.largeOutline, FrenchCurveData.largeCutout),
+        form(.frenchCurveB, "중간", FrenchCurveData.mediumOutline, FrenchCurveData.mediumCutout),
+        form(.frenchCurveC, "작은 것", FrenchCurveData.smallOutline, FrenchCurveData.smallCutout),
     ]
 
-    static func form(_ kind: ToolKind) -> Form? { forms.first { $0.kind == kind } }
+    private static func form(_ kind: ToolKind, _ name: String, _ outline: [(Double, Double)], _ cutout: [(Double, Double)]) -> Form {
+        let rim = outline.map { CGPoint(x: $0.0, y: $0.1) }
+        let shift = CurveTools.centre(of: rim)
+        return Form(kind: kind, name: name, outline: rim.map { $0.minus(shift) },
+                    slots: [cutout.map { CGPoint(x: $0.0, y: $0.1).minus(shift) }])
+    }
 
-    /// Each form's outline and slots, about the outline's middle.
-    static let parts: [ToolKind: (outline: [CGPoint], slots: [[CGPoint]])] = {
-        var out: [ToolKind: (outline: [CGPoint], slots: [[CGPoint]])] = [:]
+    static func form(_ kind: ToolKind) -> Form? { forms.first { $0.kind == kind } }
+    static func outline(_ kind: ToolKind) -> [CGPoint] { form(kind)?.outline ?? [] }
+    static func slots(_ kind: ToolKind) -> [[CGPoint]] { form(kind)?.slots ?? [] }
+
+    /// The point of the plastic farthest from any edge, where the set number goes.
+    static let labelSpots: [ToolKind: CGPoint] = {
+        var out: [ToolKind: CGPoint] = [:]
         for form in forms {
-            let step = 0.5
-            let spine = form.profile.spine(step: step)
-            let outline = CurveTools.band(spine, every: 2)
-            let slots = form.slots.map { slot in
-                CurveTools.band(Array(spine[Int(slot.from / step)...Int(slot.to / step)]), every: 2, width: slot.width)
+            let shape = ToolShape(pose: ToolPose(center: .zero, angle: 0), outline: form.outline, smooth: true, cutouts: form.slots)
+            let xs = form.outline.map(\.x), ys = form.outline.map(\.y)
+            var best = (point: CGPoint.zero, room: -1.0)
+            for x in stride(from: Double(xs.min() ?? 0), through: Double(xs.max() ?? 0), by: 1.5) {
+                for y in stride(from: Double(ys.min() ?? 0), through: Double(ys.max() ?? 0), by: 1.5) {
+                    let p = CGPoint(x: x, y: y)
+                    guard shape.covers(p) else { continue }
+                    let room = shape.guidingEdges.map { -shape.contact($0, at: p, offset: 0).distance }.min() ?? 0
+                    if room > best.room { best = (p, room) }
+                }
             }
-            let shift = CurveTools.centre(of: outline)
-            out[form.kind] = (outline.map { $0.minus(shift) }, slots.map { $0.map { $0.minus(shift) } })
+            out[form.kind] = best.point
         }
         return out
     }()
 
-    static func outline(_ kind: ToolKind) -> [CGPoint] { parts[kind]?.outline ?? [] }
-    static func slots(_ kind: ToolKind) -> [[CGPoint]] { parts[kind]?.slots ?? [] }
+    static func labelSpot(_ kind: ToolKind) -> CGPoint { labelSpots[kind] ?? .zero }
 }
 
 extension CGPoint {
