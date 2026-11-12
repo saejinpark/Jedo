@@ -25,6 +25,8 @@ final class DrawingSession {
         let id: Int
         let name: String
         let isCarbon: Bool
+        /// The sheet's symbol in the panel.
+        let symbol: String
         let hidden: Bool
         /// Whether it can go up or down a place (the carbon stays at the bottom).
         let canRaise: Bool
@@ -42,7 +44,20 @@ final class DrawingSession {
     var eraserInHand = false {
         didSet {
             canvas?.eraserInHand = eraserInHand
-            if eraserInHand { show(.eraser) }
+            if eraserInHand {
+                if knifeInHand { knifeInHand = false }
+                show(.eraser)
+            }
+        }
+    }
+    /// Whether the hand holds the knife, so the pencil cuts tone and a finger peels it.
+    var knifeInHand = false {
+        didSet {
+            canvas?.knifeInHand = knifeInHand
+            if knifeInHand {
+                if eraserInHand { eraserInHand = false }
+                show(.knife)
+            }
         }
     }
     /// Whether the compass is out, so a finger held still plants its needle.
@@ -68,12 +83,15 @@ final class DrawingSession {
         case compass
         /// The eraser was picked up.
         case eraser
+        /// The knife was picked up.
+        case knife
 
         var text: String {
             switch self {
             case .pencil: "선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡고 컴퍼스 바늘을 꽂습니다."
             case .compass: "손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다."
             case .eraser: "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
+            case .knife: "펜슬로 그으면 톤에 칼선이 납니다. 잘린 조각을 손가락으로 톡 치면 떼어집니다."
             }
         }
 
@@ -82,6 +100,7 @@ final class DrawingSession {
             case .pencil: "applepencil.tip"
             case .compass: "compass.drawing"
             case .eraser: "eraser"
+            case .knife: "scissors"
             }
         }
     }
@@ -133,6 +152,11 @@ final class DrawingSession {
         gridSheets.append(GridSheet(id: id, pattern: pattern))
     }
 
+    /// Lays a new sheet of tone on the paper.
+    func addTone(_ pattern: TonePattern) {
+        _ = canvas?.addToneLayer(pattern)
+    }
+
     /// Takes a grid sheet away, with what was drawn on it.
     func removeSheet(_ id: Int) {
         canvas?.removeGridLayer(id)
@@ -150,6 +174,7 @@ final class DrawingSession {
     func layersChanged(_ layers: [PaperLayer], hidden: Set<Int>) {
         layerRows = layers.enumerated().reversed().map { i, layer in
             LayerRow(id: layer.id, name: Self.name(of: layer, among: layers), isCarbon: layer.kind == .carbon,
+                     symbol: layer.kind == .carbon ? "square.fill" : layer.kind.isTone ? "circle.grid.3x3.fill" : "squareshape.split.3x3",
                      hidden: hidden.contains(layer.id), canRaise: i < layers.count - 1, canLower: i > 0)
         }
     }

@@ -28,6 +28,9 @@ final class CanvasView: UIView {
 
     /// Whether the hand holds the eraser, so a finger rubbing the paper erases.
     var eraserInHand = false
+    /// Whether the hand holds the knife: the pencil cuts tone instead of
+    /// drawing, and a finger tapping a cut-off piece of tone peels it away.
+    var knifeInHand = false
 
     /// Tools lying on the paper, bottom first. Canvas pixels.
     private(set) var tools: [DeskTool] = []
@@ -85,9 +88,34 @@ final class CanvasView: UIView {
     /// Surfaces the stroke in progress is marking.
     private var marking: [SurfaceID] = []
     private var markingErases = false
-    /// Strokes and rubs, newest last, by the surfaces each one changed.
-    private var undoStack: [[SurfaceID]] = []
-    private var redoStack: [[SurfaceID]] = []
+    /// Strokes, rubs, cuts and peels, newest last.
+    private var undoStack: [UndoStep] = []
+    private var redoStack: [UndoStep] = []
+
+    private enum UndoStep {
+        /// A stroke or rub, by the surfaces it changed.
+        case marks([SurfaceID])
+        /// A cut or peel, with each sheet of tone before and after.
+        case tones([Int: (before: ToneCut, after: ToneCut)])
+
+        func without(_ id: Int) -> UndoStep? {
+            switch self {
+            case .marks(let ids):
+                let left = ids.filter { $0 != .sheet(id) && $0 != .sheetCopy(id) }
+                return left.isEmpty ? nil : .marks(left)
+            case .tones(let changes):
+                let left = changes.filter { $0.key != id }
+                return left.isEmpty ? nil : .tones(left)
+            }
+        }
+    }
+
+    /// What the knife has left of each sheet of tone.
+    private var toneCuts: [Int: ToneCut] = [:]
+    /// While the knife cuts: each sheet of tone as it was before.
+    private var cutting: [Int: ToneCut]?
+    private var lastCut: CGPoint?
+    private var cutStart: CGPoint?
     private var activeTouch: UITouch?
     private var pending = PendingSampleQueue<NSNumber>()
     private var lastPredicted: [StrokeSample] = []
@@ -292,7 +320,10 @@ final class CanvasView: UIView {
 
     func undo() {
         guard activeTouch == nil, let step = undoStack.popLast() else { return }
-        for id in step { _ = surface(id)?.sheet.undo() }
+        switch step {
+        case .marks(let ids): for id in ids { _ = surface(id)?.sheet.undo() }
+        case .tones(let changes): for (id, change) in changes { setTone(id, change.before) }
+        }
         redoStack.append(step)
         refresh()
         notifyHistory()
@@ -300,7 +331,10 @@ final class CanvasView: UIView {
 
     func redo() {
         guard activeTouch == nil, let step = redoStack.popLast() else { return }
-        for id in step { _ = surface(id)?.sheet.redo() }
+        switch step {
+        case .marks(let ids): for id in ids { _ = surface(id)?.sheet.redo() }
+        case .tones(let changes): for (id, change) in changes { setTone(id, change.after) }
+        }
         undoStack.append(step)
         refresh()
         notifyHistory()
@@ -530,6 +564,79 @@ final class CanvasView: UIView {
         return layer.id
     }
 
+    /// Lays a new sheet of tone on the paper. Returns its id.
+    func addToneLayer(_ pattern: TonePattern) -> Int? {
+        guard let sheet, var pose = screenPose(at: CGPoint(x: 0.5, y: 0.5)) else { return nil }
+        let count = layers.filter(\.kind.isTone).count
+        let step = Self.sheetCascadeMM * sheet.pixelsPerMillimeter * Double(count % 6)
+        pose.center.x -= step
+        pose.center.y += step
+        let layer = PaperLayer(id: nextLayerID, kind: .tone(pattern), pose: pose)
+        nextLayerID += 1
+        let (w, h) = layer.kind.sizeMM
+        layers.append(layer)
+        showLayer(layer, surfaces: [], sheet: sheet)
+        setTone(layer.id, ToneCut(widthMM: w, heightMM: h))
+        layersChanged()
+        return layer.id
+    }
+
+    private func setTone(_ id: Int, _ cut: ToneCut) {
+        toneCuts[id] = cut
+        layerViews[id]?.showTone(cut)
+    }
+
+    /// A point on the paper in a sheet's own millimetres.
+    private func sheetMillimetres(_ layer: PaperLayer, _ p: CGPoint) -> CGPoint {
+        let ppmm = sheet?.pixelsPerMillimeter ?? 1
+        let q = layer.surfacePoint(p, pixelsPerMillimeter: ppmm)
+        return CGPoint(x: Double(q.x) / ppmm, y: Double(q.y) / ppmm)
+    }
+
+    /// Whether a sheet is there to be taken hold of at `p`: tone only where some is left.
+    private func toneLeft(_ i: Int, near p: CGPoint) -> Bool {
+        guard layers[i].kind.isTone else { return true }
+        return toneCuts[layers[i].id]?.hasTone(near: sheetMillimetres(layers[i], p), radius: Self.gripMarginMM) ?? false
+    }
+
+    /// Cuts every sheet of tone along the knife's path so far.
+    private func cut(along samples: [StrokeSample]) {
+        guard cutting != nil else { return }
+        var touched: Set<Int> = []
+        for s in samples {
+            if cutStart == nil { cutStart = s.location }
+            defer { lastCut = s.location }
+            guard let from = lastCut else { continue }
+            for layer in layers where layer.kind.isTone && !hiddenLayers.contains(layer.id) {
+                guard var tone = toneCuts[layer.id] else { continue }
+                let before = tone
+                if tone.cut(from: sheetMillimetres(layer, from), to: sheetMillimetres(layer, s.location)) {
+                    if cutting?[layer.id] == nil { cutting?[layer.id] = before }
+                    toneCuts[layer.id] = tone
+                    touched.insert(layer.id)
+                }
+            }
+        }
+        for id in touched { if let tone = toneCuts[id] { layerViews[id]?.showTone(tone) } }
+    }
+
+    /// Lifts the cut-off piece of tone under a fingertip, from the top sheet with tone there.
+    private func peel(at p: CGPoint) -> Bool {
+        for layer in layers.reversed() where layer.kind.isTone && !hiddenLayers.contains(layer.id) {
+            guard var tone = toneCuts[layer.id] else { continue }
+            let q = sheetMillimetres(layer, p)
+            guard tone.isKept(at: q) else { continue }
+            let before = tone
+            guard tone.peel(at: q) else { return false }
+            setTone(layer.id, tone)
+            undoStack.append(.tones([layer.id: (before, tone)]))
+            redoStack.removeAll()
+            notifyHistory()
+            return true
+        }
+        return false
+    }
+
     /// Takes a grid sheet off the paper, with what was drawn on it.
     func removeGridLayer(_ id: Int) {
         guard activeTouch == nil || !marking.contains(.sheet(id)) else { return }
@@ -537,11 +644,11 @@ final class CanvasView: UIView {
         layerViews.removeValue(forKey: id)?.removeFromSuperview()
         layerSurfaces[id] = nil
         layerCopies[id] = nil
+        toneCuts[id] = nil
         layerHolders[id] = nil
         hiddenLayers.remove(id)
-        let gone: Set<SurfaceID> = [.sheet(id), .sheetCopy(id)]
-        undoStack = undoStack.map { $0.filter { !gone.contains($0) } }.filter { !$0.isEmpty }
-        redoStack = redoStack.map { $0.filter { !gone.contains($0) } }.filter { !$0.isEmpty }
+        undoStack = undoStack.compactMap { $0.without(id) }
+        redoStack = redoStack.compactMap { $0.without(id) }
         layersChanged()
         notifyHistory()
     }
@@ -609,7 +716,7 @@ final class CanvasView: UIView {
         let visible = layers.indices.filter { !hiddenLayers.contains(layers[$0].id) }
         func onBody(_ i: Int, _ p: CGPoint) -> Bool {
             let outline = layers[i].outline(pixelsPerMillimeter: ppmm)
-            return Polygon.contains(p, outline) || Polygon.distance(p, to: outline) <= outer
+            return (Polygon.contains(p, outline) || Polygon.distance(p, to: outline) <= outer) && toneLeft(i, near: p)
         }
 
         // A second finger anywhere on a sheet one finger already holds.
@@ -618,9 +725,11 @@ final class CanvasView: UIView {
             return true
         }
         // By the edge.
+        // (With the knife in hand a finger on tone peels it; two fingers still move it.)
         if let i = visible.last(where: {
             layers[$0].edgeBandContains(point, inner: Self.sheetGripMM * ppmm, outer: outer, pixelsPerMillimeter: ppmm)
                 && layerHolders[layers[$0].id, default: []].isEmpty
+                && toneLeft($0, near: point) && !(knifeInHand && layers[$0].kind.isTone)
         }) {
             hold(i, with: [(touch, point)])
             return true
@@ -669,7 +778,8 @@ final class CanvasView: UIView {
     private func layerStack() -> LayerStack {
         guard let sheet else { return LayerStack() }
         let ppmm = sheet.pixelsPerMillimeter
-        return LayerStack(sheets: layers.filter { !hiddenLayers.contains($0.id) }.map {
+        // Tone takes no pencil: the line goes onto whatever is under it.
+        return LayerStack(sheets: layers.filter { !hiddenLayers.contains($0.id) && !$0.kind.isTone }.map {
             LayerStack.Sheet(id: $0.id, outline: $0.outline(pixelsPerMillimeter: ppmm), isCarbon: $0.kind == .carbon)
         }, paper: paperOutline)
     }
@@ -828,6 +938,16 @@ final class CanvasView: UIView {
         let grade = currentGrade()
         marking = []
         markingErases = erasing
+        if knifeInHand, !erasing {
+            // The knife: follows the tools like the pencil, but cuts tone and leaves no line.
+            cutting = [:]
+            lastCut = nil
+            cutStart = nil
+            guide = makeGuide(startingAt: sample(touch).location, grade: grade, sheet: sheet)
+            notifyHistory()
+            feed(touch, event: event)
+            return
+        }
         for (id, mask) in layerStack().targets(erasing: erasing) {
             guard let target = surface(id)?.sheet else { continue }
             let local = mask.mapped(onSurface(id).0)
@@ -847,6 +967,10 @@ final class CanvasView: UIView {
 
     /// Lays samples on the paper into every surface the stroke is marking.
     private func lay(_ samples: [StrokeSample], predicted: [StrokeSample]) {
+        if cutting != nil {
+            cut(along: samples)
+            return
+        }
         // A sheet held while drawing moves its edge under the pencil.
         let masks = layerHolders.isEmpty ? nil : Dictionary(layerStack().targets(erasing: markingErases).map { ($0.surface, $0.mask) },
                                                             uniquingKeysWith: { a, _ in a })
@@ -861,15 +985,40 @@ final class CanvasView: UIView {
 
     /// Lays the stroke down on every surface it marked, as one step to undo.
     private func finishMarking() {
+        if let before = cutting {
+            cutting = nil
+            defer { lastCut = nil; cutStart = nil }
+            // A knife merely touched down cuts nothing. (In the simulator, where
+            // there is no lone fingertip, that click peels instead.)
+            if let start = cutStart, let end = lastCut, let sheet,
+               hypot(Double(end.x - start.x), Double(end.y - start.y)) < sheet.pixelsPerMillimeter {
+                for (id, old) in before { setTone(id, old) }
+                if Self.mouseDraws { _ = peel(at: end) }
+                return
+            }
+            var changes: [Int: (before: ToneCut, after: ToneCut)] = [:]
+            for (id, old) in before { if let now = toneCuts[id], now != old { changes[id] = (old, now) } }
+            if !changes.isEmpty {
+                undoStack.append(.tones(changes))
+                redoStack.removeAll()
+            }
+            return
+        }
         let changed = marking.filter { surface($0)?.sheet.endStroke() == true }
         marking = []
         if !changed.isEmpty {
-            undoStack.append(changed)
+            undoStack.append(.marks(changed))
             redoStack.removeAll()
         }
     }
 
     private func cancelMarking() {
+        if let before = cutting {
+            for (id, old) in before { setTone(id, old) }
+            cutting = nil
+            lastCut = nil
+            cutStart = nil
+        }
         for id in marking { surface(id)?.sheet.cancelStroke() }
         marking = []
     }
@@ -906,6 +1055,8 @@ final class CanvasView: UIView {
             if needleIn, let compass, needleFinger == nil, let sheet,
                compass.needleHeadContains(point, radius: Self.needleHeadMM * sheet.pixelsPerMillimeter) {
                 pullNeedle()
+            } else if knifeInHand, activeTouch == nil, peel(at: point) {
+                continue
             } else if isDeliberateFinger(touch) {
                 onFingerTouch?()
             }
@@ -914,7 +1065,7 @@ final class CanvasView: UIView {
 
     /// A fingertip on the paper while the pencil is idle, not a palm resting as you draw.
     private func isDeliberateFinger(_ touch: UITouch) -> Bool {
-        guard !Self.mouseDraws, !eraserInHand, touch.type == .direct, activeTouch == nil else { return false }
+        guard !Self.mouseDraws, !eraserInHand, !knifeInHand, touch.type == .direct, activeTouch == nil else { return false }
         let pencilIdle = CACurrentMediaTime() - lastPencilActivity > Self.palmGrace
         return pencilIdle && touch.majorRadius < Self.fingertipRadius
     }

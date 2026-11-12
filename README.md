@@ -61,6 +61,14 @@ CAD가 아니다. 치수 입력, 도형 자동 생성은 없다. 레이어는 �
 - 지우개도 맨 위에 있는 것을 지운다. 먹지에 덮인 곳은 닿지 않는다.
 - 한 획이 여러 장에 걸쳐 그려져도 실행 취소 한 번에 함께 돌아간다. 모눈종이를 치우면 그 위에 그린 것도 함께 사라진다.
 
+### 톤과 커터
+
+- 격자 버튼 메뉴의 "톤 얹기"에서 망점 10%·30%·50%, 사선, 그라데이션 톤(12×10cm)을 얹는다. 모눈종이처럼 옮기고 돌리고 레이어 패널에서 순서를 바꾼다.
+- 톤은 연필이 먹지 않는다. 연필은 톤 아래(모눈종이나 용지)에 그려진다. 밑그림 위에 톤을 붙이는 순서로 쓴다.
+- 아랫줄 가위 버튼으로 커터를 든다. 커터를 든 동안 펜슬로 그으면 선 대신 톤에 칼선이 난다. 칼도 자·삼각자·형판·운형자 가장자리를 그대로 따라간다. 1mm보다 짧게 찍기만 하면 자르지 않는다.
+- 커터를 든 채 손가락으로 칼선에 둘러싸인 조각을 톡 치면 그 조각이 떨어진다. 조각을 오려 남기려면 둘레를 떼고, 구멍을 내려면 안쪽을 뗀다. 칼선이 아무것도 끊어 놓지 않았으면 떨어지지 않는다(시트 전체가 날아가지 않게).
+- 자르기와 떼기는 각각 실행 취소 한 번이다.
+
 ### 지우개
 
 - 오른쪽 아래 지우개 버튼으로 들고 내려놓는다. 지우개를 든 동안 손가락으로 문지르면 지워지고, 펜슬은 그대로 긋는다. "펜슬이 지우개" 시안과 비교해서 고른 동작이다.
@@ -107,6 +115,7 @@ xcodebuild -project Jedo.xcodeproj -scheme Jedo -destination 'platform=iOS Simul
   - `DeskTools` 자·삼각자·원 형판·각도기의 모양과 치수, `Templates` 타원·사각삼각·육각팔각 형판, `FrenchCurveData`·`FrenchCurve` 따 온 운형자 세 개, `CurveTools` 대나무 곡자(중심선의 휨 분포로 정의), `Ruler` 자
   - `Eraser`, `RubTracker` 지우개 문지르기와 되돌아올 때마다 한 번 더 지우기
   - `Compass`, `ArcGuide` 컴퍼스의 바늘·다리 폭, 원호 따라 긋기와 덧긋기 감지
+  - `Tone` 톤 무늬와 칼선·떼어내기(`ToneCut`)
   - `PaperLayers` 모눈종이·먹지의 모양과 인쇄 눈금, 획이 어느 장에 그려지는지(`LayerStack`), 장 가장자리에서 획을 자르는 `StrokeMask`
   - `StrokeGuide` 한 획이 기대는 도구(자 가장자리 또는 컴퍼스), `LongPress` 손가락 길게 누르기·두드리기 구분
 - `Jedo/Canvas/` — 펜슬 입력을 받는 UIKit 뷰. 종이는 512px 타일 이미지, 흑연은 바뀐 128px 타일만 다시 그린다(`GraphiteSurface`: 용지, 먹지 자국, 모눈종이마다 하나씩). `PaperLayerView`가 모눈종이·먹지를 그리고 `PaperDesk`가 화면 이동과 지도를 맡는다.
@@ -144,7 +153,8 @@ xcodebuild -project Jedo.xcodeproj -scheme Jedo -destination 'platform=iOS Simul
 | 종이결이 얼마나 드러나는지(빈 종이의 음영, 흑연이 골까지 드는 정도, 심의 거친 정도) | `GrainStyle.standard` |
 | 세게 누를 때 종이결 골이 얼마나 메워지는지 | `PencilDynamics.pressureGrain` |
 | 흑연·종이·먹지 자국 색 | `GraphiteShading` |
-| 모눈종이 무늬별 크기, 먹지 크기 | `GridPattern.sizeMM`, `SheetKind.carbonSizeMM` |
+| 모눈종이 무늬별 크기, 먹지·톤 크기 | `GridPattern.sizeMM`, `SheetKind.carbonSizeMM`, `toneSizeMM` |
+| 톤 망점 간격·사선 굵기, 칼선 해상도 | `TonePattern.pitchMM`, `lineWidthMM`, `ToneCut.cellMM` |
 | 모눈 선 색·굵기, 모눈종이 바탕 투명도, 먹지 색 | `PaperLayerView` |
 | 모눈종이를 잡는 가장자리 폭, 새 장을 비켜 놓는 거리 | `CanvasView.sheetGripMM`, `sheetCascadeMM` |
 

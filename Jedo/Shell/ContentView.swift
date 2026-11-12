@@ -28,6 +28,11 @@ struct ContentView: View {
             }
 
             if session.paper != nil {
+                HStack(spacing: 8) {
+                RoundToolButton(icon: .symbol("square.dashed"), label: session.edgeRulers ? "가장자리 눈금 끄기" : "가장자리 눈금 켜기",
+                                enabled: true, selected: session.edgeRulers) {
+                    session.edgeRulers.toggle()
+                }
                 Menu {
                     Button("종이만") { session.export(includeSheets: false) }
                     Button("얹힌 모눈종이·먹지까지") { session.export(includeSheets: true) }
@@ -37,6 +42,7 @@ struct ContentView: View {
                 .menuStyle(.button)
                 .buttonStyle(.plain)
                 .accessibilityLabel("내보내기")
+                }
                 .padding(.top, 34)
                 .padding(.trailing, 20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -89,10 +95,6 @@ private struct ToolControls: View {
                     session.carbonOnDesk.toggle()
                 }
                 LayersButton(session: session)
-                RoundToolButton(icon: .symbol("square.dashed"), label: session.edgeRulers ? "가장자리 눈금 끄기" : "가장자리 눈금 켜기",
-                                enabled: true, selected: session.edgeRulers) {
-                    session.edgeRulers.toggle()
-                }
                 RoundToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
                                 enabled: true, selected: session.compassOnDesk) {
                     session.compassOnDesk.toggle()
@@ -100,6 +102,10 @@ private struct ToolControls: View {
                 RoundToolButton(icon: .symbol("eraser"), label: session.eraserInHand ? "지우개 내려놓기" : "지우개 들기",
                                 enabled: true, selected: session.eraserInHand) {
                     session.eraserInHand.toggle()
+                }
+                RoundToolButton(icon: .symbol("scissors"), label: session.knifeInHand ? "커터 내려놓기" : "커터 들기",
+                                enabled: true, selected: session.knifeInHand) {
+                    session.knifeInHand.toggle()
                 }
                 .padding(.trailing, 8)
                 RoundToolButton(icon: .symbol("arrow.uturn.backward"), label: "실행 취소", enabled: session.canUndo) {
@@ -262,12 +268,17 @@ private struct SheetMenu: View {
                     Button(pattern.name) { session.addSheet(pattern) }
                 }
             }
+            Section("톤 얹기") {
+                ForEach(TonePattern.allCases, id: \.self) { pattern in
+                    Button(pattern.name) { session.addTone(pattern) }
+                }
+            }
         } label: {
             RoundToolFace(icon: .symbol("squareshape.split.3x3"), enabled: true, selected: !session.gridSheets.isEmpty)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
-        .accessibilityLabel("모눈종이 얹기")
+        .accessibilityLabel("모눈종이·톤 얹기")
     }
 }
 
@@ -303,7 +314,7 @@ private struct LayersPanel: View {
             }
             ForEach(session.layerRows) { row in
                 HStack(spacing: 14) {
-                    Image(systemName: row.isCarbon ? "square.fill" : "squareshape.split.3x3")
+                    Image(systemName: row.symbol)
                         .frame(width: 22)
                         .foregroundStyle(row.isCarbon ? Palette.ink : Color(PaperLayerView.rulingColour))
                     Text(row.name).opacity(row.hidden ? 0.4 : 1)

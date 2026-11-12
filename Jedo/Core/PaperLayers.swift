@@ -108,6 +108,14 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
 enum SheetKind: Hashable, Sendable {
     case grid(GridPattern)
     case carbon
+    /// Screen tone: printed film that is cut with the knife and peeled.
+    /// The pencil passes it by; it is laid over a drawing.
+    case tone(TonePattern)
+
+    /// A sheet of tone, as cut from a larger one.
+    static let toneSizeMM = (width: 120.0, height: 100.0)
+
+    var isTone: Bool { if case .tone = self { true } else { false } }
 
     /// Cut smaller than the screen, so its edges stay in reach.
     static let carbonSizeMM = (width: 120.0, height: 170.0)
@@ -116,6 +124,7 @@ enum SheetKind: Hashable, Sendable {
         switch self {
         case .grid(let pattern): pattern.sizeMM
         case .carbon: Self.carbonSizeMM
+        case .tone: Self.toneSizeMM
         }
     }
 
@@ -123,6 +132,7 @@ enum SheetKind: Hashable, Sendable {
         switch self {
         case .grid(let pattern): pattern.name
         case .carbon: "먹지"
+        case .tone(let pattern): "톤 · \(pattern.name)"
         }
     }
 

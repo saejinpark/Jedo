@@ -260,3 +260,52 @@ struct EdgeScaleTests {
         #expect(scale.paperSpan == 0...40)
     }
 }
+
+struct ToneCutTests {
+    @Test func aCutAcrossTheSheetLetsOneSidePeelAway() {
+        var tone = ToneCut(widthMM: 20, heightMM: 10)
+        let all = tone.keptCount
+        let peeled1 = tone.peel(at: CGPoint(x: 5, y: 5))
+        #expect(!peeled1, "nothing cut away yet: the whole sheet stays")
+        tone.cut(from: CGPoint(x: 10, y: -1), to: CGPoint(x: 10, y: 11))
+        let peeled2 = tone.peel(at: CGPoint(x: 15, y: 5))
+        #expect(peeled2)
+        #expect(!tone.isKept(at: CGPoint(x: 15, y: 5)))
+        #expect(tone.isKept(at: CGPoint(x: 5, y: 5)))
+        #expect(tone.keptCount < all / 2 + all / 10)
+    }
+
+    @Test func aDiagonalCutHasNoGapsToSlipThrough() {
+        var tone = ToneCut(widthMM: 20, heightMM: 20)
+        tone.cut(from: CGPoint(x: -1, y: -1), to: CGPoint(x: 21, y: 21.7))
+        let peeled3 = tone.peel(at: CGPoint(x: 15, y: 3))
+        #expect(peeled3)
+        #expect(tone.isKept(at: CGPoint(x: 3, y: 15)), "the other side stays")
+    }
+
+    @Test func cuttingRoundAShapeLiftsJustTheShape() {
+        var tone = ToneCut(widthMM: 40, heightMM: 40)
+        let ring = (0...64).map { i -> CGPoint in
+            let a = Double(i) / 64 * 2 * .pi
+            return CGPoint(x: 20 + 8 * cos(a), y: 20 + 8 * sin(a))
+        }
+        for (a, b) in zip(ring, ring.dropFirst()) { tone.cut(from: a, to: b) }
+        let peeled4 = tone.peel(at: CGPoint(x: 20, y: 20))
+        #expect(peeled4)
+        #expect(!tone.isKept(at: CGPoint(x: 20, y: 20)))
+        #expect(tone.isKept(at: CGPoint(x: 2, y: 2)))
+        // Or keep the shape and lift what is round it.
+        var other = ToneCut(widthMM: 40, heightMM: 40)
+        for (a, b) in zip(ring, ring.dropFirst()) { other.cut(from: a, to: b) }
+        let peeled5 = other.peel(at: CGPoint(x: 2, y: 2))
+        #expect(peeled5)
+        #expect(other.isKept(at: CGPoint(x: 20, y: 20)))
+        #expect(!other.isKept(at: CGPoint(x: 35, y: 35)))
+    }
+
+    @Test func gradationDarkensAcrossTheSheet() {
+        #expect(TonePattern.gradation.coverage(atX: 0, width: 100) < TonePattern.gradation.coverage(atX: 100, width: 100))
+        let r = TonePattern.dotRadius(coverage: 0.5)
+        #expect(abs(Double.pi * r * r / (TonePattern.pitchMM * TonePattern.pitchMM) - 0.5) < 1e-9)
+    }
+}
