@@ -50,6 +50,12 @@ struct LongPress<Key: Hashable> {
     /// Where a press still being followed began.
     func start(of key: Key) -> CGPoint? { presses[key]?.start }
 
+    /// Presses that have not moved yet, with where they started: fingers
+    /// that might still turn out to be part of a two-finger hold.
+    func still() -> [(key: Key, point: CGPoint)] {
+        presses.filter { !$0.value.moved }.sorted { $0.value.time < $1.value.time }.map { ($0.key, $0.value.start) }
+    }
+
     mutating func cancel(_ key: Key) {
         presses.removeValue(forKey: key)
     }

@@ -543,21 +543,52 @@ final class CanvasView: UIView {
     }
 
     /// A fingertip on a sheet's edge picks it up and lays it over the other grid sheets.
+    /// One fingertip picks a sheet up by its edge. Two fingers pick it up
+    /// anywhere on it, to move and turn it: a second finger joins one already
+    /// holding the sheet, or one resting still on it.
     private func grabLayer(_ touch: UITouch, at point: CGPoint) -> Bool {
         guard let sheet else { return false }
         let ppmm = sheet.pixelsPerMillimeter
-        guard let i = layers.indices.last(where: {
-            !hiddenLayers.contains(layers[$0].id) && layers[$0].edgeBandContains(point, inner: Self.sheetGripMM * ppmm, outer: Self.gripMarginMM * ppmm, pixelsPerMillimeter: ppmm)
-                && layerHolders[layers[$0].id, default: []].count < 2
-        }) else { return false }
+        let outer = Self.gripMarginMM * ppmm
+        let visible = layers.indices.filter { !hiddenLayers.contains(layers[$0].id) }
+        func onBody(_ i: Int, _ p: CGPoint) -> Bool {
+            let outline = layers[i].outline(pixelsPerMillimeter: ppmm)
+            return Polygon.contains(p, outline) || Polygon.distance(p, to: outline) <= outer
+        }
+
+        // A second finger anywhere on a sheet one finger already holds.
+        if let i = visible.last(where: { layerHolders[layers[$0].id, default: []].count == 1 && onBody($0, point) }) {
+            layerHolders[layers[i].id]?.append((touch, point))
+            return true
+        }
+        // By the edge.
+        if let i = visible.last(where: {
+            layers[$0].edgeBandContains(point, inner: Self.sheetGripMM * ppmm, outer: outer, pixelsPerMillimeter: ppmm)
+                && layerHolders[layers[$0].id, default: []].isEmpty
+        }) {
+            hold(i, with: [(touch, point)])
+            return true
+        }
+        // Two fingers resting together on the same sheet, the top one under both.
+        for (other, start) in presses.still() where other != touch && other.phase != .ended && other.phase != .cancelled {
+            guard let i = visible.last(where: { onBody($0, point) }), onBody(i, start),
+                  visible.last(where: { onBody($0, start) }) == i,
+                  layerHolders[layers[i].id, default: []].isEmpty else { continue }
+            presses.cancel(other)
+            hold(i, with: [(other, pixelLocation(other)), (touch, point)])
+            return true
+        }
+        return false
+    }
+
+    private func hold(_ i: Int, with fingers: [(touch: UITouch, point: CGPoint)]) {
         let id = layers[i].id
-        layerHolders[id, default: []].append((touch, point))
+        layerHolders[id] = fingers
         // A grid sheet comes up over the others; the carbon keeps its place, as it is slid about under things.
         if activeTouch == nil, layers[i].kind != .carbon {
             layers.append(layers.remove(at: i))
             layersChanged()
         }
-        return true
     }
 
     private func moveLayers(_ touches: Set<UITouch>) {

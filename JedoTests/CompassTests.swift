@@ -290,3 +290,15 @@ struct MultiPassStrokeTests {
         #expect(s.graphite.tiles == before)
     }
 }
+
+struct LongPressStillTests {
+    @Test func stillPressesAreThoseNotYetMoved() {
+        var presses = LongPress<Int>(slop: 10)
+        presses.begin(1, at: .zero, time: 0)
+        presses.begin(2, at: CGPoint(x: 100, y: 0), time: 0.05)
+        _ = presses.move(2, to: CGPoint(x: 130, y: 0))
+        let still = presses.still()
+        #expect(still.map(\.key) == [1])
+        #expect(still.first?.point == .zero)
+    }
+}
