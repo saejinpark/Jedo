@@ -264,45 +264,44 @@ struct CurveToolTests {
         shape.contact(.boundary, at: p, offset: 0).distance
     }
 
-    @Test func theBambooCurveIsLongAndBendsMostTowardItsEnd() {
-        let c = CurveTools.self
-        func direction(_ t: Double) -> Double {
-            let a = c.hipCurveCentre(t), b = c.hipCurveCentre(t + 0.001)
-            return atan2(Double(b.y - a.y), Double(b.x - a.x))
-        }
-        let total = abs(direction(0.999) - direction(0))
-        let lastThird = abs(direction(0.999) - direction(2.0 / 3))
-        #expect(c.hipCurveLengthMM >= 600)
-        #expect(total > 35 * .pi / 180 && total < 45 * .pi / 180, "about 40° over its length")
-        #expect(lastThird > total * 0.5, "most of the bend in the last third")
+    @Test func theBambooCurveIsStraightThenBendsOverItsLastSpan() {
+        let spine = CurveTools.hipCurveProfile.spine(step: 1)
+        let straightEnd = spine[Int(CurveTools.hipCurveStraightMM)]
+        #expect(abs(straightEnd.angle - spine[0].angle) < 0.001, "the first 40 cm are straight")
+        let total = abs(spine[spine.count - 1].angle - spine[0].angle)
+        #expect(total > 35 * .pi / 180 && total < 45 * .pi / 180, "about 40° over the last 20 cm")
+        #expect(CurveTools.hipCurveLengthMM >= 600)
     }
 
-    @Test func curvedToolsGuideAsOneEdge() {
+    @Test func curvedToolsGuideAsOneEdgePlusTheirSlots() {
         #expect(shape(.hipCurve).guidingEdges == [.boundary])
+        #expect(shape(.frenchCurveA).guidingEdges == [.boundary, .cutout(0)])
+        #expect(shape(.frenchCurveC).guidingEdges == [.boundary, .cutout(0), .cutout(1)])
         #expect(shape(.ruler).guidingEdges == [.side(0), .side(2)])
     }
 
-    @Test func theFrenchCurvesSlotIsOpenPaperAndGuides() {
-        let s = shape(.frenchCurve)
-        #expect(s.guidingEdges == [.boundary, .cutout(0)])
-        let slot = CurveTools.frenchCurveSlotOutlineMM
-        let middle = CurveTools.centre(of: slot)
-        let inSlot = s.world(middle.scaled(Self.ppmm))
-        #expect(!s.covers(inSlot), "the slot's middle is paper")
-        // A pencil just inside the slot's rim rests against it.
-        let rim = slot[slot.count / 4]
-        let toward = CGPoint(x: Double(middle.x - rim.x), y: Double(middle.y - rim.y))
-        let len = hypot(Double(toward.x), Double(toward.y))
-        let near = CGPoint(x: Double(rim.x) + Double(toward.x) / len * 1.5, y: Double(rim.y) + Double(toward.y) / len * 1.5)
-        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
-        let out = g.guide(StrokeSample(location: s.world(near.scaled(Self.ppmm))), tools: [s]).location
-        #expect(abs(s.contact(.cutout(0), at: out, offset: 0).distance - 2) < 0.05)
+    @Test func theSetHasFourDifferentCurves() {
+        #expect(FrenchCurve.forms.map(\.kind) == ToolKind.frenchCurves)
+        let turns = FrenchCurve.forms.map { form -> Double in
+            let spine = form.profile.spine()
+            return spine[spine.count - 1].angle - spine[0].angle
+        }
+        #expect(Set(turns.map { ($0 * 10).rounded() }).count == 4)
     }
 
-    @Test func theFrenchCurveTightensTowardItsTip() {
-        // The centre line turns ever faster: the second half of the bend turns three times the first.
-        let spine = CurveTools.frenchCurveSpine()
-        let bendStart = Int(CurveTools.frenchCurveStraightMM / 0.5)
+    @Test func theSCurveBendsBothWays() {
+        let spine = FrenchCurve.form(.frenchCurveB)!.profile.spine()
+        let angles = spine.map(\.angle)
+        let lowest = angles.min()!
+        #expect(lowest < angles.first! - 0.1, "first it bends up")
+        #expect(angles.last! > lowest + 0.5, "then back down, further")
+    }
+
+    @Test func theScrollTightensTowardItsTip() {
+        // The bend grows steadily: the second half of the bend turns three times the first.
+        let form = FrenchCurve.form(.frenchCurveA)!
+        let spine = form.profile.spine()
+        let bendStart = Int(35 / 0.5)
         let mid = (bendStart + spine.count - 1) / 2
         let first = abs(spine[mid].angle - spine[bendStart].angle)
         let second = abs(spine[spine.count - 1].angle - spine[mid].angle)
@@ -310,67 +309,93 @@ struct CurveToolTests {
         #expect(spine[0].width > spine[spine.count - 1].width * 4)
     }
 
-    @Test func theSlotSitsInsideTheBody() {
-        let s = shape(.frenchCurve)
-        for q in CurveTools.frenchCurveSlotOutlineMM {
-            let p = s.world(q.scaled(Self.ppmm))
-            #expect(s.outlineContains(p))
-            #expect(abs(s.contact(.boundary, at: p, offset: 0).distance) > 2 * Self.ppmm, "at least 2 mm of plastic round the slot")
+    @Test func everySlotIsOpenPaperThatGuides() {
+        for kind in ToolKind.frenchCurves {
+            let s = shape(kind)
+            for (index, slot) in FrenchCurve.slots(kind).enumerated() {
+                let rim = slot[slot.count / 4], opposite = slot[slot.count * 3 / 4]
+                let middle = CGPoint(x: (rim.x + opposite.x) / 2, y: (rim.y + opposite.y) / 2)
+                #expect(!s.covers(s.world(middle.scaled(Self.ppmm))), "the slot's middle is paper")
+                // 1.5 mm in from the rim, toward the middle: within reach of the rim.
+                let toward = (x: Double(middle.x - rim.x), y: Double(middle.y - rim.y))
+                let len = hypot(toward.x, toward.y)
+                let near = CGPoint(x: Double(rim.x) + toward.x / len * 1.5, y: Double(rim.y) + toward.y / len * 1.5)
+                var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+                let out = g.guide(StrokeSample(location: s.world(near.scaled(Self.ppmm))), tools: [s]).location
+                #expect(abs(s.contact(.cutout(index), at: out, offset: 0).distance - 2) < 0.05)
+            }
         }
     }
 
-    @Test func aWobblyLineAlongTheFrenchCurveHugsItEverywhere() {
-        let s = shape(.frenchCurve, angle: 0.4)
-        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 3)
-        // Walk round the outside of the outline, 0.5–2 mm out, in small steps.
-        let rim = CurveTools.frenchCurveMM
-        var outs: [CGPoint] = []
-        for (i, q) in rim.enumerated() where i < rim.count - 1 {
-            let next = rim[i + 1]
-            let dx = Double(next.x - q.x), dy = Double(next.y - q.y)
-            let len = max(hypot(dx, dy), 1e-9)
-            var normal = (x: dy / len, y: -dx / len)
-            let probe = CGPoint(x: Double(q.x) + normal.x * 0.3, y: Double(q.y) + normal.y * 0.3).scaled(Self.ppmm)
-            if s.outlineContains(s.world(probe)) { normal = (-normal.x, -normal.y) }
-            let wobble = 0.5 + 1.5 * (0.5 + 0.5 * sin(Double(i) * 0.9))
-            let p = CGPoint(x: Double(q.x) + normal.x * wobble, y: Double(q.y) + normal.y * wobble).scaled(Self.ppmm)
-            outs.append(g.guide(StrokeSample(location: s.world(p)), tools: [s]).location)
-        }
-        for p in outs {
-            #expect(abs(distance(s, p) - 3) < 0.05, "lead centre 3 px off the curve")
+    @Test func slotsSitInsideTheBody() {
+        for kind in ToolKind.frenchCurves {
+            let s = shape(kind)
+            for slot in FrenchCurve.slots(kind) {
+                for q in slot {
+                    let p = s.world(q.scaled(Self.ppmm))
+                    #expect(s.outlineContains(p))
+                    #expect(abs(s.contact(.boundary, at: p, offset: 0).distance) > 2 * Self.ppmm, "at least 2 mm of plastic round a slot")
+                }
+            }
         }
     }
 
-    @Test func thePencilNeverGetsUnderTheHipCurve() {
+    @Test func aWobblyLineAlongEachFrenchCurveHugsItEverywhere() {
+        for kind in ToolKind.frenchCurves {
+            let s = shape(kind, angle: 0.4)
+            var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 3)
+            let rim = FrenchCurve.outline(kind)
+            var outs: [CGPoint] = []
+            for (i, q) in rim.enumerated() where i < rim.count - 1 {
+                let next = rim[i + 1]
+                let dx = Double(next.x - q.x), dy = Double(next.y - q.y)
+                let len = max(hypot(dx, dy), 1e-9)
+                var normal = (x: dy / len, y: -dx / len)
+                let probe = CGPoint(x: Double(q.x) + normal.x * 0.3, y: Double(q.y) + normal.y * 0.3).scaled(Self.ppmm)
+                if s.outlineContains(s.world(probe)) { normal = (-normal.x, -normal.y) }
+                let wobble = 0.5 + 1.5 * (0.5 + 0.5 * sin(Double(i) * 0.9))
+                let p = CGPoint(x: Double(q.x) + normal.x * wobble, y: Double(q.y) + normal.y * wobble).scaled(Self.ppmm)
+                outs.append(g.guide(StrokeSample(location: s.world(p)), tools: [s]).location)
+            }
+            for p in outs {
+                #expect(abs(distance(s, p) - 3) < 0.05, "lead centre 3 px off the curve")
+            }
+        }
+    }
+
+    @Test func thePencilNeverGetsUnderTheBambooCurve() {
         let s = shape(.hipCurve, angle: -0.2)
         var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
-        for i in 0..<120 {
-            let p = CGPoint(x: 600 + Double(i) * 25, y: 2000 + sin(Double(i) * 0.3) * 400)
+        for i in 0..<200 {
+            let p = CGPoint(x: -1000 + Double(i) * 30, y: 2000 + sin(Double(i) * 0.3) * 400)
             let out = g.guide(StrokeSample(location: p), tools: [s]).location
             #expect(!s.covers(out))
         }
     }
 
-    @Test func bothLongEdgesOfTheHipCurveGuide() {
+    @Test func bothLongEdgesOfTheBambooCurveGuide() {
         let s = shape(.hipCurve)
         let edges = CurveTools.hipCurveEdgesMM
         for edge in [edges.scale, edges.inner] {
-            let q = edge[150], r = edge[151]
-            // Just outside the edge, half way along.
-            let dx = Double(r.x - q.x), dy = Double(r.y - q.y), len = hypot(dx, dy)
-            var normal = (x: dy / len, y: -dx / len)
-            if s.outlineContains(s.world(CGPoint(x: Double(q.x) + normal.x * 0.5, y: Double(q.y) + normal.y * 0.5).scaled(Self.ppmm))) {
-                normal = (-normal.x, -normal.y)
+            for index in [100, 260] {
+                let q = edge[index], r = edge[index + 1]
+                let dx = Double(r.x - q.x), dy = Double(r.y - q.y), len = hypot(dx, dy)
+                var normal = (x: dy / len, y: -dx / len)
+                if s.outlineContains(s.world(CGPoint(x: Double(q.x) + normal.x * 0.5, y: Double(q.y) + normal.y * 0.5).scaled(Self.ppmm))) {
+                    normal = (-normal.x, -normal.y)
+                }
+                let p = s.world(CGPoint(x: Double(q.x) + normal.x * 1.5, y: Double(q.y) + normal.y * 1.5).scaled(Self.ppmm))
+                var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+                let out = g.guide(StrokeSample(location: p), tools: [s]).location
+                #expect(abs(distance(s, out) - 2) < 0.05)
             }
-            let p = s.world(CGPoint(x: Double(q.x) + normal.x * 1.5, y: Double(q.y) + normal.y * 1.5).scaled(Self.ppmm))
-            var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
-            let out = g.guide(StrokeSample(location: p), tools: [s]).location
-            #expect(abs(distance(s, out) - 2) < 0.05)
         }
     }
 
     @Test func curvedOutlinesDoNotCrossThemselves() {
-        for outline in [CurveTools.frenchCurveMM, CurveTools.frenchCurveSlotOutlineMM, CurveTools.hipCurveMM] {
+        var outlines = [CurveTools.hipCurveMM]
+        for kind in ToolKind.frenchCurves { outlines += [FrenchCurve.outline(kind)] + FrenchCurve.slots(kind) }
+        for outline in outlines {
             let n = outline.count
             var crossings = 0
             for i in 0..<(n - 2) {
@@ -391,7 +416,6 @@ struct CurveToolTests {
         return orient(a, b, c) * orient(a, b, d) < 0 && orient(c, d, a) * orient(c, d, b) < 0
     }
 }
-
 
 struct ProtractorTests {
     static let ppmm = 10.0
@@ -454,5 +478,61 @@ struct OverviewTests {
     @Test func blankPaperIsBlank() {
         let sheet = DraftingSheet(width: 500, height: 500, pixelsPerMillimeter: 10, paper: PaperTexture(size: 64, seed: 1))
         #expect(sheet.overview(size: 16).allSatisfy { $0 == 0 })
+    }
+}
+
+struct ShapeTemplateTests {
+    static let ppmm = 10.0
+    static let kinds: [ToolKind] = [.ellipseTemplate, .squareTemplate, .hexTemplate]
+
+    @Test func cutsFitInsideTheSheetWithoutTouching() {
+        for kind in Self.kinds {
+            let size = ShapeTemplate.size(kind)
+            let cuts = ShapeTemplate.cuts(kind)
+            #expect(cuts.count >= 10)
+            #expect(size.width <= 165, "fits across an 11-inch screen held upright")
+            for cut in cuts {
+                for p in cut.outline {
+                    #expect(abs(p.x) < size.width / 2 - 2 && abs(p.y) < size.height / 2 - 2)
+                }
+            }
+            for i in cuts.indices { for j in cuts.indices where j > i {
+                let a = cuts[i], b = cuts[j]
+                let apartX = abs(a.center.x - b.center.x) - a.halfSize.width - b.halfSize.width
+                let apartY = abs(a.center.y - b.center.y) - a.halfSize.height - b.halfSize.height
+                #expect(max(apartX, apartY) > 1, "at least 1 mm of plastic between cuts")
+            } }
+        }
+    }
+
+    @Test func ellipsesAreIsometric() {
+        for cut in ShapeTemplate.cuts(.ellipseTemplate) {
+            let a = Double(cut.halfSize.width) - ShapeTemplate.leadAllowanceMM
+            let b = Double(cut.halfSize.height) - ShapeTemplate.leadAllowanceMM
+            #expect(abs(b / a - 0.577) < 0.001)
+        }
+    }
+
+    @Test func aSquareCutGuidesTheLeadAlongItsSides() {
+        let shape = DeskTool(kind: .squareTemplate, pose: ToolPose(center: CGPoint(x: 2000, y: 2000), angle: 0))
+            .shape(pixelsPerMillimeter: Self.ppmm)
+        let index = ShapeTemplate.cuts(.squareTemplate).firstIndex { $0.label == "20" }!
+        let cut = ShapeTemplate.cuts(.squareTemplate)[index]
+        // Run along the inside of the top side, 1–2 mm below it.
+        let top = Double(cut.center.y - cut.halfSize.height)
+        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+        for i in 0..<20 {
+            let x = Double(cut.center.x) - 7 + Double(i) * 0.7
+            let p = shape.world(CGPoint(x: x, y: top + 1 + Double(i % 3) * 0.5).scaled(Self.ppmm))
+            let out = g.guide(StrokeSample(location: p), tools: [shape]).location
+            #expect(abs(shape.contact(.cutout(index), at: out, offset: 0).distance - 2) < 0.05)
+            #expect(abs(Double(out.y) - (2000 + top * Self.ppmm + 2)) < 1e-6)
+        }
+    }
+
+    @Test func cutsAreMadeLargerSoTheLineIsTheMarkedSize() {
+        // A 20 mm square's sides sit 10.25 mm from its centre.
+        let cut = ShapeTemplate.cuts(.squareTemplate).first { $0.label == "20" }!
+        #expect(abs(Double(cut.halfSize.width) - 10.25) < 1e-9)
     }
 }

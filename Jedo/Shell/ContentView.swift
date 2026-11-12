@@ -47,11 +47,19 @@ private struct ToolControls: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 10) {
             HStack(spacing: 8) {
-                ForEach(ToolKind.allCases, id: \.self) { kind in
-                    let onDesk = session.toolsOnDesk.contains(kind)
-                    RoundToolButton(icon: ToolIcon(kind), label: onDesk ? "\(kind.name) 치우기" : "\(kind.name) 꺼내기",
-                                    enabled: true, selected: onDesk) {
-                        session.toggle(kind)
+                ForEach(ToolKind.allCases.filter {
+                    !ToolKind.frenchCurves.dropFirst().contains($0) && !ToolKind.templates.dropFirst().contains($0)
+                }, id: \.self) { kind in
+                    if kind == .frenchCurveA {
+                        ToolSetMenu(session: session, title: "운형자", kinds: ToolKind.frenchCurves)
+                    } else if kind == .circleTemplate {
+                        ToolSetMenu(session: session, title: "형판", kinds: ToolKind.templates)
+                    } else {
+                        let onDesk = session.toolsOnDesk.contains(kind)
+                        RoundToolButton(icon: ToolIcon(kind), label: onDesk ? "\(kind.name) 치우기" : "\(kind.name) 꺼내기",
+                                        enabled: true, selected: onDesk) {
+                            session.toggle(kind)
+                        }
                     }
                 }
             }
@@ -97,25 +105,62 @@ private struct RoundToolButton: View {
 
     var body: some View {
         Button(action: action) {
-            Group {
-                switch icon {
-                case .symbol(let name):
-                    Image(systemName: name).font(.system(size: 18, weight: .semibold))
-                case .shape(let kind):
-                    ToolGlyph(kind: kind).frame(width: 24, height: 24)
-                }
-            }
-            .frame(width: 48, height: 48)
-            .contentShape(Circle())
+            RoundToolFace(icon: icon, enabled: enabled, selected: selected)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(selected ? Color.white : Palette.ink.opacity(enabled ? 0.85 : 0.25))
-        .background(selected ? AnyShapeStyle(Palette.ink) : AnyShapeStyle(.regularMaterial), in: Circle())
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .overlay(Circle().strokeBorder(Palette.ink.opacity(0.08)))
-        .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
         .disabled(!enabled)
         .accessibilityLabel(label)
+    }
+}
+
+/// The round face of a tool button.
+private struct RoundToolFace: View {
+    let icon: ToolIcon
+    let enabled: Bool
+    let selected: Bool
+
+    var body: some View {
+        Group {
+            switch icon {
+            case .symbol(let name):
+                Image(systemName: name).font(.system(size: 18, weight: .semibold))
+            case .shape(let kind):
+                ToolGlyph(kind: kind).frame(width: 24, height: 24)
+            }
+        }
+        .frame(width: 48, height: 48)
+        .contentShape(Circle())
+        .foregroundStyle(selected ? Color.white : Palette.ink.opacity(enabled ? 0.85 : 0.25))
+        .background(selected ? AnyShapeStyle(Palette.ink) : AnyShapeStyle(.regularMaterial), in: Circle())
+        .overlay(Circle().strokeBorder(Palette.ink.opacity(0.08)))
+        .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
+    }
+}
+
+/// One button for a set of tools (the French curves, the templates): each
+/// can be taken out or put away from its menu.
+private struct ToolSetMenu: View {
+    @Bindable var session: DrawingSession
+    let title: String
+    let kinds: [ToolKind]
+
+    var body: some View {
+        let anyOut = kinds.contains { session.toolsOnDesk.contains($0) }
+        Menu {
+            ForEach(kinds, id: \.self) { kind in
+                Toggle(isOn: Binding(get: { session.toolsOnDesk.contains(kind) },
+                                     set: { _ in session.toggle(kind) })) {
+                    Text(kind.name)
+                }
+            }
+        } label: {
+            RoundToolFace(icon: .shape(kinds[0]), enabled: true, selected: anyOut)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuActionDismissBehavior(.disabled)
+        .accessibilityLabel(title)
     }
 }
 
@@ -143,9 +188,15 @@ private struct ToolGlyph: View {
                 path.addEllipse(in: CGRect(x: 4, y: 9, width: 4, height: 4))
                 path.addEllipse(in: CGRect(x: 10, y: 8.5, width: 5, height: 5))
                 path.addEllipse(in: CGRect(x: 16.5, y: 8, width: 6, height: 6).insetBy(dx: 0.5, dy: 0.5))
-            case .frenchCurve:
-                path = Self.fitted(CurveTools.frenchCurveMM, in: size)
-                path.addPath(Self.fitted(CurveTools.frenchCurveSlotOutlineMM, in: size, like: CurveTools.frenchCurveMM))
+            case .frenchCurveA, .frenchCurveB, .frenchCurveC, .frenchCurveD:
+                let outline = FrenchCurve.outline(kind)
+                path = Self.fitted(outline, in: size)
+                for slot in FrenchCurve.slots(kind) { path.addPath(Self.fitted(slot, in: size, like: outline)) }
+            case .ellipseTemplate, .squareTemplate, .hexTemplate:
+                let sheet = ShapeTemplate.size(kind)
+                let frame = [CGPoint(x: -sheet.width / 2, y: -sheet.height / 2), CGPoint(x: sheet.width / 2, y: sheet.height / 2)]
+                path.addRoundedRect(in: CGRect(x: 1, y: 5, width: w - 2, height: h - 10), cornerSize: CGSize(width: 2, height: 2))
+                for cut in ShapeTemplate.cuts(kind).prefix(6) { path.addPath(Self.fitted(cut.outline, in: size, like: frame)) }
             case .hipCurve:
                 path = Self.fitted(CurveTools.hipCurveMM, in: size)
             case .protractor:
@@ -181,9 +232,11 @@ extension ToolKind {
         case .ruler: "자"
         case .setSquare45: "45° 삼각자"
         case .setSquare60: "30°·60° 삼각자"
-        case .circleTemplate: "원형자"
-        case .frenchCurve: "운형자"
-        case .hipCurve: "대나무 커브자"
+        case .circleTemplate: "원 형판"
+        case .ellipseTemplate, .squareTemplate, .hexTemplate: "\(ShapeTemplate.name(self)) 형판"
+        case .frenchCurveA, .frenchCurveB, .frenchCurveC, .frenchCurveD:
+            "운형자 \((ToolKind.frenchCurves.firstIndex(of: self) ?? 0) + 1) · \(FrenchCurve.form(self)?.name ?? "")"
+        case .hipCurve: "대나무 곡자"
         case .protractor: "각도기"
         }
     }

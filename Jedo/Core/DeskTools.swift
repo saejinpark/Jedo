@@ -3,15 +3,20 @@ import Foundation
 
 /// The rigid tools that can lie on the paper.
 enum ToolKind: String, CaseIterable, Hashable, Sendable {
+    /// The templates are taken out from one button.
+    static let templates: [ToolKind] = [.circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate]
+    /// The French curves are taken out from one button.
+    static let frenchCurves: [ToolKind] = [.frenchCurveA, .frenchCurveB, .frenchCurveC, .frenchCurveD]
+
     case ruler
     /// 45° set square.
     case setSquare45
     /// 30°/60° set square.
     case setSquare60
-    /// A plastic sheet of round holes.
-    case circleTemplate
-    /// A French curve (운형자): a scroll whose bend tightens toward its tip, with a slot through it.
-    case frenchCurve
+    /// Templates (형판): sheets of round, elliptical and angular cut-outs.
+    case circleTemplate, ellipseTemplate, squareTemplate, hexTemplate
+    /// The French curves (운형자) of the set, each a different sweep of bends.
+    case frenchCurveA, frenchCurveB, frenchCurveC, frenchCurveD
     /// A long bamboo hip curve, gently bending, as used in pattern drafting.
     case hipCurve
     /// A half-round protractor, turning about the centre of its base line.
@@ -38,9 +43,17 @@ struct DeskTool: Equatable, Sendable {
                     ToolShape.Hole(center: $0.center.scaled(ppmm), radius: CircleTemplate.holeRadiusMM($0.diameter) * ppmm)
                 }
             )
-        case .frenchCurve:
-            return ToolShape(pose: pose, outline: CurveTools.frenchCurveMM.map { $0.scaled(ppmm) }, smooth: true,
-                             cutouts: [CurveTools.frenchCurveSlotOutlineMM.map { $0.scaled(ppmm) }])
+        case .ellipseTemplate, .squareTemplate, .hexTemplate:
+            let size = ShapeTemplate.size(kind)
+            let w = Double(size.width) / 2 * ppmm, h = Double(size.height) / 2 * ppmm
+            return ToolShape(
+                pose: pose,
+                outline: [CGPoint(x: -w, y: -h), CGPoint(x: w, y: -h), CGPoint(x: w, y: h), CGPoint(x: -w, y: h)],
+                cutouts: ShapeTemplate.cuts(kind).map { $0.outline.map { $0.scaled(ppmm) } }
+            )
+        case .frenchCurveA, .frenchCurveB, .frenchCurveC, .frenchCurveD:
+            return ToolShape(pose: pose, outline: FrenchCurve.outline(kind).map { $0.scaled(ppmm) }, smooth: true,
+                             cutouts: FrenchCurve.slots(kind).map { $0.map { $0.scaled(ppmm) } })
         case .hipCurve:
             return ToolShape(pose: pose, outline: CurveTools.hipCurveMM.map { $0.scaled(ppmm) }, smooth: true)
         case .protractor:

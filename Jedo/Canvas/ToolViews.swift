@@ -187,19 +187,18 @@ final class CircleTemplateView: OutlineToolView {
 
 /// A smoky orange acrylic French curve (운형자) with its slot.
 final class FrenchCurveView: OutlineToolView {
-    init() { super.init(kind: .frenchCurve) }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    override var outlineMM: [CGPoint] { CurveTools.frenchCurveMM }
+    override var outlineMM: [CGPoint] { FrenchCurve.outline(kind) }
 
     override func bodyPath() -> UIBezierPath {
         let path = super.bodyPath()
-        let slot = UIBezierPath()
-        for (i, p) in CurveTools.frenchCurveSlotOutlineMM.enumerated() {
-            i == 0 ? slot.move(to: pt(p)) : slot.addLine(to: pt(p))
+        for outline in FrenchCurve.slots(kind) {
+            let slot = UIBezierPath()
+            for (i, p) in outline.enumerated() {
+                i == 0 ? slot.move(to: pt(p)) : slot.addLine(to: pt(p))
+            }
+            slot.close()
+            path.append(slot.reversing())
         }
-        slot.close()
-        path.append(slot.reversing())
         return path
     }
 
@@ -211,6 +210,29 @@ final class FrenchCurveView: OutlineToolView {
         UIColor(red: 0.62, green: 0.40, blue: 0.20, alpha: 0.55).setStroke()
         body.lineWidth = 0.6
         body.stroke()
+
+        // The set number, as cut into the plastic.
+        if let index = ToolKind.frenchCurves.firstIndex(of: kind) {
+            let label = "\(index + 1)" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 3.4 * pointsPerMM, weight: .semibold),
+                .foregroundColor: UIColor(red: 0.45, green: 0.28, blue: 0.12, alpha: 0.55),
+            ]
+            let size = label.size(withAttributes: attributes)
+            let at = labelSpot()
+            label.draw(at: CGPoint(x: at.x - size.width / 2, y: at.y - size.height / 2), withAttributes: attributes)
+        }
+    }
+
+    /// Somewhere on the broad part of the body, clear of the slots.
+    private func labelSpot() -> CGPoint {
+        guard let form = FrenchCurve.form(kind) else { return .zero }
+        let spine = form.profile.spine(step: 0.5)
+        let firstSlotEnd = form.slots.first?.to ?? 0
+        let along = min(firstSlotEnd + 9, form.profile.lengthMM * 0.6)
+        let shift = CurveTools.centre(of: CurveTools.band(spine, every: 2))
+        let p = spine[min(Int(along / 0.5), spine.count - 1)].point
+        return pt(p.minus(shift))
     }
 }
 
@@ -333,5 +355,74 @@ final class ProtractorView: OutlineToolView {
                 label.draw(at: CGPoint(x: at.x - size.width / 2, y: at.y - size.height / 2), withAttributes: attributes)
             }
         }
+    }
+}
+
+/// A tinted template sheet with shapes cut through it, each marked with its size.
+final class ShapeTemplateView: OutlineToolView {
+    override var outlineMM: [CGPoint] {
+        let size = ShapeTemplate.size(kind)
+        let w = size.width / 2, h = size.height / 2
+        return [CGPoint(x: -w, y: -h), CGPoint(x: w, y: -h), CGPoint(x: w, y: h), CGPoint(x: -w, y: h)]
+    }
+
+    private var tint: UIColor {
+        switch kind {
+        case .ellipseTemplate: UIColor(red: 0.70, green: 0.88, blue: 0.70, alpha: 0.34)
+        case .squareTemplate: UIColor(red: 0.66, green: 0.80, blue: 0.95, alpha: 0.34)
+        default: UIColor(red: 0.95, green: 0.72, blue: 0.80, alpha: 0.34)
+        }
+    }
+
+    override func bodyPath() -> UIBezierPath {
+        let path = UIBezierPath(roundedRect: bounds.insetBy(dx: 0.25, dy: 0.25), cornerRadius: 3 * pointsPerMM)
+        for cut in ShapeTemplate.cuts(kind) {
+            let rim = UIBezierPath()
+            for (i, p) in cut.outline.enumerated() {
+                i == 0 ? rim.move(to: pt(p)) : rim.addLine(to: pt(p))
+            }
+            rim.close()
+            path.append(rim.reversing())
+        }
+        return path
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let ctx = UIGraphicsGetCurrentContext() else { return }
+        let body = bodyPath()
+        body.usesEvenOddFillRule = true
+        tint.setFill()
+        body.fill()
+        Self.rim.setStroke()
+        body.lineWidth = 0.6
+        body.stroke()
+
+        let font = UIFont.monospacedDigitSystemFont(ofSize: 2.3 * pointsPerMM, weight: .medium)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: Self.ink]
+        Self.ink.setStroke()
+        ctx.setLineWidth(0.5)
+        for cut in ShapeTemplate.cuts(kind) {
+            let half = cut.halfSize
+            if cut.axisMarks {
+                for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+                    let reach = CGPoint(x: Double(half.width) * dx, y: Double(half.height) * dy)
+                    ctx.move(to: pt(CGPoint(x: Double(cut.center.x + reach.x) + dx * 0.4, y: Double(cut.center.y + reach.y) + dy * 0.4)))
+                    ctx.addLine(to: pt(CGPoint(x: Double(cut.center.x + reach.x) + dx * 1.8, y: Double(cut.center.y + reach.y) + dy * 1.8)))
+                }
+            }
+            let label = cut.label as NSString
+            let size = label.size(withAttributes: attributes)
+            let top = pt(CGPoint(x: cut.center.x, y: cut.center.y - half.height - 1.2))
+            label.draw(at: CGPoint(x: top.x - size.width / 2, y: top.y - size.height), withAttributes: attributes)
+        }
+        ctx.strokePath()
+
+        let title = ShapeTemplate.name(kind) as NSString
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 2.6 * pointsPerMM, weight: .semibold),
+            .foregroundColor: Self.ink.withAlphaComponent(0.5),
+        ]
+        title.draw(at: pt(CGPoint(x: -ShapeTemplate.size(kind).width / 2 + 2.5, y: -ShapeTemplate.size(kind).height / 2 + 1.5)),
+                   withAttributes: titleAttributes)
     }
 }
