@@ -40,21 +40,6 @@ struct CompassTests {
         #expect(abs(fresh! - (200 + 3 * ppmm)) < 1e-9)
     }
 
-    @Test func aFingerCanTakeHoldOfTheCompassLyingClosed() {
-        let compass = Compass(needle: needle)
-        let alongLegs = around(needle, radius: 30 * ppmm, angle: Compass.closedAngle)
-        #expect(compass.bodyContains(needle, margin: 0, pixelsPerMillimeter: ppmm))
-        #expect(compass.bodyContains(alongLegs, margin: 0, pixelsPerMillimeter: ppmm))
-        #expect(!compass.bodyContains(around(needle, radius: 30 * ppmm, angle: Compass.closedAngle + .pi / 2),
-                                      margin: 0, pixelsPerMillimeter: ppmm))
-    }
-
-    @Test func openLegsAreHeldAlongTheirLength() {
-        let compass = Compass(needle: needle, spread: 300, leadAngle: 0)
-        #expect(compass.bodyContains(CGPoint(x: 650, y: 505), margin: 0, pixelsPerMillimeter: ppmm))
-        #expect(!compass.bodyContains(CGPoint(x: 650, y: 560), margin: 0, pixelsPerMillimeter: ppmm))
-    }
-
     @Test func theLeadRestsWhereItLastWas() {
         let compass = Compass(needle: needle, spread: 100, leadAngle: .pi / 2)
         #expect(distance(compass.lead!, CGPoint(x: 500, y: 600)) < 1e-9)

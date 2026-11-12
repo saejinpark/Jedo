@@ -184,3 +184,89 @@ final class CircleTemplateView: OutlineToolView {
         ctx.strokePath()
     }
 }
+
+/// A smoky orange acrylic French curve.
+final class FrenchCurveView: OutlineToolView {
+    init() { super.init(kind: .frenchCurve) }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var outlineMM: [CGPoint] { CurveTools.frenchCurveMM }
+
+    override func draw(_ rect: CGRect) {
+        let body = bodyPath()
+        UIColor(red: 0.98, green: 0.72, blue: 0.42, alpha: 0.30).setFill()
+        body.fill()
+        UIColor(red: 0.62, green: 0.40, blue: 0.20, alpha: 0.55).setStroke()
+        body.lineWidth = 0.6
+        body.stroke()
+    }
+}
+
+/// A long bamboo hip curve: opaque, with its grain and a centimetre scale
+/// along the convex edge.
+final class HipCurveView: OutlineToolView {
+    init() { super.init(kind: .hipCurve) }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var outlineMM: [CGPoint] { CurveTools.hipCurveMM }
+
+    override func draw(_ rect: CGRect) {
+        guard let ctx = UIGraphicsGetCurrentContext() else { return }
+        let body = bodyPath()
+        UIColor(red: 0.86, green: 0.72, blue: 0.49, alpha: 0.95).setFill()
+        body.fill()
+
+        // Grain: a few fibres running the length.
+        let edges = CurveTools.hipCurveEdgesMM
+        ctx.saveGState()
+        body.addClip()
+        for (k, fraction) in [0.18, 0.33, 0.52, 0.71, 0.86].enumerated() {
+            let fibre = UIBezierPath()
+            for (i, (a, b)) in zip(edges.scale, edges.inner).enumerated() {
+                let p = pt(CGPoint(x: a.x + (b.x - a.x) * fraction, y: a.y + (b.y - a.y) * fraction))
+                i == 0 ? fibre.move(to: p) : fibre.addLine(to: p)
+            }
+            UIColor(red: 0.62, green: 0.47, blue: 0.27, alpha: k % 2 == 0 ? 0.28 : 0.16).setStroke()
+            fibre.lineWidth = k % 2 == 0 ? 0.8 : 0.5
+            fibre.stroke()
+        }
+        ctx.restoreGState()
+
+        UIColor(red: 0.48, green: 0.34, blue: 0.17, alpha: 0.75).setStroke()
+        body.lineWidth = 0.7
+        body.stroke()
+
+        // Millimetres along the convex edge, measured along the curve.
+        let scale = edges.scale, inner = edges.inner
+        let ink = UIColor(red: 0.22, green: 0.15, blue: 0.08, alpha: 0.85)
+        ink.setStroke()
+        ctx.setLineWidth(0.5)
+        let font = UIFont.monospacedDigitSystemFont(ofSize: 2.4 * pointsPerMM, weight: .medium)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: ink]
+        var travelled = 0.0, nextMark = 5.0, mark = 5
+        for i in 1..<scale.count {
+            let a = scale[i - 1], b = scale[i]
+            let step = hypot(Double(b.x - a.x), Double(b.y - a.y))
+            while travelled + step >= nextMark {
+                let t = (nextMark - travelled) / step
+                let at = CGPoint(x: Double(a.x) + Double(b.x - a.x) * t, y: Double(a.y) + Double(b.y - a.y) * t)
+                let into = CGPoint(x: inner[i].x - scale[i].x, y: inner[i].y - scale[i].y)
+                let width = hypot(Double(into.x), Double(into.y))
+                let length: Double = mark % 10 == 0 ? 4 : mark % 5 == 0 ? 2.8 : 1.6
+                let end = CGPoint(x: Double(at.x) + Double(into.x) / width * length, y: Double(at.y) + Double(into.y) / width * length)
+                ctx.move(to: pt(at))
+                ctx.addLine(to: pt(end))
+                if mark % 10 == 0 {
+                    let label = "\(mark / 10)" as NSString
+                    let size = label.size(withAttributes: attributes)
+                    let spot = pt(CGPoint(x: Double(at.x) + Double(into.x) / width * 6.5, y: Double(at.y) + Double(into.y) / width * 6.5))
+                    label.draw(at: CGPoint(x: spot.x - size.width / 2, y: spot.y - size.height / 2), withAttributes: attributes)
+                }
+                nextMark += 1
+                mark += 1
+            }
+            travelled += step
+        }
+        ctx.strokePath()
+    }
+}

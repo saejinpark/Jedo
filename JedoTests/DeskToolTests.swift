@@ -251,3 +251,106 @@ struct ErasingTests {
         #expect(sheet.displayedDensity(x: 150, y: 100) == before)
     }
 }
+
+struct CurveToolTests {
+    static let ppmm = 10.0
+
+    func shape(_ kind: ToolKind, angle: Double = 0) -> ToolShape {
+        DeskTool(kind: kind, pose: ToolPose(center: CGPoint(x: 2000, y: 2000), angle: angle)).shape(pixelsPerMillimeter: Self.ppmm)
+    }
+
+    /// Distance from `p` to the outline, outward positive.
+    func distance(_ shape: ToolShape, _ p: CGPoint) -> Double {
+        shape.contact(.boundary, at: p, offset: 0).distance
+    }
+
+    @Test func curvedToolsGuideAsOneEdge() {
+        #expect(shape(.frenchCurve).guidingEdges == [.boundary])
+        #expect(shape(.hipCurve).guidingEdges == [.boundary])
+        #expect(shape(.ruler).guidingEdges == [.side(0), .side(2)])
+    }
+
+    @Test func theFrenchCurvesHollowIsOpenPaper() {
+        let s = shape(.frenchCurve)
+        // The dip in the bottom edge: below the knot at (95, 25), between the lobes on either side.
+        let knots = CurveTools.frenchCurveKnotsMM.map { $0.scaled(CurveTools.frenchCurveScale) }
+        let offsetToCentre = CurveTools.centre(of: CurveTools.closedCatmullRom(knots, samplesPerSpan: 24))
+        let hollow = CGPoint(x: 95 * CurveTools.frenchCurveScale, y: 32 * CurveTools.frenchCurveScale).minus(offsetToCentre)
+        let onPaper = s.world(hollow.scaled(Self.ppmm))
+        #expect(!s.covers(onPaper))
+        let body = CGPoint(x: 95 * CurveTools.frenchCurveScale, y: 0).minus(offsetToCentre)
+        #expect(s.covers(s.world(body.scaled(Self.ppmm))))
+    }
+
+    @Test func aWobblyLineAlongTheFrenchCurveHugsItEverywhere() {
+        let s = shape(.frenchCurve, angle: 0.4)
+        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 3)
+        // Walk round the outside of the outline, 0.5–2 mm out, in small steps.
+        let rim = CurveTools.frenchCurveMM
+        var outs: [CGPoint] = []
+        for (i, q) in rim.enumerated() where i < rim.count - 1 {
+            let next = rim[i + 1]
+            let dx = Double(next.x - q.x), dy = Double(next.y - q.y)
+            let len = max(hypot(dx, dy), 1e-9)
+            var normal = (x: dy / len, y: -dx / len)
+            let probe = CGPoint(x: Double(q.x) + normal.x * 0.3, y: Double(q.y) + normal.y * 0.3).scaled(Self.ppmm)
+            if s.outlineContains(s.world(probe)) { normal = (-normal.x, -normal.y) }
+            let wobble = 0.5 + 1.5 * (0.5 + 0.5 * sin(Double(i) * 0.9))
+            let p = CGPoint(x: Double(q.x) + normal.x * wobble, y: Double(q.y) + normal.y * wobble).scaled(Self.ppmm)
+            outs.append(g.guide(StrokeSample(location: s.world(p)), tools: [s]).location)
+        }
+        for p in outs {
+            #expect(abs(distance(s, p) - 3) < 0.05, "lead centre 3 px off the curve")
+        }
+    }
+
+    @Test func thePencilNeverGetsUnderTheHipCurve() {
+        let s = shape(.hipCurve, angle: -0.2)
+        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+        for i in 0..<120 {
+            let p = CGPoint(x: 600 + Double(i) * 25, y: 2000 + sin(Double(i) * 0.3) * 400)
+            let out = g.guide(StrokeSample(location: p), tools: [s]).location
+            #expect(!s.covers(out))
+        }
+    }
+
+    @Test func bothLongEdgesOfTheHipCurveGuide() {
+        let s = shape(.hipCurve)
+        let edges = CurveTools.hipCurveEdgesMM
+        for edge in [edges.scale, edges.inner] {
+            let q = edge[80], r = edge[81]
+            // Just outside the edge, half way along.
+            let dx = Double(r.x - q.x), dy = Double(r.y - q.y), len = hypot(dx, dy)
+            var normal = (x: dy / len, y: -dx / len)
+            if s.outlineContains(s.world(CGPoint(x: Double(q.x) + normal.x * 0.5, y: Double(q.y) + normal.y * 0.5).scaled(Self.ppmm))) {
+                normal = (-normal.x, -normal.y)
+            }
+            let p = s.world(CGPoint(x: Double(q.x) + normal.x * 1.5, y: Double(q.y) + normal.y * 1.5).scaled(Self.ppmm))
+            var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+            let out = g.guide(StrokeSample(location: p), tools: [s]).location
+            #expect(abs(distance(s, out) - 2) < 0.05)
+        }
+    }
+
+    @Test func curvedOutlinesDoNotCrossThemselves() {
+        for outline in [CurveTools.frenchCurveMM, CurveTools.hipCurveMM] {
+            let n = outline.count
+            var crossings = 0
+            for i in 0..<(n - 2) {
+                let a = outline[i], b = outline[(i + 1) % n]
+                for j in (i + 2)..<n where !(i == 0 && j == n - 1) {
+                    let c = outline[j], d = outline[(j + 1) % n]
+                    if segmentsCross(a, b, c, d) { crossings += 1 }
+                }
+            }
+            #expect(crossings == 0)
+        }
+    }
+
+    func segmentsCross(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint, _ d: CGPoint) -> Bool {
+        func orient(_ p: CGPoint, _ q: CGPoint, _ r: CGPoint) -> Double {
+            Double(q.x - p.x) * Double(r.y - p.y) - Double(q.y - p.y) * Double(r.x - p.x)
+        }
+        return orient(a, b, c) * orient(a, b, d) < 0 && orient(c, d, a) * orient(c, d, b) < 0
+    }
+}

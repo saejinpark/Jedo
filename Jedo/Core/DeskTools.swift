@@ -10,6 +10,10 @@ enum ToolKind: String, CaseIterable, Hashable, Sendable {
     case setSquare60
     /// A plastic sheet of round holes.
     case circleTemplate
+    /// A French curve: one acrylic outline of ever-changing curvature.
+    case frenchCurve
+    /// A long bamboo hip curve, gently bending, as used in pattern drafting.
+    case hipCurve
 }
 
 /// A tool lying on the paper.
@@ -32,6 +36,10 @@ struct DeskTool: Equatable, Sendable {
                     ToolShape.Hole(center: $0.center.scaled(ppmm), radius: CircleTemplate.holeRadiusMM($0.diameter) * ppmm)
                 }
             )
+        case .frenchCurve:
+            return ToolShape(pose: pose, outline: CurveTools.frenchCurveMM.map { $0.scaled(ppmm) }, smooth: true)
+        case .hipCurve:
+            return ToolShape(pose: pose, outline: CurveTools.hipCurveMM.map { $0.scaled(ppmm) }, smooth: true)
         }
     }
 }

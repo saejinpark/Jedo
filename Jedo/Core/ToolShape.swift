@@ -5,7 +5,11 @@ import Foundation
 typealias ToolPose = RulerPose
 
 /// The solid body of a rigid drafting tool and the edges a pencil can run
-/// along. The outline is convex; round holes are paper the pencil can reach.
+/// along. Round holes are paper the pencil can reach.
+///
+/// A straight-sided tool (ruler, set square) has a convex outline whose
+/// sides guide one by one. A curved tool (French curve, hip curve) has a
+/// finely sampled outline, convex or not, that guides as one smooth edge.
 /// Lengths are canvas pixels; `outline` and `holes` are in the tool's own frame.
 struct ToolShape: Equatable, Sendable {
     struct Hole: Equatable, Sendable {
@@ -18,6 +22,8 @@ struct ToolShape: Equatable, Sendable {
         /// The outline from corner `i` to corner `i + 1`.
         case side(Int)
         case hole(Int)
+        /// The whole outline of a curved tool.
+        case boundary
     }
 
     /// Where the pencil stands relative to one edge.
@@ -42,18 +48,22 @@ struct ToolShape: Equatable, Sendable {
     /// Whether each side of the outline guides the pencil.
     var guidingSides: [Bool]
     var holes: [Hole] = []
+    /// Whether the outline is a sampled curve that guides as one edge.
+    var smooth = false
 
-    init(pose: ToolPose, outline: [CGPoint], guidingSides: [Bool]? = nil, holes: [Hole] = []) {
+    init(pose: ToolPose, outline: [CGPoint], guidingSides: [Bool]? = nil, holes: [Hole] = [], smooth: Bool = false) {
         precondition(outline.count >= 3)
         self.pose = pose
         self.outline = outline
         self.guidingSides = guidingSides ?? Array(repeating: true, count: outline.count)
         self.holes = holes
+        self.smooth = smooth
     }
 
     /// Every edge a pencil can be guided by.
     var guidingEdges: [Edge] {
-        outline.indices.filter { guidingSides[$0] }.map(Edge.side) + holes.indices.map(Edge.hole)
+        let rim: [Edge] = smooth ? [.boundary] : outline.indices.filter { guidingSides[$0] }.map(Edge.side)
+        return rim + holes.indices.map(Edge.hole)
     }
 
     // MARK: Frames
@@ -81,7 +91,42 @@ struct ToolShape: Equatable, Sendable {
     /// Whether `p` lies within the outline grown by `margin`, holes included.
     func outlineContains(_ p: CGPoint, margin: Double = 0) -> Bool {
         let q = local(p)
-        return outline.indices.allSatisfy { side(at: $0, q).distance <= margin }
+        if inside(q) { return true }
+        return margin > 0 && nearestOnOutline(q).distance <= margin
+    }
+
+    /// Whether local point `q` is inside the outline (even–odd, so any simple outline works).
+    private func inside(_ q: CGPoint) -> Bool {
+        var result = false
+        var j = outline.count - 1
+        for i in outline.indices {
+            let a = outline[i], b = outline[j]
+            if (a.y > q.y) != (b.y > q.y) {
+                let x = Double(a.x) + Double(q.y - a.y) / Double(b.y - a.y) * Double(b.x - a.x)
+                if Double(q.x) < x { result.toggle() }
+            }
+            j = i
+        }
+        return result
+    }
+
+    /// The closest point on the outline to local point `q`, and the direction of the outline there.
+    private func nearestOnOutline(_ q: CGPoint) -> (point: CGPoint, distance: Double, dir: (x: Double, y: Double)) {
+        var best = (point: outline[0], distance: Double.infinity, dir: (x: 1.0, y: 0.0))
+        for i in outline.indices {
+            let a = outline[i], b = outline[(i + 1) % outline.count]
+            let ex = Double(b.x - a.x), ey = Double(b.y - a.y)
+            let lengthSquared = ex * ex + ey * ey
+            guard lengthSquared > 0 else { continue }
+            let t = min(max((Double(q.x - a.x) * ex + Double(q.y - a.y) * ey) / lengthSquared, 0), 1)
+            let px = Double(a.x) + ex * t, py = Double(a.y) + ey * t
+            let d = hypot(Double(q.x) - px, Double(q.y) - py)
+            if d < best.distance {
+                let length = lengthSquared.squareRoot()
+                best = (CGPoint(x: px, y: py), d, (ex / length, ey / length))
+            }
+        }
+        return best
     }
 
     /// Whether `p` is on the tool's body, where the pencil cannot reach the paper.
@@ -114,6 +159,20 @@ struct ToolShape: Equatable, Sendable {
                                 y: Double(hole.center.y) + vy / max(r, 1e-9) * reach)
             return Contact(distance: hole.radius - r, alongside: true, point: world(point),
                            tangent: worldDirection((x: -vy / max(r, 1e-9), y: vx / max(r, 1e-9))))
+        case .boundary:
+            let n = nearestOnOutline(q)
+            let isInside = inside(q)
+            var out: (x: Double, y: Double)
+            if n.distance > 1e-6 {
+                let v = (x: (Double(q.x) - Double(n.point.x)) / n.distance, y: (Double(q.y) - Double(n.point.y)) / n.distance)
+                out = isInside ? (-v.x, -v.y) : v
+            } else {
+                out = (n.dir.y, -n.dir.x)
+                if inside(CGPoint(x: Double(n.point.x) + out.x * 0.5, y: Double(n.point.y) + out.y * 0.5)) { out = (-out.x, -out.y) }
+            }
+            let point = CGPoint(x: Double(n.point.x) + out.x * offset, y: Double(n.point.y) + out.y * offset)
+            return Contact(distance: isInside ? -n.distance : n.distance, alongside: true, point: world(point),
+                           tangent: worldDirection(n.dir))
         }
     }
 

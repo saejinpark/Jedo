@@ -39,36 +39,41 @@ struct ContentView: View {
     }
 }
 
-/// The tools, then undo and redo (also on ⌘Z and ⇧⌘Z).
+/// The tools lying on the paper above; the compass, the eraser, undo and
+/// redo (also on ⌘Z and ⇧⌘Z) below.
 private struct ToolControls: View {
     @Bindable var session: DrawingSession
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(ToolKind.allCases, id: \.self) { kind in
-                let onDesk = session.toolsOnDesk.contains(kind)
-                RoundToolButton(icon: ToolIcon(kind), label: onDesk ? "\(kind.name) 치우기" : "\(kind.name) 꺼내기",
-                                enabled: true, selected: onDesk) {
-                    session.toggle(kind)
+        VStack(alignment: .trailing, spacing: 10) {
+            HStack(spacing: 8) {
+                ForEach(ToolKind.allCases, id: \.self) { kind in
+                    let onDesk = session.toolsOnDesk.contains(kind)
+                    RoundToolButton(icon: ToolIcon(kind), label: onDesk ? "\(kind.name) 치우기" : "\(kind.name) 꺼내기",
+                                    enabled: true, selected: onDesk) {
+                        session.toggle(kind)
+                    }
                 }
             }
-            RoundToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
-                            enabled: true, selected: session.compassOnDesk) {
-                session.compassOnDesk.toggle()
+            HStack(spacing: 8) {
+                RoundToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
+                                enabled: true, selected: session.compassOnDesk) {
+                    session.compassOnDesk.toggle()
+                }
+                RoundToolButton(icon: .symbol("eraser"), label: session.eraserInHand ? "지우개 내려놓기" : "지우개 들기",
+                                enabled: true, selected: session.eraserInHand) {
+                    session.eraserInHand.toggle()
+                }
+                .padding(.trailing, 8)
+                RoundToolButton(icon: .symbol("arrow.uturn.backward"), label: "실행 취소", enabled: session.canUndo) {
+                    session.undo()
+                }
+                .keyboardShortcut("z", modifiers: .command)
+                RoundToolButton(icon: .symbol("arrow.uturn.forward"), label: "다시 실행", enabled: session.canRedo) {
+                    session.redo()
+                }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
             }
-            RoundToolButton(icon: .symbol("eraser"), label: session.eraserInHand ? "지우개 내려놓기" : "지우개 들기",
-                            enabled: true, selected: session.eraserInHand) {
-                session.eraserInHand.toggle()
-            }
-            .padding(.trailing, 8)
-            RoundToolButton(icon: .symbol("arrow.uturn.backward"), label: "실행 취소", enabled: session.canUndo) {
-                session.undo()
-            }
-            .keyboardShortcut("z", modifiers: .command)
-            RoundToolButton(icon: .symbol("arrow.uturn.forward"), label: "다시 실행", enabled: session.canRedo) {
-                session.redo()
-            }
-            .keyboardShortcut("z", modifiers: [.command, .shift])
         }
     }
 }
@@ -138,6 +143,18 @@ private struct ToolGlyph: View {
                 path.addEllipse(in: CGRect(x: 4, y: 9, width: 4, height: 4))
                 path.addEllipse(in: CGRect(x: 10, y: 8.5, width: 5, height: 5))
                 path.addEllipse(in: CGRect(x: 16.5, y: 8, width: 6, height: 6).insetBy(dx: 0.5, dy: 0.5))
+            case .frenchCurve:
+                path.move(to: CGPoint(x: 2, y: h * 0.55))
+                path.addCurve(to: CGPoint(x: w - 2, y: h * 0.35), control1: CGPoint(x: w * 0.25, y: 2), control2: CGPoint(x: w * 0.8, y: 0))
+                path.addCurve(to: CGPoint(x: w * 0.45, y: h * 0.62), control1: CGPoint(x: w + 1, y: h * 0.75), control2: CGPoint(x: w * 0.6, y: h * 0.5))
+                path.addCurve(to: CGPoint(x: 2, y: h * 0.55), control1: CGPoint(x: w * 0.3, y: h * 0.85), control2: CGPoint(x: 1, y: h * 0.8))
+                path.closeSubpath()
+            case .hipCurve:
+                path.move(to: CGPoint(x: 1, y: h - 6))
+                path.addQuadCurve(to: CGPoint(x: w - 3, y: 2), control: CGPoint(x: w * 0.75, y: h - 5))
+                path.addLine(to: CGPoint(x: w - 1, y: 6))
+                path.addQuadCurve(to: CGPoint(x: 1, y: h - 1), control: CGPoint(x: w * 0.8, y: h))
+                path.closeSubpath()
             case .ruler:
                 break
             }
@@ -153,6 +170,8 @@ extension ToolKind {
         case .setSquare45: "45° 삼각자"
         case .setSquare60: "30°·60° 삼각자"
         case .circleTemplate: "원형자"
+        case .frenchCurve: "곡선자"
+        case .hipCurve: "대나무 커브자"
         }
     }
 }

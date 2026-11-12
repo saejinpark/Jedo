@@ -19,8 +19,6 @@ final class CanvasView: UIView {
             guard compassStyle != oldValue else { return }
             keptSpread = nil
             pullNeedle()
-            compass?.spread = nil
-            showCompass()
         }
     }
 
@@ -36,13 +34,11 @@ final class CanvasView: UIView {
     private var holders: [ToolKind: [(touch: UITouch, point: CGPoint)]] = [:]
     /// Whether the compass is out, so a finger held still plants its needle.
     private(set) var compassOnDesk = false
-    /// The compass while it is out, resting on the paper or with its needle in. Canvas pixels.
+    /// The compass while its needle is in the paper. Canvas pixels.
     private(set) var compass: Compass?
     /// Whether the needle is in the paper, so the compass guides the pencil.
     private var needleIn = false
     private let compassView = CompassView()
-    /// A finger dragging the compass while it lies on the paper, and where it was last.
-    private var compassCarrier: (touch: UITouch, point: CGPoint)?
     /// The finger that planted the needle, while it stays down, and where it was last.
     private var needleFinger: (touch: UITouch, point: CGPoint)?
     /// Until the compass first draws, the planting finger can still nudge the needle.
@@ -202,6 +198,8 @@ final class CanvasView: UIView {
         case .setSquare45: CGPoint(x: 0.3, y: 0.38)
         case .setSquare60: CGPoint(x: 0.66, y: 0.38)
         case .circleTemplate: CGPoint(x: 0.5, y: 0.7)
+        case .frenchCurve: CGPoint(x: 0.42, y: 0.56)
+        case .hipCurve: CGPoint(x: 0.5, y: 0.24)
         }
     }
 
@@ -211,6 +209,8 @@ final class CanvasView: UIView {
         case .ruler: RulerView()
         case .setSquare45, .setSquare60: SetSquareView(kind: kind)
         case .circleTemplate: CircleTemplateView()
+        case .frenchCurve: FrenchCurveView()
+        case .hipCurve: HipCurveView()
         }
         insertSubview(view, belowSubview: compassView)
         toolViews[kind] = view
@@ -281,46 +281,30 @@ final class CanvasView: UIView {
 
     // MARK: Compass
 
-    /// Lays the compass on the paper above the middle of the screen, needle
-    /// not yet in, or puts it away.
+    /// Takes the compass out, so a finger held still plants its needle, or puts it away.
+    /// Nothing shows until the needle goes in.
     func setCompass(onDesk: Bool) {
         compassOnDesk = onDesk
-        guard onDesk else {
-            pullNeedle()
-            compass = nil
-            compassView.hide()
-            return
-        }
-        guard compass == nil, let window else { return }
-        // Off to the right, out of the way of the ruler and the drawing.
-        let spot = CGPoint(x: window.bounds.width * 0.86, y: window.bounds.height * 0.3)
-        let here = convert(spot, from: window)
-        var compass = Compass(needle: CGPoint(x: here.x * scale, y: here.y * scale))
+        if !onDesk { pullNeedle() }
+    }
+
+    private func plantNeedle(at point: CGPoint, finger: UITouch) {
+        guard compassOnDesk, activeTouch == nil else { return }
+        var compass = Compass(needle: point)
         if compassStyle.spread == .kept, let keptSpread {
             compass.spread = keptSpread.spread
             compass.leadAngle = keptSpread.angle
         }
         self.compass = compass
-        needleIn = false
-        showCompass()
-    }
-
-    private func plantNeedle(at point: CGPoint, finger: UITouch) {
-        guard compassOnDesk, activeTouch == nil else { return }
-        var compass = self.compass ?? Compass(needle: point)
-        compass.needle = point
-        if compassStyle.spread == .eachTouch { compass.spread = nil }
-        self.compass = compass
         needleIn = true
-        compassCarrier = nil
         needleFinger = (finger, point)
         needleSettled = false
         pullNeedleAfterStroke = false
         showCompass()
     }
 
-    /// Takes the needle out of the paper, or does so as soon as the compass
-    /// stops drawing. The compass stays lying where it was.
+    /// Takes the needle out of the paper, and the compass with it, or does so
+    /// as soon as the compass stops drawing.
     private func pullNeedle() {
         needleFinger = nil
         if activeTouch != nil, guide?.arc != nil {
@@ -328,28 +312,9 @@ final class CanvasView: UIView {
             return
         }
         needleIn = false
+        compass = nil
         pullNeedleAfterStroke = false
-        showCompass()
-    }
-
-    /// A fingertip on the compass lying on the paper picks it up to move it.
-    private func grabCompass(_ touch: UITouch) -> Bool {
-        guard let compass, !needleIn, compassCarrier == nil, let sheet else { return false }
-        let point = pixelLocation(touch)
-        let margin = Self.gripMarginMM * sheet.pixelsPerMillimeter
-        guard compass.bodyContains(point, margin: margin, pixelsPerMillimeter: sheet.pixelsPerMillimeter) else { return false }
-        compassCarrier = (touch, point)
-        return true
-    }
-
-    private func carryCompass(with finger: UITouch) {
-        guard let carrier = compassCarrier, carrier.touch == finger, var compass else { return }
-        let now = pixelLocation(finger)
-        compass.needle.x += now.x - carrier.point.x
-        compass.needle.y += now.y - carrier.point.y
-        self.compass = compass
-        compassCarrier?.point = now
-        showCompass()
+        compassView.hide()
     }
 
     private func moveNeedle(with finger: UITouch) {
@@ -365,7 +330,7 @@ final class CanvasView: UIView {
 
     private func showCompass() {
         guard let compass, let sheet else { return }
-        compassView.show(compass, planted: needleIn, scale: scale, pixelsPerMillimeter: sheet.pixelsPerMillimeter)
+        compassView.show(compass, scale: scale, pixelsPerMillimeter: sheet.pixelsPerMillimeter)
     }
 
     /// Lead and needle follow the compass that just drew, and the legs keep their spread.
@@ -419,12 +384,6 @@ final class CanvasView: UIView {
         let now = CACurrentMediaTime()
         for touch in touches where isFinger(touch, event) {
             guard touch.majorRadius < Self.fingertipRadius else { continue }
-            if grabCompass(touch) {
-                // Held still on the compass, it plants the needle there.
-                presses.begin(touch, at: pixelLocation(touch), time: now)
-                scheduleLongPressCheck()
-                continue
-            }
             if grabTool(touch) { continue }
             // A finger held still may plant the needle; once it moves it may rub with the eraser.
             presses.begin(touch, at: pixelLocation(touch), time: now)
@@ -474,7 +433,6 @@ final class CanvasView: UIView {
         releaseTools(touches)
         let now = CACurrentMediaTime()
         for touch in touches where touch.type == .direct {
-            if let carrier = compassCarrier, carrier.touch == touch { compassCarrier = nil }
             if let held = needleFinger, held.touch == touch {
                 needleFinger = nil
                 if compassStyle.needle == .whileHeld { pullNeedle() }
@@ -512,9 +470,6 @@ final class CanvasView: UIView {
         for touch in touches where touch.type == .direct && touch != activeTouch {
             if let held = needleFinger, held.touch == touch {
                 moveNeedle(with: touch)
-            } else if let carrier = compassCarrier, carrier.touch == touch {
-                _ = presses.move(touch, to: pixelLocation(touch))
-                carryCompass(with: touch)
             } else if presses.move(touch, to: pixelLocation(touch)) {
                 if eraserInHand, activeTouch == nil {
                     startStroke(touch, erasing: true, from: presses.start(of: touch), event: event)

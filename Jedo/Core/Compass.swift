@@ -65,32 +65,6 @@ struct Compass: Equatable, Sendable {
         return distance
     }
 
-    /// Lying closed on the paper, the legs run this way from the handle, this far.
-    static let closedAngle = Double.pi / 2 + 0.35
-    static let closedLengthMM = 60.0
-
-    /// Whether `point` is on the compass lying on the paper (or within `margin`
-    /// of it): its handle, and its legs open or closed.
-    func bodyContains(_ point: CGPoint, margin: Double, pixelsPerMillimeter ppmm: Double) -> Bool {
-        let tips: [CGPoint]
-        if let lead {
-            tips = [lead]
-        } else {
-            let reach = Self.closedLengthMM * ppmm
-            tips = [CGPoint(x: Double(needle.x) + cos(Self.closedAngle) * reach, y: Double(needle.y) + sin(Self.closedAngle) * reach)]
-        }
-        if hypot(Double(point.x - needle.x), Double(point.y - needle.y)) <= 3 * ppmm + margin { return true }
-        return tips.contains { Self.distance(from: point, toSegment: needle, $0) <= 1.5 * ppmm + margin }
-    }
-
-    private static func distance(from p: CGPoint, toSegment a: CGPoint, _ b: CGPoint) -> Double {
-        let ex = Double(b.x - a.x), ey = Double(b.y - a.y)
-        let lengthSquared = ex * ex + ey * ey
-        guard lengthSquared > 0 else { return hypot(Double(p.x - a.x), Double(p.y - a.y)) }
-        let t = min(max((Double(p.x - a.x) * ex + Double(p.y - a.y) * ey) / lengthSquared, 0), 1)
-        return hypot(Double(p.x - a.x) - ex * t, Double(p.y - a.y) - ey * t)
-    }
-
     /// Whether `point` is on the needle's head, close enough to take hold of it.
     func needleHeadContains(_ point: CGPoint, radius: Double) -> Bool {
         hypot(Double(point.x - needle.x), Double(point.y - needle.y)) <= radius
