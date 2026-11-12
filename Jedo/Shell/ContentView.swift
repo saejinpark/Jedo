@@ -17,16 +17,17 @@ struct ContentView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 Spacer(minLength: 0)
+                // The desk tools on a row of their own, so both rows fit an upright iPad.
+                HStack {
+                    Spacer(minLength: 0)
+                    DeskToolsGroup(session: session)
+                }
+                .padding(.bottom, Metric.groupGap)
                 HStack(alignment: .bottom, spacing: Metric.groupGap) {
                     HandGroup(session: session)
                     Spacer(minLength: 0)
-                    VStack(alignment: .trailing, spacing: Metric.groupGap) {
-                        DeskToolsGroup(session: session)
-                        HStack(spacing: Metric.groupGap) {
-                            SheetsGroup(session: session)
-                            HistoryGroup(session: session)
-                        }
-                    }
+                    SheetsGroup(session: session)
+                    HistoryGroup(session: session)
                 }
             }
             .padding(Metric.margin)
@@ -98,6 +99,7 @@ private struct DeskToolsGroup: View {
             tool(.setSquare45)
             tool(.setSquare60)
             tool(.protractor)
+            PinMenu(session: session)
             GroupDivider()
             ToolSetMenu(session: session, title: "형판", kinds: ToolKind.templates)
             ToolSetMenu(session: session, title: "운형자", kinds: ToolKind.frenchCurves)
@@ -110,6 +112,33 @@ private struct DeskToolsGroup: View {
         return ToolButton(icon: ToolIcon(kind), label: onDesk ? "\(kind.name) 치우기" : "\(kind.name) 꺼내기", selected: onDesk) {
             session.toggle(kind)
         }
+    }
+}
+
+/// Perspective pins: push one in at each vanishing point, and lay a straight
+/// edge against it to swing it about the point.
+private struct PinMenu: View {
+    @Bindable var session: DrawingSession
+
+    var body: some View {
+        Menu {
+            Button {
+                session.addPin()
+            } label: {
+                Label(session.pinCount == 0 ? "핀 꽂기" : "핀 하나 더 꽂기", systemImage: "pin")
+            }
+            .disabled(session.pinCount >= CanvasView.maxPins)
+            if session.pinCount > 0 {
+                Button(role: .destructive) { session.removePins() } label: {
+                    Label("핀 모두 뽑기", systemImage: "pin.slash")
+                }
+            }
+        } label: {
+            ToolFace(icon: .symbol("pin"), selected: session.pinCount > 0)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("투시 핀")
     }
 }
 

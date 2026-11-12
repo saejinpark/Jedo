@@ -53,6 +53,13 @@ final class DrawingSession {
             }
         }
     }
+    /// How many perspective pins are in the board.
+    private(set) var pinCount = 0
+
+    func addPin() { canvas?.addPin() }
+    func removePins() { canvas?.removePins() }
+    func pinsChanged(_ count: Int) { if pinCount != count { pinCount = count } }
+
     /// Which eraser is in hand.
     var eraserKind: EraserKind = .rubber {
         didSet { canvas?.eraserKind = eraserKind }

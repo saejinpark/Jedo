@@ -385,3 +385,54 @@ struct EraserKindTests {
         #expect(!empty.clear())
     }
 }
+
+struct PerspectivePinTests {
+    let shapeAt = { (pose: ToolPose) in DeskTool(kind: .ruler, pose: pose).shape(pixelsPerMillimeter: ppmm) }
+    let level = ToolPose(center: CGPoint(x: 1000, y: 1000), angle: 0)
+    // The ruler is 30 mm wide: its upper edge runs along y = 850.
+    let pin = CGPoint(x: 1200, y: 840)
+
+    func distance(_ pose: ToolPose, side: Int) -> Double {
+        PinPivot.side(shapeAt(pose), side).measure(pin).out
+    }
+
+    @Test func anEdgeNearThePinRestsAgainstIt() throws {
+        let side = try #require(PinPivot.contact(shapeAt(level), pin: pin, pixelsPerMillimeter: ppmm))
+        #expect(PinPivot.side(shapeAt(level), side).normal.y < -0.99, "the upper edge")
+        let settled = PinPivot.settle(level, side: side, pin: pin, shapeAt: shapeAt, pixelsPerMillimeter: ppmm)
+        #expect(abs(distance(settled, side: side) - PinPivot.shaftMM * ppmm) < 1e-6)
+        #expect(PinPivot.contact(shapeAt(ToolPose(center: CGPoint(x: 1000, y: 1300), angle: 0)), pin: pin,
+                                 pixelsPerMillimeter: ppmm) == nil, "too far away")
+    }
+
+    @Test func aQuickDragIntoThePinStillTakesTheSideItCameFrom() throws {
+        let before = shapeAt(ToolPose(center: CGPoint(x: 1000, y: 1020), angle: 0))
+        let after = shapeAt(ToolPose(center: CGPoint(x: 1000, y: 980), angle: 0)) // pin now 3 mm inside
+        let side = try #require(PinPivot.contact(after, pin: pin, before: before, pixelsPerMillimeter: ppmm))
+        #expect(PinPivot.side(after, side).normal.y < -0.99)
+    }
+
+    @Test func swingingTurnsAboutThePinAndKeepsTheEdgeOnIt() throws {
+        let side = try #require(PinPivot.contact(shapeAt(level), pin: pin, pixelsPerMillimeter: ppmm))
+        let start = PinPivot.settle(level, side: side, pin: pin, shapeAt: shapeAt, pixelsPerMillimeter: ppmm)
+        let old = CGPoint(x: 1500, y: 900)
+        let turn = 10 * Double.pi / 180
+        let dx = Double(old.x - pin.x), dy = Double(old.y - pin.y)
+        let new = CGPoint(x: Double(pin.x) + dx * cos(turn) - dy * sin(turn), y: Double(pin.y) + dx * sin(turn) + dy * cos(turn))
+        let moved = try #require(PinPivot.pivot(start, side: side, pin: pin, from: old, to: new, shapeAt: shapeAt,
+                                                pixelsPerMillimeter: ppmm))
+        #expect(abs(moved.angle - turn) < 1e-6)
+        #expect(abs(distance(moved, side: side) - PinPivot.shaftMM * ppmm) < 1e-6, "still touching")
+    }
+
+    @Test func slidingPastItsEndTakesTheToolOffThePin() throws {
+        let side = try #require(PinPivot.contact(shapeAt(level), pin: pin, pixelsPerMillimeter: ppmm))
+        let start = PinPivot.settle(level, side: side, pin: pin, shapeAt: shapeAt, pixelsPerMillimeter: ppmm)
+        let short = PinPivot.pivot(start, side: side, pin: pin, from: CGPoint(x: 1500, y: 846), to: CGPoint(x: 2000, y: 846),
+                                   shapeAt: shapeAt, pixelsPerMillimeter: ppmm)
+        #expect(short != nil, "still on the pin")
+        let far = PinPivot.pivot(start, side: side, pin: pin, from: CGPoint(x: 1500, y: 846), to: CGPoint(x: 2900, y: 846),
+                                 shapeAt: shapeAt, pixelsPerMillimeter: ppmm)
+        #expect(far == nil, "slid off its end")
+    }
+}

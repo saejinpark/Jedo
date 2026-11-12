@@ -112,6 +112,16 @@ final class CanvasView: UIView {
         }
     }
 
+    /// Pins pushed in at vanishing points, in paper pixels.
+    private(set) var pins: [CGPoint] = []
+    private let pinsView = PinsView()
+    /// A finger moving a pin, by the pin's index.
+    private var pinHolder: (touch: UITouch, pin: Int)?
+    /// Tools resting against a pin while one finger moves them: the pin and the side touching it.
+    private var pivots: [ToolKind: (pin: Int, side: Int)] = [:]
+    /// Called when pins come or go.
+    var onPinsChange: ((Int) -> Void)?
+
     /// What the knife has left of each sheet of tone.
     private var toneCuts: [Int: ToneCut] = [:]
     /// While the knife cuts: each sheet of tone as it was before.
@@ -144,6 +154,7 @@ final class CanvasView: UIView {
         layer.addSublayer(inkLayer)
         sheetsView.isUserInteractionEnabled = false
         addSubview(sheetsView)
+        addSubview(pinsView)
         addSubview(compassView)
         memoryWarningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
@@ -207,6 +218,7 @@ final class CanvasView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         compassView.frame = bounds
+        pinsView.frame = bounds
         sheetsView.frame = bounds
     }
 
@@ -377,7 +389,12 @@ final class CanvasView: UIView {
         let sheets = layers.filter { !hiddenLayers.contains($0.id) }.map { layer in
             layer.outline(pixelsPerMillimeter: sheet.pixelsPerMillimeter).map { CGPoint(x: Double($0.x) / side, y: Double($0.y) / side) }
         }
-        return sheets + toolShapes.map { shape in
+        let r = 2 * sheet.pixelsPerMillimeter
+        let pinMarks = pins.map { p in
+            [CGPoint(x: p.x - r, y: p.y - r), CGPoint(x: p.x + r, y: p.y - r), CGPoint(x: p.x + r, y: p.y + r), CGPoint(x: p.x - r, y: p.y + r)]
+                .map { CGPoint(x: Double($0.x) / side, y: Double($0.y) / side) }
+        }
+        return sheets + pinMarks + toolShapes.map { shape in
             shape.outline.map { q in
                 let p = shape.world(q)
                 return CGPoint(x: Double(p.x) / side, y: Double(p.y) / side)
@@ -448,7 +465,7 @@ final class CanvasView: UIView {
         case .hipCurve: HipCurveView()
         case .protractor: ProtractorView()
         }
-        insertSubview(view, belowSubview: compassView)
+        insertSubview(view, belowSubview: pinsView)
         toolViews[kind] = view
         return view
     }
@@ -471,7 +488,7 @@ final class CanvasView: UIView {
     private func raise(_ kind: ToolKind) {
         if activeTouch == nil, let i = tools.firstIndex(where: { $0.kind == kind }) {
             tools.append(tools.remove(at: i))
-            if let view = toolViews[kind] { insertSubview(view, belowSubview: compassView) }
+            if let view = toolViews[kind] { insertSubview(view, belowSubview: pinsView) }
         }
         toolsChanged()
     }
@@ -480,12 +497,29 @@ final class CanvasView: UIView {
     private func grabTool(_ touch: UITouch) -> Bool {
         guard let sheet, touch.majorRadius < Self.fingertipRadius else { return false }
         let point = pixelLocation(touch)
+        // A pin's head sits above everything: a fingertip on it moves the pin.
+        if pinHolder == nil, let i = pins.indices.min(by: { pins[$0].distance(to: point) < pins[$1].distance(to: point) }),
+           pins[i].distance(to: point) <= PinsView.headMM * 1.4 * sheet.pixelsPerMillimeter {
+            pinHolder = (touch, i)
+            return true
+        }
         let margin = Self.gripMarginMM * sheet.pixelsPerMillimeter
         guard let i = tools.indices.last(where: {
             toolShapes[$0].outlineContains(point, margin: margin) && holders[tools[$0].kind, default: []].count < 2
         }) else { return grabLayer(touch, at: point) }
         let kind = tools[i].kind
-        if holders[kind, default: []].isEmpty { stacked[kind] = overlapping(kind) }
+        if holders[kind, default: []].isEmpty {
+            stacked[kind] = overlapping(kind)
+            // Already resting on a pin: one finger swings it about the pin from the start.
+            if ToolContact.collides(kind),
+               let p = pins.indices.first(where: { PinPivot.contact(toolShapes[i], pin: pins[$0], pixelsPerMillimeter: sheet.pixelsPerMillimeter) != nil }),
+               let side = PinPivot.contact(toolShapes[i], pin: pins[p], pixelsPerMillimeter: sheet.pixelsPerMillimeter) {
+                pivots[kind] = (p, side)
+            }
+        } else {
+            // A second finger lifts it off the pin to move it freely.
+            pivots[kind] = nil
+        }
         holders[kind, default: []].append((touch, point))
         raise(kind)
         return true
@@ -498,12 +532,35 @@ final class CanvasView: UIView {
             guard let i = tools.firstIndex(where: { $0.kind == kind }) else { continue }
             let now = held.map { pixelLocation($0.touch) }
             var pose = tools[i].pose
-            switch held.count {
-            case 1: pose = RigidMotion.slide(pose, from: held[0].point, to: now[0])
-            default: pose = RigidMotion.slideAndTurn(pose, from: (held[0].point, held[1].point), to: (now[0], now[1]))
+            let ppmm = sheet.pixelsPerMillimeter
+            let shapeAt = { (p: ToolPose) in DeskTool(kind: kind, pose: p).shape(pixelsPerMillimeter: ppmm) }
+            var onPin = false
+            if held.count == 1, let rest = pivots[kind], rest.pin < pins.count,
+               let swung = PinPivot.pivot(pose, side: rest.side, pin: pins[rest.pin], from: held[0].point, to: now[0],
+                                          shapeAt: shapeAt, pixelsPerMillimeter: ppmm) {
+                // Resting on a pin: one finger swings it about the pin and slides it along.
+                pose = swung
+                onPin = true
+            } else {
+                pivots[kind] = nil
+                switch held.count {
+                case 1: pose = RigidMotion.slide(pose, from: held[0].point, to: now[0])
+                default: pose = RigidMotion.slideAndTurn(pose, from: (held[0].point, held[1].point), to: (now[0], now[1]))
+                }
+                // Pushed against a pin with one finger, a straight edge comes to rest on it.
+                if held.count == 1, ToolContact.collides(kind) {
+                    let before = toolShapes[i], after = shapeAt(pose)
+                    for (p, pin) in pins.enumerated() {
+                        guard let side = PinPivot.contact(after, pin: pin, before: before, pixelsPerMillimeter: ppmm) else { continue }
+                        pose = PinPivot.settle(pose, side: side, pin: pin, shapeAt: shapeAt, pixelsPerMillimeter: ppmm)
+                        pivots[kind] = (p, side)
+                        onPin = true
+                        break
+                    }
+                }
             }
             // Butt against the other tools instead of passing through them.
-            if ToolContact.collides(kind) {
+            if ToolContact.collides(kind), !onPin {
                 let moving = ToolContact.polygon(DeskTool(kind: kind, pose: pose).shape(pixelsPerMillimeter: sheet.pixelsPerMillimeter))
                 let free = stacked[kind] ?? []
                 let obstacles = tools.indices
@@ -531,12 +588,52 @@ final class CanvasView: UIView {
 
     private func releaseTools(_ touches: Set<UITouch>) {
         for kind in holders.keys { holders[kind]?.removeAll { touches.contains($0.touch) } }
+        // A tool let go stays where it lies; picked up again, it finds the pin anew.
+        for kind in pivots.keys where holders[kind, default: []].isEmpty { pivots[kind] = nil }
+        if let held = pinHolder, touches.contains(held.touch) { pinHolder = nil }
         for id in layerHolders.keys { layerHolders[id]?.removeAll { touches.contains($0.touch) } }
         layerHolders = layerHolders.filter { !$0.value.isEmpty }
     }
 
     /// How far outside a tool a fingertip still catches it.
     private static let gripMarginMM = 4.0
+
+    // MARK: Perspective pins
+
+    /// Pushes a pin into the board in the middle of the screen. Drag it to the vanishing point.
+    func addPin() {
+        guard let pose = screenPose(at: CGPoint(x: 0.5, y: 0.42)), pins.count < Self.maxPins else { return }
+        // A second or third pin lands beside the last, not on top of it.
+        let step = 30 * (sheet?.pixelsPerMillimeter ?? 10) * Double(pins.count)
+        pins.append(CGPoint(x: Double(pose.center.x) + step, y: pose.center.y))
+        pinsChanged()
+    }
+
+    /// Pulls every pin out.
+    func removePins() {
+        pins.removeAll()
+        pivots.removeAll()
+        pinHolder = nil
+        pinsChanged()
+    }
+
+    private func pinsChanged() {
+        pinsView.show(pins.map { CGPoint(x: $0.x / scale, y: $0.y / scale) },
+                      headRadius: CGFloat(PinsView.headMM * (sheet?.pixelsPerMillimeter ?? 10)) / scale)
+        onPinsChange?(pins.count)
+        onOverviewChange?()
+    }
+
+    private func movePin(_ touches: Set<UITouch>) {
+        guard let held = pinHolder, touches.contains(held.touch), held.pin < pins.count else { return }
+        pins[held.pin] = pixelLocation(held.touch)
+        // A tool resting on the pin lets go of it rather than be dragged along.
+        pivots = pivots.filter { $0.value.pin != held.pin }
+        pinsChanged()
+    }
+
+    /// One, two or three vanishing points.
+    static let maxPins = 3
 
     // MARK: Sheets
 
@@ -1117,6 +1214,7 @@ final class CanvasView: UIView {
     private static let fingertipRadius: CGFloat = 45
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        movePin(touches)
         moveTools(touches)
         moveLayers(touches)
         for touch in touches where touch.type == .direct && touch != activeTouch {
