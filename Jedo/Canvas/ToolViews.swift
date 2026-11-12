@@ -185,15 +185,27 @@ final class CircleTemplateView: OutlineToolView {
     }
 }
 
-/// A smoky orange acrylic French curve.
+/// A smoky orange acrylic French curve (운형자) with its slot.
 final class FrenchCurveView: OutlineToolView {
     init() { super.init(kind: .frenchCurve) }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     override var outlineMM: [CGPoint] { CurveTools.frenchCurveMM }
 
+    override func bodyPath() -> UIBezierPath {
+        let path = super.bodyPath()
+        let slot = UIBezierPath()
+        for (i, p) in CurveTools.frenchCurveSlotOutlineMM.enumerated() {
+            i == 0 ? slot.move(to: pt(p)) : slot.addLine(to: pt(p))
+        }
+        slot.close()
+        path.append(slot.reversing())
+        return path
+    }
+
     override func draw(_ rect: CGRect) {
         let body = bodyPath()
+        body.usesEvenOddFillRule = true
         UIColor(red: 0.98, green: 0.72, blue: 0.42, alpha: 0.30).setFill()
         body.fill()
         UIColor(red: 0.62, green: 0.40, blue: 0.20, alpha: 0.55).setStroke()
@@ -268,5 +280,58 @@ final class HipCurveView: OutlineToolView {
             travelled += step
         }
         ctx.strokePath()
+    }
+}
+
+/// A clear acrylic protractor: degrees round the arc both ways, a base line
+/// with its centre marked.
+final class ProtractorView: OutlineToolView {
+    init() { super.init(kind: .protractor) }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var outlineMM: [CGPoint] { Protractor.outlineMM }
+
+    override func draw(_ rect: CGRect) {
+        guard let ctx = UIGraphicsGetCurrentContext() else { return }
+        let body = bodyPath()
+        UIColor(red: 0.86, green: 0.93, blue: 0.97, alpha: 0.32).setFill()
+        body.fill()
+        Self.rim.setStroke()
+        body.lineWidth = 0.6
+        body.stroke()
+
+        let ink = Self.ink
+        ink.setStroke()
+        ctx.setLineWidth(0.45)
+        // The base line and the centre mark.
+        ctx.move(to: pt(CGPoint(x: -Protractor.radiusMM + 2, y: 0)))
+        ctx.addLine(to: pt(CGPoint(x: Protractor.radiusMM - 2, y: 0)))
+        ctx.move(to: pt(CGPoint(x: 0, y: -3)))
+        ctx.addLine(to: pt(CGPoint(x: 0, y: 3)))
+        // Degrees.
+        for d in 0...180 {
+            let length: Double = d % 10 == 0 ? 5 : d % 5 == 0 ? 3.2 : 1.8
+            ctx.move(to: pt(Protractor.onArc(degree: Double(d))))
+            ctx.addLine(to: pt(Protractor.onArc(degree: Double(d), inset: length)))
+        }
+        ctx.strokePath()
+        // An inner arc the numbers sit against.
+        let inner = UIBezierPath(arcCenter: pt(.zero), radius: (Protractor.radiusMM - 16) * pointsPerMM,
+                                 startAngle: .pi, endAngle: 0, clockwise: true)
+        UIColor(red: 0.35, green: 0.45, blue: 0.50, alpha: 0.35).setStroke()
+        inner.lineWidth = 0.5
+        inner.stroke()
+
+        let outerFont = UIFont.monospacedDigitSystemFont(ofSize: 2.3 * pointsPerMM, weight: .medium)
+        let innerFont = UIFont.monospacedDigitSystemFont(ofSize: 1.9 * pointsPerMM, weight: .regular)
+        for d in stride(from: 0, through: 180, by: 10) {
+            for (value, inset, font, alpha) in [(d, 8.0, outerFont, 0.9), (180 - d, 12.5, innerFont, 0.6)] {
+                let label = "\(value)" as NSString
+                let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: ink.withAlphaComponent(alpha)]
+                let size = label.size(withAttributes: attributes)
+                let at = pt(Protractor.onArc(degree: Double(d), inset: inset))
+                label.draw(at: CGPoint(x: at.x - size.width / 2, y: at.y - size.height / 2), withAttributes: attributes)
+            }
+        }
     }
 }

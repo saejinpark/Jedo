@@ -264,22 +264,59 @@ struct CurveToolTests {
         shape.contact(.boundary, at: p, offset: 0).distance
     }
 
+    @Test func theBambooCurveIsLongAndBendsMostTowardItsEnd() {
+        let c = CurveTools.self
+        func direction(_ t: Double) -> Double {
+            let a = c.hipCurveCentre(t), b = c.hipCurveCentre(t + 0.001)
+            return atan2(Double(b.y - a.y), Double(b.x - a.x))
+        }
+        let total = abs(direction(0.999) - direction(0))
+        let lastThird = abs(direction(0.999) - direction(2.0 / 3))
+        #expect(c.hipCurveLengthMM >= 600)
+        #expect(total > 35 * .pi / 180 && total < 45 * .pi / 180, "about 40° over its length")
+        #expect(lastThird > total * 0.5, "most of the bend in the last third")
+    }
+
     @Test func curvedToolsGuideAsOneEdge() {
-        #expect(shape(.frenchCurve).guidingEdges == [.boundary])
         #expect(shape(.hipCurve).guidingEdges == [.boundary])
         #expect(shape(.ruler).guidingEdges == [.side(0), .side(2)])
     }
 
-    @Test func theFrenchCurvesHollowIsOpenPaper() {
+    @Test func theFrenchCurvesSlotIsOpenPaperAndGuides() {
         let s = shape(.frenchCurve)
-        // The dip in the bottom edge: below the knot at (95, 25), between the lobes on either side.
-        let knots = CurveTools.frenchCurveKnotsMM.map { $0.scaled(CurveTools.frenchCurveScale) }
-        let offsetToCentre = CurveTools.centre(of: CurveTools.closedCatmullRom(knots, samplesPerSpan: 24))
-        let hollow = CGPoint(x: 95 * CurveTools.frenchCurveScale, y: 32 * CurveTools.frenchCurveScale).minus(offsetToCentre)
-        let onPaper = s.world(hollow.scaled(Self.ppmm))
-        #expect(!s.covers(onPaper))
-        let body = CGPoint(x: 95 * CurveTools.frenchCurveScale, y: 0).minus(offsetToCentre)
-        #expect(s.covers(s.world(body.scaled(Self.ppmm))))
+        #expect(s.guidingEdges == [.boundary, .cutout(0)])
+        let slot = CurveTools.frenchCurveSlotOutlineMM
+        let middle = CurveTools.centre(of: slot)
+        let inSlot = s.world(middle.scaled(Self.ppmm))
+        #expect(!s.covers(inSlot), "the slot's middle is paper")
+        // A pencil just inside the slot's rim rests against it.
+        let rim = slot[slot.count / 4]
+        let toward = CGPoint(x: Double(middle.x - rim.x), y: Double(middle.y - rim.y))
+        let len = hypot(Double(toward.x), Double(toward.y))
+        let near = CGPoint(x: Double(rim.x) + Double(toward.x) / len * 1.5, y: Double(rim.y) + Double(toward.y) / len * 1.5)
+        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+        let out = g.guide(StrokeSample(location: s.world(near.scaled(Self.ppmm))), tools: [s]).location
+        #expect(abs(s.contact(.cutout(0), at: out, offset: 0).distance - 2) < 0.05)
+    }
+
+    @Test func theFrenchCurveTightensTowardItsTip() {
+        // The centre line turns ever faster: the second half of the bend turns three times the first.
+        let spine = CurveTools.frenchCurveSpine()
+        let bendStart = Int(CurveTools.frenchCurveStraightMM / 0.5)
+        let mid = (bendStart + spine.count - 1) / 2
+        let first = abs(spine[mid].angle - spine[bendStart].angle)
+        let second = abs(spine[spine.count - 1].angle - spine[mid].angle)
+        #expect(abs(second / first - 3) < 0.1)
+        #expect(spine[0].width > spine[spine.count - 1].width * 4)
+    }
+
+    @Test func theSlotSitsInsideTheBody() {
+        let s = shape(.frenchCurve)
+        for q in CurveTools.frenchCurveSlotOutlineMM {
+            let p = s.world(q.scaled(Self.ppmm))
+            #expect(s.outlineContains(p))
+            #expect(abs(s.contact(.boundary, at: p, offset: 0).distance) > 2 * Self.ppmm, "at least 2 mm of plastic round the slot")
+        }
     }
 
     @Test func aWobblyLineAlongTheFrenchCurveHugsItEverywhere() {
@@ -318,7 +355,7 @@ struct CurveToolTests {
         let s = shape(.hipCurve)
         let edges = CurveTools.hipCurveEdgesMM
         for edge in [edges.scale, edges.inner] {
-            let q = edge[80], r = edge[81]
+            let q = edge[150], r = edge[151]
             // Just outside the edge, half way along.
             let dx = Double(r.x - q.x), dy = Double(r.y - q.y), len = hypot(dx, dy)
             var normal = (x: dy / len, y: -dx / len)
@@ -333,7 +370,7 @@ struct CurveToolTests {
     }
 
     @Test func curvedOutlinesDoNotCrossThemselves() {
-        for outline in [CurveTools.frenchCurveMM, CurveTools.hipCurveMM] {
+        for outline in [CurveTools.frenchCurveMM, CurveTools.frenchCurveSlotOutlineMM, CurveTools.hipCurveMM] {
             let n = outline.count
             var crossings = 0
             for i in 0..<(n - 2) {
@@ -352,5 +389,70 @@ struct CurveToolTests {
             Double(q.x - p.x) * Double(r.y - p.y) - Double(q.y - p.y) * Double(r.x - p.x)
         }
         return orient(a, b, c) * orient(a, b, d) < 0 && orient(c, d, a) * orient(c, d, b) < 0
+    }
+}
+
+
+struct ProtractorTests {
+    static let ppmm = 10.0
+
+    func shape(angle: Double = 0) -> ToolShape {
+        DeskTool(kind: .protractor, pose: ToolPose(center: CGPoint(x: 1000, y: 1000), angle: angle)).shape(pixelsPerMillimeter: Self.ppmm)
+    }
+
+    @Test func turnsAboutTheCentreOfItsBaseLine() {
+        let s = shape(angle: 0.7)
+        #expect(s.world(.zero) == CGPoint(x: 1000, y: 1000))
+        #expect(s.covers(CGPoint(x: 1000, y: 1000)))
+    }
+
+    @Test func aLineRoundTheArcFollowsIt() {
+        let s = shape()
+        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+        let r = Protractor.radiusMM * Self.ppmm
+        for i in 0...60 {
+            let a = Double.pi * (0.2 + 0.6 * Double(i) / 60)
+            let wobble = 8 + 6 * sin(Double(i))
+            let p = CGPoint(x: 1000 + cos(a) * (r + wobble), y: 1000 - sin(a) * (r + wobble))
+            let out = g.guide(StrokeSample(location: p), tools: [s]).location
+            #expect(abs(hypot(Double(out.x) - 1000, Double(out.y) - 1000) - (r + 2)) < 0.05)
+        }
+    }
+
+    @Test func theBaseIsAStraightEdge() {
+        let s = shape()
+        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+        let base = 1000 + Protractor.baseMM * Self.ppmm
+        for i in 0..<40 {
+            let p = CGPoint(x: 600 + Double(i) * 20, y: base + 10 + Double(i % 3) * 4)
+            let y = g.guide(StrokeSample(location: p), tools: [s]).location.y
+            #expect(abs(y - (base + 2)) < 1e-6)
+        }
+    }
+
+    @Test func degreesRunAnticlockwiseFromTheRight() {
+        #expect(abs(Protractor.onArc(degree: 0).x - 60) < 1e-9)
+        #expect(abs(Protractor.onArc(degree: 90).y + 60) < 1e-9)
+        #expect(abs(Protractor.onArc(degree: 180).x + 60) < 1e-9)
+    }
+}
+
+struct OverviewTests {
+    @Test func aLineShowsInTheCellsItCrossesOnly() {
+        let sheet = DraftingSheet(width: 1000, height: 1000, pixelsPerMillimeter: 10, paper: PaperTexture(size: 64, seed: 1))
+        let line = (0...50).map { StrokeSample(location: CGPoint(x: 100 + Double($0) * 10, y: 250), pressure: 0.8) }
+        sheet.beginStroke(grade: .b4, at: line[0])
+        sheet.extendStroke(with: Array(line.dropFirst()), predicted: [])
+        sheet.endStroke()
+        let map = sheet.overview(size: 10)
+        // Row 2 (y 200–300) from column 1 to 6 holds the line.
+        for column in 1...5 { #expect(map[2 * 10 + column] > 0.2) }
+        #expect(map[8 * 10 + 5] == 0)
+        #expect(map[2 * 10 + 8] == 0)
+    }
+
+    @Test func blankPaperIsBlank() {
+        let sheet = DraftingSheet(width: 500, height: 500, pixelsPerMillimeter: 10, paper: PaperTexture(size: 64, seed: 1))
+        #expect(sheet.overview(size: 16).allSatisfy { $0 == 0 })
     }
 }

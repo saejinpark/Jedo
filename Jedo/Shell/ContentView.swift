@@ -144,22 +144,34 @@ private struct ToolGlyph: View {
                 path.addEllipse(in: CGRect(x: 10, y: 8.5, width: 5, height: 5))
                 path.addEllipse(in: CGRect(x: 16.5, y: 8, width: 6, height: 6).insetBy(dx: 0.5, dy: 0.5))
             case .frenchCurve:
-                path.move(to: CGPoint(x: 2, y: h * 0.55))
-                path.addCurve(to: CGPoint(x: w - 2, y: h * 0.35), control1: CGPoint(x: w * 0.25, y: 2), control2: CGPoint(x: w * 0.8, y: 0))
-                path.addCurve(to: CGPoint(x: w * 0.45, y: h * 0.62), control1: CGPoint(x: w + 1, y: h * 0.75), control2: CGPoint(x: w * 0.6, y: h * 0.5))
-                path.addCurve(to: CGPoint(x: 2, y: h * 0.55), control1: CGPoint(x: w * 0.3, y: h * 0.85), control2: CGPoint(x: 1, y: h * 0.8))
-                path.closeSubpath()
+                path = Self.fitted(CurveTools.frenchCurveMM, in: size)
+                path.addPath(Self.fitted(CurveTools.frenchCurveSlotOutlineMM, in: size, like: CurveTools.frenchCurveMM))
             case .hipCurve:
-                path.move(to: CGPoint(x: 1, y: h - 6))
-                path.addQuadCurve(to: CGPoint(x: w - 3, y: 2), control: CGPoint(x: w * 0.75, y: h - 5))
-                path.addLine(to: CGPoint(x: w - 1, y: 6))
-                path.addQuadCurve(to: CGPoint(x: 1, y: h - 1), control: CGPoint(x: w * 0.8, y: h))
-                path.closeSubpath()
+                path = Self.fitted(CurveTools.hipCurveMM, in: size)
+            case .protractor:
+                path = Self.fitted(Protractor.outlineMM, in: size)
             case .ruler:
                 break
             }
             context.stroke(path, with: .foreground, style: StrokeStyle(lineWidth: 1.8, lineJoin: .round))
         }
+    }
+
+    /// An outline scaled to fit `size`, or placed as `reference` would be.
+    static func fitted(_ points: [CGPoint], in size: CGSize, like reference: [CGPoint]? = nil) -> Path {
+        let frame = reference ?? points
+        let xs = frame.map(\.x), ys = frame.map(\.y)
+        let minX = xs.min() ?? 0, minY = ys.min() ?? 0
+        let w = max((xs.max() ?? 1) - minX, 1e-6), h = max((ys.max() ?? 1) - minY, 1e-6)
+        let k = min((size.width - 3) / w, (size.height - 3) / h)
+        let dx = (size.width - w * k) / 2, dy = (size.height - h * k) / 2
+        var path = Path()
+        for (i, p) in points.enumerated() {
+            let q = CGPoint(x: (p.x - minX) * k + dx, y: (p.y - minY) * k + dy)
+            i == 0 ? path.move(to: q) : path.addLine(to: q)
+        }
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -170,8 +182,9 @@ extension ToolKind {
         case .setSquare45: "45° 삼각자"
         case .setSquare60: "30°·60° 삼각자"
         case .circleTemplate: "원형자"
-        case .frenchCurve: "곡선자"
+        case .frenchCurve: "운형자"
         case .hipCurve: "대나무 커브자"
+        case .protractor: "각도기"
         }
     }
 }

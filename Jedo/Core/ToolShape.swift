@@ -24,6 +24,8 @@ struct ToolShape: Equatable, Sendable {
         case hole(Int)
         /// The whole outline of a curved tool.
         case boundary
+        /// The rim of a cut-out slot in a curved tool.
+        case cutout(Int)
     }
 
     /// Where the pencil stands relative to one edge.
@@ -50,20 +52,24 @@ struct ToolShape: Equatable, Sendable {
     var holes: [Hole] = []
     /// Whether the outline is a sampled curve that guides as one edge.
     var smooth = false
+    /// Slots cut through the body, each a sampled closed curve whose rim guides.
+    var cutouts: [[CGPoint]] = []
 
-    init(pose: ToolPose, outline: [CGPoint], guidingSides: [Bool]? = nil, holes: [Hole] = [], smooth: Bool = false) {
+    init(pose: ToolPose, outline: [CGPoint], guidingSides: [Bool]? = nil, holes: [Hole] = [], smooth: Bool = false,
+         cutouts: [[CGPoint]] = []) {
         precondition(outline.count >= 3)
         self.pose = pose
         self.outline = outline
         self.guidingSides = guidingSides ?? Array(repeating: true, count: outline.count)
         self.holes = holes
         self.smooth = smooth
+        self.cutouts = cutouts
     }
 
     /// Every edge a pencil can be guided by.
     var guidingEdges: [Edge] {
         let rim: [Edge] = smooth ? [.boundary] : outline.indices.filter { guidingSides[$0] }.map(Edge.side)
-        return rim + holes.indices.map(Edge.hole)
+        return rim + holes.indices.map(Edge.hole) + cutouts.indices.map(Edge.cutout)
     }
 
     // MARK: Frames
@@ -96,11 +102,17 @@ struct ToolShape: Equatable, Sendable {
     }
 
     /// Whether local point `q` is inside the outline (even–odd, so any simple outline works).
-    private func inside(_ q: CGPoint) -> Bool {
+    private func inside(_ q: CGPoint) -> Bool { Self.inside(q, outline) }
+
+    private func nearestOnOutline(_ q: CGPoint) -> (point: CGPoint, distance: Double, dir: (x: Double, y: Double)) {
+        Self.nearest(q, on: outline)
+    }
+
+    private static func inside(_ q: CGPoint, _ polygon: [CGPoint]) -> Bool {
         var result = false
-        var j = outline.count - 1
-        for i in outline.indices {
-            let a = outline[i], b = outline[j]
+        var j = polygon.count - 1
+        for i in polygon.indices {
+            let a = polygon[i], b = polygon[j]
             if (a.y > q.y) != (b.y > q.y) {
                 let x = Double(a.x) + Double(q.y - a.y) / Double(b.y - a.y) * Double(b.x - a.x)
                 if Double(q.x) < x { result.toggle() }
@@ -110,11 +122,11 @@ struct ToolShape: Equatable, Sendable {
         return result
     }
 
-    /// The closest point on the outline to local point `q`, and the direction of the outline there.
-    private func nearestOnOutline(_ q: CGPoint) -> (point: CGPoint, distance: Double, dir: (x: Double, y: Double)) {
-        var best = (point: outline[0], distance: Double.infinity, dir: (x: 1.0, y: 0.0))
-        for i in outline.indices {
-            let a = outline[i], b = outline[(i + 1) % outline.count]
+    /// The closest point on a closed polygon to local point `q`, and the polygon's direction there.
+    private static func nearest(_ q: CGPoint, on polygon: [CGPoint]) -> (point: CGPoint, distance: Double, dir: (x: Double, y: Double)) {
+        var best = (point: polygon[0], distance: Double.infinity, dir: (x: 1.0, y: 0.0))
+        for i in polygon.indices {
+            let a = polygon[i], b = polygon[(i + 1) % polygon.count]
             let ex = Double(b.x - a.x), ey = Double(b.y - a.y)
             let lengthSquared = ex * ex + ey * ey
             guard lengthSquared > 0 else { continue }
@@ -133,7 +145,8 @@ struct ToolShape: Equatable, Sendable {
     func covers(_ p: CGPoint) -> Bool {
         guard outlineContains(p) else { return false }
         let q = local(p)
-        return !holes.contains { hypot(Double(q.x - $0.center.x), Double(q.y - $0.center.y)) < $0.radius }
+        if holes.contains(where: { hypot(Double(q.x - $0.center.x), Double(q.y - $0.center.y)) < $0.radius }) { return false }
+        return !cutouts.contains { Self.inside(q, $0) }
     }
 
     // MARK: Edges
@@ -160,20 +173,32 @@ struct ToolShape: Equatable, Sendable {
             return Contact(distance: hole.radius - r, alongside: true, point: world(point),
                            tangent: worldDirection((x: -vy / max(r, 1e-9), y: vx / max(r, 1e-9))))
         case .boundary:
-            let n = nearestOnOutline(q)
-            let isInside = inside(q)
-            var out: (x: Double, y: Double)
-            if n.distance > 1e-6 {
-                let v = (x: (Double(q.x) - Double(n.point.x)) / n.distance, y: (Double(q.y) - Double(n.point.y)) / n.distance)
-                out = isInside ? (-v.x, -v.y) : v
-            } else {
-                out = (n.dir.y, -n.dir.x)
-                if inside(CGPoint(x: Double(n.point.x) + out.x * 0.5, y: Double(n.point.y) + out.y * 0.5)) { out = (-out.x, -out.y) }
-            }
-            let point = CGPoint(x: Double(n.point.x) + out.x * offset, y: Double(n.point.y) + out.y * offset)
-            return Contact(distance: isInside ? -n.distance : n.distance, alongside: true, point: world(point),
-                           tangent: worldDirection(n.dir))
+            // The paper is outside the outline.
+            return rimContact(q, polygon: outline, paperInside: false, offset: offset)
+        case .cutout(let i):
+            // The paper is inside the slot.
+            return rimContact(q, polygon: cutouts[i], paperInside: true, offset: offset)
         }
+    }
+
+    /// Where local point `q` stands against a sampled closed rim.
+    private func rimContact(_ q: CGPoint, polygon: [CGPoint], paperInside: Bool, offset: Double) -> Contact {
+        let n = Self.nearest(q, on: polygon)
+        let isInside = Self.inside(q, polygon)
+        let onPaper = isInside == paperInside
+        // A unit vector from the rim toward the paper.
+        var toPaper: (x: Double, y: Double)
+        if n.distance > 1e-6 {
+            let v = (x: (Double(q.x) - Double(n.point.x)) / n.distance, y: (Double(q.y) - Double(n.point.y)) / n.distance)
+            toPaper = onPaper ? v : (-v.x, -v.y)
+        } else {
+            toPaper = (n.dir.y, -n.dir.x)
+            let probe = CGPoint(x: Double(n.point.x) + toPaper.x * 0.5, y: Double(n.point.y) + toPaper.y * 0.5)
+            if Self.inside(probe, polygon) != paperInside { toPaper = (-toPaper.x, -toPaper.y) }
+        }
+        let point = CGPoint(x: Double(n.point.x) + toPaper.x * offset, y: Double(n.point.y) + toPaper.y * offset)
+        return Contact(distance: onPaper ? n.distance : -n.distance, alongside: true, point: world(point),
+                       tangent: worldDirection(n.dir))
     }
 
     /// Side `i` measured from local point `q`: position along it, distance outward.

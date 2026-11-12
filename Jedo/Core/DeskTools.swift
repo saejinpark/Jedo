@@ -10,10 +10,12 @@ enum ToolKind: String, CaseIterable, Hashable, Sendable {
     case setSquare60
     /// A plastic sheet of round holes.
     case circleTemplate
-    /// A French curve: one acrylic outline of ever-changing curvature.
+    /// A French curve (운형자): a scroll whose bend tightens toward its tip, with a slot through it.
     case frenchCurve
     /// A long bamboo hip curve, gently bending, as used in pattern drafting.
     case hipCurve
+    /// A half-round protractor, turning about the centre of its base line.
+    case protractor
 }
 
 /// A tool lying on the paper.
@@ -37,9 +39,12 @@ struct DeskTool: Equatable, Sendable {
                 }
             )
         case .frenchCurve:
-            return ToolShape(pose: pose, outline: CurveTools.frenchCurveMM.map { $0.scaled(ppmm) }, smooth: true)
+            return ToolShape(pose: pose, outline: CurveTools.frenchCurveMM.map { $0.scaled(ppmm) }, smooth: true,
+                             cutouts: [CurveTools.frenchCurveSlotOutlineMM.map { $0.scaled(ppmm) }])
         case .hipCurve:
             return ToolShape(pose: pose, outline: CurveTools.hipCurveMM.map { $0.scaled(ppmm) }, smooth: true)
+        case .protractor:
+            return ToolShape(pose: pose, outline: Protractor.outlineMM.map { $0.scaled(ppmm) }, smooth: true)
         }
     }
 }
@@ -92,6 +97,32 @@ enum CircleTemplate {
         }
         return out
     }()
+}
+
+/// A 180° protractor. Its own origin is the centre mark on the base line,
+/// so it turns about the point it measures from. The arc is graduated in
+/// degrees, both ways round.
+enum Protractor {
+    static let radiusMM = 60.0
+    /// The strip of plastic below the base line.
+    static let baseMM = 8.0
+
+    /// The arc over the top (up is −y), then the base strip.
+    static let outlineMM: [CGPoint] = {
+        var out: [CGPoint] = (0...180).map { degree in
+            let a = Double.pi - Double(degree) * .pi / 180
+            return CGPoint(x: cos(a) * radiusMM, y: -sin(a) * radiusMM)
+        }
+        out.append(CGPoint(x: radiusMM, y: baseMM))
+        out.append(CGPoint(x: -radiusMM, y: baseMM))
+        return out
+    }()
+
+    /// Where degree `d` (0 on the right, counting anticlockwise to 180 on the left) meets the arc, `inset` mm in.
+    static func onArc(degree d: Double, inset: Double = 0) -> CGPoint {
+        let a = d * .pi / 180
+        return CGPoint(x: cos(a) * (radiusMM - inset), y: -sin(a) * (radiusMM - inset))
+    }
 }
 
 extension CGPoint {

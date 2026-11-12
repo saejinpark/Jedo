@@ -3,39 +3,95 @@ import Foundation
 
 /// Outlines of the curved tools, in millimetres about their middles.
 enum CurveTools {
-    // MARK: French curve
+    // MARK: French curve (운형자)
 
-    /// Points the French curve's outline passes through, going round it.
-    /// Tight at the right end, long and gentle along the top, hollowed below.
-    static let frenchCurveKnotsMM: [CGPoint] = [
-        CGPoint(x: 0, y: 0), CGPoint(x: 30, y: -25), CGPoint(x: 75, y: -38), CGPoint(x: 125, y: -35),
-        CGPoint(x: 170, y: -20), CGPoint(x: 200, y: 5), CGPoint(x: 205, y: 30), CGPoint(x: 185, y: 45),
-        CGPoint(x: 150, y: 40), CGPoint(x: 120, y: 25), CGPoint(x: 95, y: 25), CGPoint(x: 75, y: 40),
-        CGPoint(x: 55, y: 60), CGPoint(x: 30, y: 62), CGPoint(x: 10, y: 48), CGPoint(x: -5, y: 25),
-    ]
-    /// The curve as drawn is this fraction of the knots' size.
-    static let frenchCurveScale = 0.72
+    /// A French curve: a broad body that sweeps into a scroll, its curve
+    /// tightening steadily toward the tip, so somewhere along its edges is a
+    /// match for almost any gentle-to-tight bend. A slot through the body
+    /// gives two more curves, inside.
+    static let frenchCurveLengthMM = 150.0
+    /// The centre line runs straight this far before it starts to bend.
+    static let frenchCurveStraightMM = 35.0
+    /// Radius of the centre line's bend at the tip.
+    static let frenchCurveTipRadiusMM = 18.0
+    static let frenchCurveWidthMM = (start: 46.0, end: 9.0)
+    /// The slot: where along the centre line it runs, and how wide.
+    static let frenchCurveSlotMM = (from: 12.0, to: 62.0, width: 10.0)
 
-    static let frenchCurveMM: [CGPoint] = {
-        let knots = frenchCurveKnotsMM.map { $0.scaled(frenchCurveScale) }
-        return centred(closedCatmullRom(knots, samplesPerSpan: 24))
+    /// Points along the centre line with its direction and the body's width there.
+    static func frenchCurveSpine(step: Double = 0.5) -> [(point: CGPoint, angle: Double, width: Double)] {
+        let length = frenchCurveLengthMM, straight = frenchCurveStraightMM
+        let bendRate = 1 / frenchCurveTipRadiusMM / (length - straight)
+        var out: [(CGPoint, Double, Double)] = []
+        var x = 0.0, y = 0.0
+        var s = 0.0
+        while s <= length + 1e-9 {
+            let bent = max(s - straight, 0)
+            // Curving upward (y down), ever tighter: curvature grows along the bend.
+            let angle = -bendRate * bent * bent / 2
+            let t = s / length
+            let width = frenchCurveWidthMM.end + (frenchCurveWidthMM.start - frenchCurveWidthMM.end) * pow(1 - t, 1.3)
+            out.append((CGPoint(x: x, y: y), angle, width))
+            x += cos(angle) * step
+            y += sin(angle) * step
+            s += step
+        }
+        return out
+    }
+
+    /// A band of the given widths along part of a centre line, with round ends,
+    /// as a closed outline.
+    static func band(_ spine: [(point: CGPoint, angle: Double, width: Double)], every: Int) -> [CGPoint] {
+        func side(_ e: (point: CGPoint, angle: Double, width: Double), _ sign: Double) -> CGPoint {
+            let n = (x: -sin(e.angle), y: cos(e.angle))
+            return CGPoint(x: Double(e.point.x) + n.x * e.width / 2 * sign, y: Double(e.point.y) + n.y * e.width / 2 * sign)
+        }
+        func cap(_ e: (point: CGPoint, angle: Double, width: Double), from start: Double) -> [CGPoint] {
+            (1..<12).map { k in
+                let a = start + Double.pi * Double(k) / 12
+                return CGPoint(x: Double(e.point.x) + cos(a) * e.width / 2, y: Double(e.point.y) + sin(a) * e.width / 2)
+            }
+        }
+        let picked = stride(from: 0, to: spine.count, by: every).map { spine[$0] } + [spine[spine.count - 1]]
+        let first = picked[0], last = picked[picked.count - 1]
+        var out: [CGPoint] = picked.map { side($0, 1) }
+        // Round the tip from the +side forward to the −side, and the start from the −side back to the +side.
+        out += cap(last, from: last.angle - .pi / 2).reversed()
+        out += picked.reversed().map { side($0, -1) }
+        out += cap(first, from: first.angle + .pi / 2).reversed()
+        return out
+    }
+
+    /// The outline and the slot, about the outline's middle.
+    static let frenchCurveParts: (outline: [CGPoint], slot: [CGPoint]) = {
+        let spine = frenchCurveSpine()
+        let outline = band(spine, every: 2)
+        let step = 0.5
+        let slot = frenchCurveSlotMM
+        let slotSpine = spine[Int(slot.from / step)...Int(slot.to / step)].map { ($0.point, $0.angle, slot.width) }
+        let cut = band(Array(slotSpine), every: 2)
+        let shift = centre(of: outline)
+        return (outline.map { $0.minus(shift) }, cut.map { $0.minus(shift) })
     }()
+
+    static var frenchCurveMM: [CGPoint] { frenchCurveParts.outline }
+    static var frenchCurveSlotOutlineMM: [CGPoint] { frenchCurveParts.slot }
 
     // MARK: Hip curve
 
-    static let hipCurveLengthMM = 240.0
-    static let hipCurveWidthMM = 32.0
+    static let hipCurveLengthMM = 600.0
+    static let hipCurveWidthMM = 22.0
     /// How far the far end has risen above the near end.
-    static let hipCurveRiseMM = 40.0
+    static let hipCurveRiseMM = 125.0
 
     /// The centre line, gentle at the start and bending more toward the end.
     static func hipCurveCentre(_ t: Double) -> CGPoint {
-        CGPoint(x: hipCurveLengthMM * t, y: -hipCurveRiseMM * pow(t, 2.4))
+        CGPoint(x: hipCurveLengthMM * t, y: -hipCurveRiseMM * pow(t, 4))
     }
 
     /// The two long edges, start to end: the convex one (with the scale) first.
     static let hipCurveEdgesMM: (scale: [CGPoint], inner: [CGPoint]) = {
-        let samples = 160
+        let samples = 300
         var outer: [CGPoint] = [], inner: [CGPoint] = []
         for i in 0...samples {
             let t = Double(i) / Double(samples)

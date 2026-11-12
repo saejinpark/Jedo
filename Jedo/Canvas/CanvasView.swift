@@ -11,6 +11,8 @@ final class CanvasView: UIView {
     var currentGrade: () -> PencilGrade = { .hb }
     /// Called after every change to what can be undone or redone.
     var onHistoryChange: ((_ canUndo: Bool, _ canRedo: Bool) -> Void)?
+    /// Called when the drawing or the tools change, for the overview map.
+    var onOverviewChange: (() -> Void)?
     /// Called when a finger taps or rubs the paper away from any tool, as if trying to draw.
     var onFingerTouch: (() -> Void)?
     /// How the compass is handled; changing it pulls the needle out.
@@ -100,10 +102,12 @@ final class CanvasView: UIView {
         super.didMoveToWindow()
         guard sheet == nil, let screen = window?.windowScene?.screen else { return }
         scale = screen.scale
-        // A square sheet as long as the screen's long side. The desk keeps it
-        // centred and turns it back when the interface turns.
-        let side = Int(max(screen.nativeBounds.width, screen.nativeBounds.height).rounded(.up))
-        let ppmm = DisplayDensity.pixelsPerMillimeter(nativeLongSidePixels: Double(side))
+        // A square sheet a few screens across; the screen looks at part of it
+        // and the overview map moves the view. The desk turns it back when the
+        // interface turns.
+        let longSide = Double(max(screen.nativeBounds.width, screen.nativeBounds.height))
+        let side = Int((longSide * Self.sheetScreens).rounded(.up))
+        let ppmm = DisplayDensity.pixelsPerMillimeter(nativeLongSidePixels: longSide)
         let sheet = DraftingSheet(width: side, height: side, pixelsPerMillimeter: ppmm)
         self.sheet = sheet
         presses = LongPress(slop: Self.pressSlopMM * ppmm)
@@ -160,6 +164,36 @@ final class CanvasView: UIView {
 
     private func notifyHistory() {
         onHistoryChange?(sheet?.canUndo ?? false, sheet?.canRedo ?? false)
+        onOverviewChange?()
+    }
+
+    /// How many screens across the square sheet is.
+    static let sheetScreens = 2.6
+
+    /// A small picture of the drawing, `size` pixels square, in the sheet's own orientation.
+    func overviewImage(size: Int) -> CGImage? {
+        guard let sheet else { return nil }
+        let densities = sheet.overview(size: size)
+        let paper = (r: 0.965, g: 0.955, b: 0.925), lead = (r: 0.05, g: 0.05, b: 0.06)
+        let pixels = densities.map { d -> UInt32 in
+            let t = Double(min(d * 1.4, 1)) // thin lines vanish when shrunk, so darken a little
+            let r = UInt32((paper.r + (lead.r - paper.r) * t) * 255), g = UInt32((paper.g + (lead.g - paper.g) * t) * 255)
+            let b = UInt32((paper.b + (lead.b - paper.b) * t) * 255)
+            return 0xFF00_0000 | (r << 16) | (g << 8) | b
+        }
+        return Self.makeImage(pixels: pixels, width: size, height: size)
+    }
+
+    /// The tools' outlines as fractions of the sheet, for the overview map.
+    var toolOutlines: [[CGPoint]] {
+        guard let sheet else { return [] }
+        let side = Double(sheet.width)
+        return toolShapes.map { shape in
+            shape.outline.map { q in
+                let p = shape.world(q)
+                return CGPoint(x: Double(p.x) / side, y: Double(p.y) / side)
+            }
+        }
     }
 
     private func trimHistoryForMemoryWarning() {
@@ -199,7 +233,8 @@ final class CanvasView: UIView {
         case .setSquare60: CGPoint(x: 0.66, y: 0.38)
         case .circleTemplate: CGPoint(x: 0.5, y: 0.7)
         case .frenchCurve: CGPoint(x: 0.42, y: 0.56)
-        case .hipCurve: CGPoint(x: 0.5, y: 0.24)
+        case .hipCurve: CGPoint(x: 0.5, y: 0.5)
+        case .protractor: CGPoint(x: 0.62, y: 0.62)
         }
     }
 
@@ -211,6 +246,7 @@ final class CanvasView: UIView {
         case .circleTemplate: CircleTemplateView()
         case .frenchCurve: FrenchCurveView()
         case .hipCurve: HipCurveView()
+        case .protractor: ProtractorView()
         }
         insertSubview(view, belowSubview: compassView)
         toolViews[kind] = view
@@ -227,6 +263,7 @@ final class CanvasView: UIView {
     private func toolsChanged() {
         guard let sheet else { return }
         toolShapes = tools.map { $0.shape(pixelsPerMillimeter: sheet.pixelsPerMillimeter) }
+        onOverviewChange?()
     }
 
     /// Lays a tool on top of the others. Not while a line is being drawn,

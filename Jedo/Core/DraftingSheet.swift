@@ -220,6 +220,31 @@ final class DraftingSheet {
 
     // MARK: Display
 
+    /// A small picture of the graphite on the sheet: the darkest density in
+    /// each cell of a `size` by `size` grid, row by row from the top.
+    func overview(size: Int) -> [Float] {
+        var out = [Float](repeating: 0, count: size * size)
+        guard size > 0 else { return out }
+        let cellWidth = Double(width) / Double(size), cellHeight = Double(height) / Double(size)
+        let ts = GraphiteRaster.tileSize
+        for (coord, tile) in graphite.tiles {
+            let ox = coord.x * ts, oy = coord.y * ts
+            tile.withUnsafeBufferPointer { b in
+                // Every other pixel is enough: the finest line is three pixels wide.
+                for y in stride(from: 0, to: ts, by: 2) where oy + y < height {
+                    let row = min(Int(Double(oy + y) / cellHeight), size - 1) * size
+                    for x in stride(from: 0, to: ts, by: 2) where ox + x < width {
+                        let v = b[y * ts + x]
+                        guard v > 0 else { continue }
+                        let i = row + min(Int(Double(ox + x) / cellWidth), size - 1)
+                        if v > out[i] { out[i] = v }
+                    }
+                }
+            }
+        }
+        return out
+    }
+
     /// The regions that need redrawing since last asked, one rect per tile.
     func takeDirtyRegions() -> [TileCoord: PixelRect] {
         defer { dirty.removeAll(keepingCapacity: true) }
