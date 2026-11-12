@@ -7,6 +7,7 @@ struct CanvasRepresentable: UIViewControllerRepresentable {
         let controller = PaperDeskController()
         let view = controller.canvas
         view.currentGrade = { [weak session] in session?.grade ?? .hb }
+        view.currentInstrument = { [weak session] in session?.instrument ?? .mechanical(.mm05) }
         view.onHistoryChange = { [weak session] canUndo, canRedo in
             session?.historyChanged(canUndo: canUndo, canRedo: canRedo)
         }

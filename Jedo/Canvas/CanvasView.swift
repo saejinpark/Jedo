@@ -9,6 +9,8 @@ import UIKit
 final class CanvasView: UIView {
     /// Read at the start of every stroke, so a lead picked a moment ago is always the one used.
     var currentGrade: () -> PencilGrade = { .hb }
+    /// What holds the lead: a drafting mechanical pencil of some size, or a wood pencil.
+    var currentInstrument: () -> Instrument = { .mechanical(.mm05) }
     /// Called after every change to what can be undone or redone.
     var onHistoryChange: ((_ canUndo: Bool, _ canRedo: Bool) -> Void)?
     /// Called when the drawing or the tools change, for the overview map.
@@ -1082,6 +1084,7 @@ final class CanvasView: UIView {
         pending = PendingSampleQueue()
         lastPredicted = []
         let grade = currentGrade()
+        let instrument = currentInstrument()
         marking = []
         markingErases = erasing
         recorder = StrokeRecorder(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
@@ -1099,7 +1102,7 @@ final class CanvasView: UIView {
         for (id, mask) in layerStack().targets(erasing: erasing) {
             guard let target = surface(id)?.sheet else { continue }
             let local = mask.mapped(onSurface(id).0)
-            if erasing { target.beginErasing(mask: local, kind: eraserKind) } else { target.beginStroke(grade: grade, mask: local) }
+            if erasing { target.beginErasing(mask: local, kind: eraserKind) } else { target.beginStroke(grade: grade, instrument: instrument, mask: local) }
             marking.append(id)
         }
         if erasing {
@@ -1227,7 +1230,7 @@ final class CanvasView: UIView {
             return .arc(ArcGuide(center: compass.needle, radius: spread, pixelsPerMillimeter: ppmm))
         }
         return .edge(EdgeGuide(style: .standard, pixelsPerMillimeter: ppmm,
-                               contactOffset: grade.parameters.lineWidthMM / 2 * ppmm))
+                               contactOffset: PencilDynamics.lineWidthMM(grade, currentInstrument()) / 2 * ppmm))
     }
 
     /// Fingers that end or are taken away: the ruler lets go, the needle may come out.

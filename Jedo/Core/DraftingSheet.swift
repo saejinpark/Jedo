@@ -80,11 +80,11 @@ final class DraftingSheet {
     // MARK: Drawing
 
     /// Starts a stroke. Its first sample arrives through `extendStroke`.
-    func beginStroke(grade: PencilGrade, mask: StrokeMask = .everywhere) {
+    func beginStroke(grade: PencilGrade, instrument: Instrument = .wood, mask: StrokeMask = .everywhere) {
         if stroke != nil { cancelStroke() }
         strokeCounter &+= 1
         stroke = ActiveStroke(
-            lead: .pencil(PencilDynamics(grade: grade, pixelsPerMillimeter: pixelsPerMillimeter, style: grainStyle)),
+            lead: .pencil(PencilDynamics(grade: grade, pixelsPerMillimeter: pixelsPerMillimeter, instrument: instrument, style: grainStyle)),
             buffer: GraphiteRaster(width: width, height: height),
             seed: strokeCounter &* 0x9E37_79B9,
             maxDensity: Float(grade.parameters.maxDensity),

@@ -91,3 +91,40 @@ struct PencilDynamicsTests {
         }
     }
 }
+
+struct MechanicalPencilTests {
+    let ppmm = 264.0 / 25.4
+
+    func shape(_ grade: PencilGrade = .hb, _ instrument: Instrument, pressure: Double = 0.5, altitudeDegrees: Double = 90) -> DabShape {
+        PencilDynamics(grade: grade, pixelsPerMillimeter: ppmm, instrument: instrument).shape(for: StrokeSample(
+            location: .zero, pressure: pressure, altitude: altitudeDegrees * .pi / 180))
+    }
+
+    @Test func theLeadSetsTheWidthWhateverTheGrade() {
+        for size in LeadSize.allCases {
+            let hard = shape(.h2, .mechanical(size)).radiusAcross * 2 / ppmm
+            let soft = shape(.b4, .mechanical(size)).radiusAcross * 2 / ppmm
+            #expect(abs(hard - size.diameterMM) < size.diameterMM * 0.1)
+            #expect(soft > hard && soft < size.diameterMM * 1.15, "soft leads smear only a little wider")
+        }
+    }
+
+    @Test func gradeStillSetsTheDarkness() {
+        #expect(shape(.b4, .mechanical(.mm05)).opacity > shape(.h2, .mechanical(.mm05)).opacity * 2)
+    }
+
+    @Test func itCannotBeLaidOnItsSide() {
+        let upright = shape(.b2, .mechanical(.mm05), altitudeDegrees: 60)
+        let low = shape(.b2, .mechanical(.mm05), altitudeDegrees: 15)
+        #expect(low.radiusAlong < upright.radiusAlong * 1.5)
+        // The wood pencil still shades a broad patch.
+        let wood = shape(.b2, .wood, altitudeDegrees: 15)
+        #expect(wood.radiusAlong > low.radiusAlong * 3)
+    }
+
+    @Test func pressureBarelyWidensTheLead() {
+        let light = shape(.hb, .mechanical(.mm05), pressure: 0.1).radiusAcross
+        let hard = shape(.hb, .mechanical(.mm05), pressure: 1).radiusAcross
+        #expect(hard / light < 1.2)
+    }
+}

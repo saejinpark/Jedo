@@ -17,8 +17,9 @@ struct ContentView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 Spacer(minLength: 0)
-                // The desk tools on a row of their own, so both rows fit an upright iPad.
-                HStack {
+                // The pencils and the desk tools on a row of their own, so both rows fit an upright iPad.
+                HStack(alignment: .bottom) {
+                    InstrumentGroup(session: session)
                     Spacer(minLength: 0)
                     DeskToolsGroup(session: session)
                 }
@@ -86,6 +87,27 @@ private struct HandGroup: View {
             }
         }
         .animation(.snappy(duration: 0.2), value: session.eraserInHand)
+    }
+}
+
+/// What holds the lead: drafting mechanical pencils by lead size, for
+/// lines, and a wood pencil, for shading on its side.
+private struct InstrumentGroup: View {
+    @Bindable var session: DrawingSession
+
+    var body: some View {
+        ControlGroup {
+            ForEach(LeadSize.allCases, id: \.self) { size in
+                TextCell(title: size.label, selected: session.instrument == .mechanical(size)) {
+                    session.instrument = .mechanical(size)
+                }
+                .accessibilityLabel(Instrument.mechanical(size).name)
+            }
+            GroupDivider()
+            ToolButton(icon: .symbol("pencil"), label: Instrument.wood.name, selected: session.instrument == .wood) {
+                session.instrument = .wood
+            }
+        }
     }
 }
 

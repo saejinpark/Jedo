@@ -6,6 +6,8 @@ import SwiftUI
 @Observable
 final class DrawingSession {
     var grade: PencilGrade = .hb
+    /// What holds the lead: drafting mechanical pencils for lines, a wood pencil for shading.
+    var instrument: Instrument = .mechanical(.mm05)
     /// The drawing paper, chosen once at the start.
     private(set) var paper: PaperSize?
     /// Tools lying on the paper.

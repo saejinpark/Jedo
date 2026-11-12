@@ -24,10 +24,52 @@ struct DabShape: Equatable, Sendable {
     var maxRadius: Double { max(radiusAlong, radiusAcross) }
 }
 
+/// The thicknesses of drafting mechanical-pencil lead.
+enum LeadSize: CaseIterable, Hashable, Sendable {
+    case mm03, mm05, mm07, mm09
+
+    var diameterMM: Double {
+        switch self {
+        case .mm03: 0.3
+        case .mm05: 0.5
+        case .mm07: 0.7
+        case .mm09: 0.9
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .mm03: "0.3"
+        case .mm05: "0.5"
+        case .mm07: "0.7"
+        case .mm09: "0.9"
+        }
+    }
+}
+
+/// What holds the lead. Both keep their point: Apple Pencil's tip never
+/// wears, so neither does the app's (see DESIGN.md, principle 4).
+enum Instrument: Hashable, Sendable {
+    /// A wood-cased pencil: the line's width comes with the grade, and laid
+    /// over on its side it shades a broad patch.
+    case wood
+    /// A drafting mechanical pencil: the lead's diameter sets the line, and
+    /// its sleeve keeps it from being laid flat.
+    case mechanical(LeadSize)
+
+    var name: String {
+        switch self {
+        case .wood: "연필"
+        case .mechanical(let size): "제도 샤프 \(size.label)mm"
+        }
+    }
+}
+
 /// How pressure and tilt change the mark of one lead.
 struct PencilDynamics: Sendable {
     var grade: PencilGrade
     var pixelsPerMillimeter: Double
+    var instrument: Instrument = .wood
     var style: GrainStyle = .standard
 
     // MARK: Hand-feel knobs
@@ -49,6 +91,23 @@ struct PencilDynamics: Sendable {
     static let pressureGrain = 0.6
     /// Pressing harder squashes the point a little wider.
     static let pressureWidening = 0.5
+    /// A mechanical pencil's lead hardly squashes, and its sleeve stops it
+    /// going over: tilting only stretches the mark this much.
+    static let mechanicalPressureWidening = 0.15
+    static let mechanicalStretchAlong = 1.4
+    static let mechanicalStretchAcross = 1.1
+    static let mechanicalOpacityDrop = 0.15
+    /// Softer leads smear a little past the lead's own diameter.
+    static let mechanicalSoftSpread = 0.12
+
+    /// The width a lead leaves at medium pressure, held upright.
+    static func lineWidthMM(_ grade: PencilGrade, _ instrument: Instrument) -> Double {
+        switch instrument {
+        case .wood: grade.parameters.lineWidthMM
+        case .mechanical(let size): size.diameterMM * (1 + mechanicalSoftSpread * grade.softness)
+        }
+    }
+
     /// Never thinner than this, so the lightest touch still shows.
     static let minimumRadiusPixels = 0.6
 
@@ -62,26 +121,32 @@ struct PencilDynamics: Sendable {
         let p = min(max(sample.pressure.isFinite ? sample.pressure : 0, 0), 1)
         let params = grade.parameters
         let side = sideAmount(altitude: sample.altitude.isFinite ? sample.altitude : .pi / 2)
+        let mechanical = if case .mechanical = instrument { true } else { false }
+        let widening = mechanical ? Self.mechanicalPressureWidening : Self.pressureWidening
+        let stretchAlong = mechanical ? Self.mechanicalStretchAlong : Self.sideStretchAlong
+        let stretchAcross = mechanical ? Self.mechanicalStretchAcross : Self.sideStretchAcross
+        let opacityDrop = mechanical ? Self.mechanicalOpacityDrop : Self.sideOpacityDrop
+        let grainLift = mechanical ? Self.sideGrainLift * 0.25 : Self.sideGrainLift
 
-        let tipRadius = max(params.lineWidthMM / 2 * pixelsPerMillimeter
-                            * (1 - Self.pressureWidening / 2 + Self.pressureWidening * p),
+        let tipRadius = max(Self.lineWidthMM(grade, instrument) / 2 * pixelsPerMillimeter
+                            * (1 - widening / 2 + widening * p),
                             Self.minimumRadiusPixels)
 
         // Light touches lay little graphite; medium pressure is the grade's own value.
         let pressureResponse = 0.15 + 1.7 * pow(p, 0.9)
-        let opacity = min(params.passOpacity * pressureResponse / (1 + Self.sideOpacityDrop * side), 1)
+        let opacity = min(params.passOpacity * pressureResponse / (1 + opacityDrop * side), 1)
 
         // Pressing fills the valleys of the paper; a light hand only touches the peaks.
         let threshold = params.grainThreshold + style.grainShift
-            + Self.pressureGrain * (0.5 - p) + Self.sideGrainLift * side
+            + Self.pressureGrain * (0.5 - p) + grainLift * side
 
         return DabShape(
-            radiusAlong: tipRadius * (1 + (Self.sideStretchAlong - 1) * side),
-            radiusAcross: tipRadius * (1 + (Self.sideStretchAcross - 1) * side),
+            radiusAlong: tipRadius * (1 + (stretchAlong - 1) * side),
+            radiusAcross: tipRadius * (1 + (stretchAcross - 1) * side),
             angle: sample.azimuth.isFinite ? sample.azimuth : 0,
             opacity: opacity,
             grainThreshold: min(max(threshold, -0.6), 0.95),
-            edgeSoftness: min(params.edgeSoftness + 0.3 * side, 0.9),
+            edgeSoftness: min(params.edgeSoftness + (mechanical ? 0.08 : 0.3) * side, 0.9),
             grainSoftness: style.grainSoftness,
             leadNoise: style.leadNoise
         )
