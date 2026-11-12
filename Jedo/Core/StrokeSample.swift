@@ -13,12 +13,16 @@ struct StrokeSample: Equatable, Sendable {
     /// The lead starts going over its own line again here, so what follows
     /// darkens what the stroke already laid, as a second pass would.
     var beginsPass = false
+    /// How worn the side of the lead touching the paper is: 0 freshly
+    /// sharpened, 1 worn flat. See `LeadPoint`.
+    var bluntness: Double = 0
 
-    init(location: CGPoint, pressure: Double = 0.5, altitude: Double = .pi / 2, azimuth: Double = 0) {
+    init(location: CGPoint, pressure: Double = 0.5, altitude: Double = .pi / 2, azimuth: Double = 0, bluntness: Double = 0) {
         self.location = location
         self.pressure = pressure
         self.altitude = altitude
         self.azimuth = azimuth
+        self.bluntness = bluntness
     }
 
     /// Linear blend; the azimuth takes the short way round. Never begins a pass.
@@ -28,7 +32,8 @@ struct StrokeSample: Equatable, Sendable {
                               y: a.location.y + (b.location.y - a.location.y) * t),
             pressure: a.pressure + (b.pressure - a.pressure) * t,
             altitude: a.altitude + (b.altitude - a.altitude) * t,
-            azimuth: interpolateAngle(a.azimuth, b.azimuth, t)
+            azimuth: interpolateAngle(a.azimuth, b.azimuth, t),
+            bluntness: a.bluntness + (b.bluntness - a.bluntness) * t
         )
     }
 

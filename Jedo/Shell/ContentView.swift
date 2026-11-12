@@ -73,7 +73,7 @@ private struct HandGroup: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             ControlGroup {
-                PencilGrades(selection: $session.grade)
+                PencilGrades(selection: $session.grade, wear: session.leadWear) { session.sharpen($0) }
                 GroupDivider()
                 ToolButton(icon: .symbol("eraser"), label: session.eraserInHand ? "지우개 내려놓기" : "지우개 들기",
                            selected: session.eraserInHand) {

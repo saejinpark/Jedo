@@ -90,6 +90,15 @@ final class CanvasView: UIView {
     /// Surfaces the stroke in progress is marking.
     private var marking: [SurfaceID] = []
     private var markingErases = false
+    /// Each pencil's point, worn as it draws.
+    private var leads: [PencilGrade: LeadPoint] = [:]
+    /// The grade of the stroke in progress and where its line last was, for wear.
+    private var markingGrade: PencilGrade = .hb
+    private var lastWorn: CGPoint?
+    /// The barrel's turn in the hand, when the pencil reports it (Apple Pencil Pro).
+    private var roll: Double?
+    /// Called when a pencil's point wears, turns or is sharpened, with its worst side (0...1).
+    var onLeadChange: ((PencilGrade, Double) -> Void)?
     /// The stroke in progress, pencil and line, for the stroke log.
     private var recorder: StrokeRecorder?
     private var recordStarted: (date: Date, time: CFTimeInterval) = (.now, 0)
@@ -159,6 +168,8 @@ final class CanvasView: UIView {
         addSubview(sheetsView)
         addSubview(pinsView)
         addSubview(compassView)
+        let pencil = UIPencilInteraction(delegate: self)
+        addInteraction(pencil)
         memoryWarningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -1082,6 +1093,8 @@ final class CanvasView: UIView {
         pending = PendingSampleQueue()
         lastPredicted = []
         let grade = currentGrade()
+        markingGrade = grade
+        lastWorn = nil
         marking = []
         markingErases = erasing
         recorder = StrokeRecorder(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
@@ -1119,6 +1132,8 @@ final class CanvasView: UIView {
             cut(along: samples)
             return
         }
+        var samples = samples, predicted = predicted
+        if !markingErases { wear(&samples, predicted: &predicted) }
         // A sheet held while drawing moves its edge under the pencil.
         let masks = layerHolders.isEmpty ? nil : Dictionary(layerStack().targets(erasing: markingErases).map { ($0.surface, $0.mask) },
                                                             uniquingKeysWith: { a, _ in a })
@@ -1377,9 +1392,49 @@ final class CanvasView: UIView {
         touch.type == .pencil && touch.estimatedPropertiesExpectingUpdates.contains(.force)
     }
 
+    // MARK: Lead point
+
+    /// Wears the point by the line just drawn, and gives every sample the
+    /// bluntness of the side touching the paper.
+    private func wear(_ samples: inout [StrokeSample], predicted: inout [StrokeSample]) {
+        guard let sheet else { return }
+        var lead = leads[markingGrade] ?? LeadPoint()
+        for i in samples.indices {
+            if let last = lastWorn {
+                lead.draw(last.distance(to: samples[i].location) / sheet.pixelsPerMillimeter,
+                          pressure: samples[i].pressure, grade: markingGrade, roll: roll)
+            }
+            lastWorn = samples[i].location
+            samples[i].bluntness = lead.bluntness(roll: roll)
+        }
+        let now = lead.bluntness(roll: roll)
+        for i in predicted.indices { predicted[i].bluntness = now }
+        let before = leads[markingGrade]?.worst ?? 0
+        leads[markingGrade] = lead
+        // Report in steps, not every sample.
+        if Int(lead.worst * 20) != Int(before * 20) { onLeadChange?(markingGrade, lead.worst) }
+    }
+
+    /// Back to a fine point.
+    func sharpen(_ grade: PencilGrade) {
+        leads[grade] = LeadPoint()
+        onLeadChange?(grade, 0)
+    }
+
+    /// Turns the pencil in hand a sixth, for pencils that can't sense it.
+    func turnPencil() {
+        let grade = currentGrade()
+        var lead = leads[grade] ?? LeadPoint()
+        lead.turn()
+        leads[grade] = lead
+        onLeadChange?(grade, lead.worst)
+    }
+
     private func sample(_ touch: UITouch) -> StrokeSample {
         let point = touch.preciseLocation(in: self)
         let isPencil = touch.type == .pencil
+        // Apple Pencil Pro reports the barrel's roll; other pencils report none (0).
+        if isPencil, touch.rollAngle != 0 { roll = Double(touch.rollAngle) }
         return StrokeSample(
             location: CGPoint(x: point.x * scale, y: point.y * scale),
             pressure: isPencil
@@ -1410,5 +1465,14 @@ final class CanvasView: UIView {
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
             provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
         )
+    }
+}
+
+extension CanvasView: UIPencilInteractionDelegate {
+    /// A double-tap turns the pencil a sixth in the hand, so a fresh side of
+    /// the point touches the paper (Apple Pencil Pro senses the turn itself).
+    func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
+        guard roll == nil else { return }
+        turnPencil()
     }
 }
