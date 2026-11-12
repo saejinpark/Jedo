@@ -31,8 +31,8 @@ final class PaperLayerView: UIView {
         body.path = outline
         switch sheet.kind {
         case .carbon:
-            // Pitch black and opaque, as carbon paper is: what it copies shows once it is moved or hidden.
-            body.fillColor = UIColor(red: 0.05, green: 0.05, blue: 0.06, alpha: 1).cgColor
+            // Dark but see-through, so the drawing under it still shows faintly. Pitch black was tried and set aside.
+            body.fillColor = UIColor(red: 0.08, green: 0.09, blue: 0.16, alpha: 0.58).cgColor
         case .grid:
             body.fillColor = UIColor(white: 1, alpha: 0.30).cgColor
         }
