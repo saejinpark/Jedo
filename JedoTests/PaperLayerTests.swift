@@ -81,35 +81,77 @@ struct StrokeMaskTests {
 struct LayerStackTests {
     let lower = square(0, 0, 200, 200), upper = square(100, 0, 300, 200), carbon = square(0, 0, 400, 400)
 
+    func grid(_ id: Int, _ outline: [CGPoint]) -> LayerStack.Sheet { .init(id: id, outline: outline, isCarbon: false) }
+    func carbonSheet(_ outline: [CGPoint]) -> LayerStack.Sheet { .init(id: 0, outline: outline, isCarbon: true) }
+
+    func targets(_ sheets: [LayerStack.Sheet], erasing: Bool = false) -> [SurfaceID: StrokeMask] {
+        Dictionary(uniqueKeysWithValues: LayerStack(sheets: sheets).targets(erasing: erasing).map { ($0.surface, $0.mask) })
+    }
+
     @Test func thePencilMarksWhatIsOnTop() {
-        let stack = LayerStack(sheets: [(1, lower), (2, upper)], carbon: nil)
-        let targets = Dictionary(uniqueKeysWithValues: stack.targets(erasing: false).map { ($0.surface, $0.mask) })
-        #expect(targets.keys.sorted { "\($0)" < "\($1)" }.count == 3)
+        let t = targets([grid(1, lower), grid(2, upper)])
+        #expect(t.count == 3)
         let onLowerOnly = CGPoint(x: 50, y: 50), onBoth = CGPoint(x: 150, y: 50), bare = CGPoint(x: 350, y: 50)
-        #expect(targets[.sheet(1)]!.contains(onLowerOnly))
-        #expect(!targets[.sheet(1)]!.contains(onBoth))
-        #expect(targets[.sheet(2)]!.contains(onBoth))
-        #expect(targets[.paper]!.contains(bare))
-        #expect(!targets[.paper]!.contains(onBoth))
-        #expect(targets[.carbonCopy] == nil, "no carbon, no copy")
+        #expect(t[.sheet(1)]!.contains(onLowerOnly))
+        #expect(!t[.sheet(1)]!.contains(onBoth))
+        #expect(t[.sheet(2)]!.contains(onBoth))
+        #expect(t[.paper]!.contains(bare))
+        #expect(!t[.paper]!.contains(onBoth))
+        #expect(t[.carbonCopy] == nil, "no carbon, no copy")
     }
 
     @Test func pressingThroughSheetsCopiesOntoThePaper() {
-        let stack = LayerStack(sheets: [(1, lower)], carbon: carbon)
-        let targets = Dictionary(uniqueKeysWithValues: stack.targets(erasing: false).map { ($0.surface, $0.mask) })
+        let t = targets([carbonSheet(carbon), grid(1, lower)])
         let onSheet = CGPoint(x: 50, y: 50), onCarbon = CGPoint(x: 300, y: 300)
-        #expect(targets[.carbonCopy]!.contains(onSheet))
-        #expect(targets[.carbonCopy]!.contains(onCarbon))
-        #expect(!targets[.paper]!.contains(onCarbon), "the carbon covers the paper")
-        #expect(!targets[.carbonCopy]!.contains(CGPoint(x: 500, y: 50)))
+        #expect(t[.carbonCopy]!.contains(onSheet))
+        #expect(t[.carbonCopy]!.contains(onCarbon))
+        #expect(!t[.paper]!.contains(onCarbon), "the carbon covers the paper")
+        #expect(!t[.carbonCopy]!.contains(CGPoint(x: 500, y: 50)))
+        #expect(t[.sheetCopy(1)] == nil, "the sheet is above the carbon")
     }
 
-    @Test func theEraserReachesCopiesOnlyWhereThePaperIsBare() {
-        let stack = LayerStack(sheets: [(1, lower)], carbon: carbon)
-        let targets = Dictionary(uniqueKeysWithValues: stack.targets(erasing: true).map { ($0.surface, $0.mask) })
-        #expect(!targets[.carbonCopy]!.contains(CGPoint(x: 300, y: 300)))
-        #expect(targets[.carbonCopy]!.contains(CGPoint(x: 500, y: 50)))
-        #expect(targets[.paper]!.contains(CGPoint(x: 500, y: 50)))
+    @Test func carbonOverASheetCopiesOntoThatSheet() {
+        // Paper, then a grid sheet, then the carbon on top of it.
+        let t = targets([grid(1, lower), carbonSheet(carbon)])
+        let overSheet = CGPoint(x: 50, y: 50), overPaper = CGPoint(x: 300, y: 300)
+        #expect(t[.sheetCopy(1)]!.contains(overSheet))
+        #expect(!t[.carbonCopy]!.contains(overSheet), "the sheet is in the way")
+        #expect(t[.carbonCopy]!.contains(overPaper))
+        #expect(!t[.sheet(1)]!.contains(overSheet), "graphite stays on the carbon")
+    }
+
+    @Test func theEraserReachesCopiesOnlyWhereTheyAreBare() {
+        let t = targets([carbonSheet(carbon), grid(1, lower)], erasing: true)
+        #expect(!t[.carbonCopy]!.contains(CGPoint(x: 300, y: 300)))
+        #expect(t[.carbonCopy]!.contains(CGPoint(x: 500, y: 50)))
+        #expect(t[.paper]!.contains(CGPoint(x: 500, y: 50)))
+        #expect(t[.sheetCopy(1)]!.contains(CGPoint(x: 50, y: 50)))
+    }
+}
+
+struct PaperSizeTests {
+    @Test func aSeriesSizesTurnOnTheirSide() {
+        let a3 = PaperSize(series: .a3, landscape: false)
+        #expect(a3.sizeMM.width == 297 && a3.sizeMM.height == 420)
+        let wide = PaperSize(series: .a3, landscape: true)
+        #expect(wide.sizeMM.width == 420 && wide.sizeMM.height == 297)
+        #expect(PaperSize(series: .a1, landscape: false).sizeMM.height == 841)
+    }
+
+    @Test func theDeskLeavesRoomAroundThePaper() {
+        let a4 = PaperSize(series: .a4, landscape: false)
+        #expect(a4.deskSideMM(minimumMM: 0) == 297 + 120)
+        #expect(a4.deskSideMM(minimumMM: 500) == 500, "never smaller than the screen")
+    }
+
+    @Test func nothingMarksTheDeskBeyondThePaper() {
+        let paper = square(0, 0, 300, 300)
+        let carbon = LayerStack.Sheet(id: 0, outline: square(200, 0, 500, 300), isCarbon: true)
+        let t = Dictionary(uniqueKeysWithValues: LayerStack(sheets: [carbon], paper: paper).targets(erasing: false).map { ($0.surface, $0.mask) })
+        #expect(t[.paper]!.contains(CGPoint(x: 100, y: 100)))
+        #expect(!t[.paper]!.contains(CGPoint(x: 600, y: 100)), "the desk")
+        #expect(t[.carbonCopy]!.contains(CGPoint(x: 250, y: 100)))
+        #expect(!t[.carbonCopy]!.contains(CGPoint(x: 400, y: 100)), "carbon hanging off the paper copies onto nothing")
     }
 }
 

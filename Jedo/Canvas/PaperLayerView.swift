@@ -5,15 +5,16 @@ import UIKit
 final class PaperLayerView: UIView {
     let sheetID: Int
     private let kind: SheetKind
-    private let surface: GraphiteSurface?
+    private let surfaces: [GraphiteSurface]
 
     /// Muted green rulings, as on drafting film.
     static let rulingColour = UIColor(red: 0.20, green: 0.50, blue: 0.40, alpha: 1)
 
-    init(layer sheet: PaperLayer, surface: GraphiteSurface?, scale: CGFloat, pixelsPerMillimeter ppmm: Double) {
+    /// `surfaces` are what is drawn on the sheet, bottom first.
+    init(layer sheet: PaperLayer, surfaces: [GraphiteSurface], scale: CGFloat, pixelsPerMillimeter ppmm: Double) {
         sheetID = sheet.id
         kind = sheet.kind
-        self.surface = surface
+        self.surfaces = surfaces
         super.init(frame: .zero)
         isUserInteractionEnabled = false
         isOpaque = false
@@ -55,7 +56,7 @@ final class PaperLayerView: UIView {
                 layer.addSublayer(lines)
             }
         }
-        if let surface { layer.addSublayer(surface.layer) }
+        for surface in surfaces { layer.addSublayer(surface.layer) }
 
         let rim = CAShapeLayer()
         rim.path = outline
@@ -64,7 +65,7 @@ final class PaperLayerView: UIView {
         rim.lineWidth = 0.7
         layer.addSublayer(rim)
         layer.sublayers?.forEach { $0.actions = CanvasView.noAnimations; $0.frame = bounds }
-        surface?.layer.frame = bounds
+        for surface in surfaces { surface.layer.frame = bounds }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }

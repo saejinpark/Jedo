@@ -11,6 +11,7 @@ struct CanvasRepresentable: UIViewControllerRepresentable {
             session?.historyChanged(canUndo: canUndo, canRedo: canRedo)
         }
         view.onFingerTouch = { [weak session] in session?.fingerTouchedPaper() }
+        view.onLayersChange = { [weak session] layers, hidden in session?.layersChanged(layers, hidden: hidden) }
         view.compassStyle = session.compassStyle
         session.canvas = view
         return controller

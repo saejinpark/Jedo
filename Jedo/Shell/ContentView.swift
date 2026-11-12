@@ -8,6 +8,9 @@ struct ContentView: View {
             CanvasRepresentable(session: session)
                 .ignoresSafeArea()
 
+            if session.paper == nil {
+                PaperPicker { session.start(on: $0) }
+            } else {
             VStack {
                 if let hint = session.hint {
                     HintBubble(hint: hint)
@@ -22,6 +25,7 @@ struct ContentView: View {
             }
             .padding(20)
             .animation(.spring(duration: 0.35), value: session.hint)
+            }
 
             #if DEBUG
             if session.compassOnDesk {
@@ -69,6 +73,7 @@ private struct ToolControls: View {
                                 enabled: true, selected: session.carbonOnDesk) {
                     session.carbonOnDesk.toggle()
                 }
+                LayersButton(session: session)
                 RoundToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
                                 enabled: true, selected: session.compassOnDesk) {
                     session.compassOnDesk.toggle()
@@ -169,24 +174,59 @@ private struct ToolSetMenu: View {
     }
 }
 
-/// Transparent grid sheets: lay on as many as you like, take any away.
+/// Choosing the drawing paper, before anything else. It is laid on the
+/// desk at its real size and stays put.
+private struct PaperPicker: View {
+    let choose: (PaperSize) -> Void
+    @State private var landscape = false
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Text("종이 고르기").font(.title2.weight(.semibold))
+            Picker("방향", selection: $landscape) {
+                Text("세로").tag(false)
+                Text("가로").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 200)
+            HStack(alignment: .bottom, spacing: 22) {
+                ForEach(PaperSize.Series.allCases, id: \.self) { series in
+                    let paper = PaperSize(series: series, landscape: landscape)
+                    Button { choose(paper) } label: {
+                        VStack(spacing: 10) {
+                            let (w, h) = paper.sizeMM
+                            Rectangle()
+                                .fill(Color(red: 0.965, green: 0.955, blue: 0.925))
+                                .frame(width: w / 841 * 120, height: h / 841 * 120)
+                                .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+                            Text(paper.name).font(.headline)
+                            Text("\(Int(w))×\(Int(h))mm").font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(width: 130, height: 200, alignment: .bottom)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(paper.name) \(landscape ? "가로" : "세로")")
+                }
+            }
+            Text("실제 크기로 책상에 고정됩니다. 화면은 지도와 조이스틱으로 옮겨 다닙니다.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        .padding(32)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+        .animation(.spring(duration: 0.3), value: landscape)
+    }
+}
+
+/// Transparent grid sheets: lay on as many as you like.
 private struct SheetMenu: View {
     @Bindable var session: DrawingSession
 
     var body: some View {
         Menu {
-            Section("얹기") {
+            Section("모눈종이 얹기") {
                 ForEach(GridPattern.allCases, id: \.self) { pattern in
                     Button(pattern.name) { session.addSheet(pattern) }
-                }
-            }
-            if !session.gridSheets.isEmpty {
-                Section("치우기 (그린 것도 함께)") {
-                    ForEach(session.gridSheets.reversed()) { sheet in
-                        Button(role: .destructive) { session.removeSheet(sheet.id) } label: {
-                            Text(session.sheetName(sheet.id))
-                        }
-                    }
                 }
             }
         } label: {
@@ -194,7 +234,74 @@ private struct SheetMenu: View {
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
-        .accessibilityLabel("모눈종이")
+        .accessibilityLabel("모눈종이 얹기")
+    }
+}
+
+/// The sheets on the paper, top first, over the paper itself: raise, lower,
+/// set aside or take away each one.
+private struct LayersButton: View {
+    @Bindable var session: DrawingSession
+    @State private var open = false
+
+    var body: some View {
+        Button { open.toggle() } label: {
+            RoundToolFace(icon: .symbol("square.3.layers.3d"), enabled: true, selected: open)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("레이어")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            LayersPanel(session: session)
+        }
+    }
+}
+
+private struct LayersPanel: View {
+    @Bindable var session: DrawingSession
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("레이어").font(.headline).padding(.horizontal, 16).padding(.vertical, 12)
+            Divider()
+            if session.layerRows.isEmpty {
+                Text("얹은 모눈종이나 먹지가 없습니다.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .padding(16)
+            }
+            ForEach(session.layerRows) { row in
+                HStack(spacing: 14) {
+                    Image(systemName: row.isCarbon ? "square.fill" : "squareshape.split.3x3")
+                        .frame(width: 22)
+                        .foregroundStyle(row.isCarbon ? Palette.ink : Color(PaperLayerView.rulingColour))
+                    Text(row.name).opacity(row.hidden ? 0.4 : 1)
+                    Spacer(minLength: 12)
+                    iconButton(row.hidden ? "eye.slash" : "eye", label: row.hidden ? "보이기" : "숨기기") {
+                        session.setLayer(row.id, hidden: !row.hidden)
+                    }
+                    iconButton("chevron.up", label: "위로", enabled: row.canRaise) { session.shiftLayer(row.id, up: true) }
+                    iconButton("chevron.down", label: "아래로", enabled: row.canLower) { session.shiftLayer(row.id, up: false) }
+                    iconButton("trash", label: row.isCarbon ? "먹지 치우기" : "치우기 (그린 것도 함께)") { session.removeLayer(row.id) }
+                        .foregroundStyle(.red)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                Divider()
+            }
+            HStack(spacing: 14) {
+                Image(systemName: "doc").frame(width: 22)
+                Text("용지 (배경)")
+                Spacer()
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16).padding(.vertical, 10)
+        }
+        .frame(width: 340)
+    }
+
+    private func iconButton(_ symbol: String, label: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: symbol).frame(width: 28, height: 28) }
+            .buttonStyle(.borderless)
+            .disabled(!enabled)
+            .accessibilityLabel(label)
     }
 }
 

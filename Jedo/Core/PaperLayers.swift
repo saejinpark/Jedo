@@ -1,6 +1,43 @@
 import CoreGraphics
 import Foundation
 
+/// The drawing paper, chosen when a drawing starts. It lies fixed on the
+/// desk, the background everything else is laid on.
+struct PaperSize: Hashable, Sendable {
+    enum Series: CaseIterable, Hashable, Sendable { case a4, a3, a2, a1 }
+
+    var series: Series
+    var landscape: Bool
+
+    var name: String {
+        switch series {
+        case .a4: "A4"
+        case .a3: "A3"
+        case .a2: "A2"
+        case .a1: "A1"
+        }
+    }
+
+    /// Width and height in millimetres, as it lies.
+    var sizeMM: (width: Double, height: Double) {
+        let (short, long): (Double, Double) = switch series {
+        case .a4: (210, 297)
+        case .a3: (297, 420)
+        case .a2: (420, 594)
+        case .a1: (594, 841)
+        }
+        return landscape ? (long, short) : (short, long)
+    }
+
+    /// How much desk shows around the paper at most, each side.
+    static let deskMarginMM = 60.0
+
+    /// The square desk it lies on, in millimetres: room around the paper, and at least `minimumMM` across.
+    func deskSideMM(minimumMM: Double) -> Double {
+        max(max(sizeMM.width, sizeMM.height) + 2 * Self.deskMarginMM, minimumMM)
+    }
+}
+
 /// The printed pattern of a transparent grid sheet.
 enum GridPattern: CaseIterable, Hashable, Sendable {
     /// 1 mm squares, 5 mm and 1 cm lines heavier.
@@ -129,36 +166,59 @@ struct PaperLayer: Identifiable, Equatable, Sendable {
 enum SurfaceID: Hashable, Sendable {
     /// The drawing paper itself.
     case paper
-    /// What the carbon has copied onto the paper.
+    /// What carbon has copied onto the paper.
     case carbonCopy
     /// A grid sheet's own surface.
     case sheet(Int)
+    /// What carbon has copied onto a grid sheet lying under it.
+    case sheetCopy(Int)
 }
 
-/// The soft sheets on the paper, for routing a stroke: the pencil marks
-/// whatever is on top where it is, and pressing through the carbon copies
-/// onto the paper beneath. Rigid tools are not here; they never take a mark.
+/// The soft sheets on the paper, for routing a stroke. The paper is the
+/// background; on it lie grid sheets and carbon in any order. The pencil
+/// marks whatever is on top where it is, and pressing through the carbon
+/// copies onto whatever lies just under it. Rigid tools are not here; they
+/// never take a mark.
 struct LayerStack: Sendable {
-    /// Grid sheets' outlines on the paper, bottom first.
-    var sheets: [(id: Int, outline: [CGPoint])] = []
-    /// The carbon's outline, when it lies on the paper (always below the grid sheets).
-    var carbon: [CGPoint]?
+    struct Sheet: Sendable {
+        var id: Int
+        var outline: [CGPoint]
+        var isCarbon: Bool
+    }
+
+    /// Bottom first.
+    var sheets: [Sheet] = []
+    /// The drawing paper's outline; nothing marks the desk beyond it.
+    var paper: [CGPoint]?
+
+    init(sheets: [Sheet] = [], paper: [CGPoint]? = nil) {
+        self.sheets = sheets
+        self.paper = paper
+    }
 
     /// Every surface the stroke may mark, and where on the paper it may.
     func targets(erasing: Bool) -> [(surface: SurfaceID, mask: StrokeMask)] {
         var out: [(SurfaceID, StrokeMask)] = []
-        for (i, sheet) in sheets.enumerated() {
-            out.append((.sheet(sheet.id), StrokeMask(inside: [sheet.outline], outside: sheets[(i + 1)...].map(\.outline))))
+        // Graphite: on whatever is on top. Carbon takes no graphite worth keeping.
+        for (i, sheet) in sheets.enumerated() where !sheet.isCarbon {
+            let reach = StrokeMask(inside: [sheet.outline], outside: sheets[(i + 1)...].map(\.outline))
+            out.append((.sheet(sheet.id), reach))
+            // Copies on a sheet are rubbed out where the sheet is bare.
+            if erasing { out.append((.sheetCopy(sheet.id), reach)) }
         }
-        // The bare paper: wherever no sheet lies over it.
-        let covered = sheets.map(\.outline) + (carbon.map { [$0] } ?? [])
-        out.append((.paper, StrokeMask(inside: [], outside: covered)))
+        let onPaper = paper.map { [$0] } ?? []
+        let bare = StrokeMask(inside: onPaper, outside: sheets.map(\.outline))
+        out.append((.paper, bare))
         if erasing {
-            // Copied lines are on the paper too; the eraser reaches them where they are bare.
-            out.append((.carbonCopy, StrokeMask(inside: [], outside: covered)))
-        } else if let carbon {
-            // Pressing through any number of sheets copies onto the paper.
-            out.append((.carbonCopy, StrokeMask(inside: [carbon], outside: [])))
+            out.append((.carbonCopy, bare))
+        } else if let c = sheets.lastIndex(where: \.isCarbon) {
+            // Pressing through the topmost carbon copies onto what lies just under it.
+            let carbon = sheets[c].outline
+            for i in sheets.indices where i < c && !sheets[i].isCarbon {
+                out.append((.sheetCopy(sheets[i].id),
+                            StrokeMask(inside: [carbon, sheets[i].outline], outside: sheets[(i + 1)..<c].map(\.outline))))
+            }
+            out.append((.carbonCopy, StrokeMask(inside: [carbon] + onPaper, outside: sheets[..<c].map(\.outline))))
         }
         return out
     }

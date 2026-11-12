@@ -6,6 +6,8 @@ import SwiftUI
 @Observable
 final class DrawingSession {
     var grade: PencilGrade = .hb
+    /// The drawing paper, chosen once at the start.
+    private(set) var paper: PaperSize?
     /// Tools lying on the paper.
     private(set) var toolsOnDesk: Set<ToolKind> = []
     /// Transparent grid sheets lying on the paper, bottom first.
@@ -14,6 +16,19 @@ final class DrawingSession {
     struct GridSheet: Identifiable {
         let id: Int
         let pattern: GridPattern
+    }
+
+    /// The sheets on the paper as the layers panel shows them, top first.
+    private(set) var layerRows: [LayerRow] = []
+
+    struct LayerRow: Identifiable, Equatable {
+        let id: Int
+        let name: String
+        let isCarbon: Bool
+        let hidden: Bool
+        /// Whether it can go up or down a place (the carbon stays at the bottom).
+        let canRaise: Bool
+        let canLower: Bool
     }
     /// Whether the carbon lies under everything, copying what is pressed above it.
     var carbonOnDesk = false {
@@ -79,6 +94,13 @@ final class DrawingSession {
         canvas?.setTool(kind, onDesk: onDesk)
     }
 
+    /// Lays the drawing paper on the desk.
+    func start(on paper: PaperSize) {
+        guard self.paper == nil else { return }
+        self.paper = paper
+        canvas?.start(on: paper)
+    }
+
     /// Lays a new grid sheet on the paper.
     func addSheet(_ pattern: GridPattern) {
         guard let id = canvas?.addGridLayer(pattern) else { return }
@@ -91,12 +113,26 @@ final class DrawingSession {
         gridSheets.removeAll { $0.id == id }
     }
 
-    /// How a grid sheet is called in the menu: its pattern, numbered when there are several.
-    func sheetName(_ id: Int) -> String {
-        guard let sheet = gridSheets.first(where: { $0.id == id }) else { return "" }
-        let same = gridSheets.filter { $0.pattern == sheet.pattern }
-        guard same.count > 1, let n = same.firstIndex(where: { $0.id == id }) else { return sheet.pattern.name }
-        return "\(sheet.pattern.name) \(n + 1)"
+    func setLayer(_ id: Int, hidden: Bool) { canvas?.setLayer(id, hidden: hidden) }
+    func shiftLayer(_ id: Int, up: Bool) { canvas?.shiftLayer(id, up: up) }
+
+    /// Takes a sheet off the paper: a grid sheet with what was drawn on it, or the carbon.
+    func removeLayer(_ id: Int) {
+        if id == CanvasView.carbonID { carbonOnDesk = false } else { removeSheet(id) }
+    }
+
+    func layersChanged(_ layers: [PaperLayer], hidden: Set<Int>) {
+        layerRows = layers.enumerated().reversed().map { i, layer in
+            LayerRow(id: layer.id, name: Self.name(of: layer, among: layers), isCarbon: layer.kind == .carbon,
+                     hidden: hidden.contains(layer.id), canRaise: i < layers.count - 1, canLower: i > 0)
+        }
+    }
+
+    /// A sheet's pattern, numbered in the order they were laid when there are several alike.
+    private static func name(of layer: PaperLayer, among layers: [PaperLayer]) -> String {
+        let alike = layers.filter { $0.kind == layer.kind }.map(\.id).sorted()
+        guard alike.count > 1, let n = alike.firstIndex(of: layer.id) else { return layer.kind.name }
+        return "\(layer.kind.name) \(n + 1)"
     }
 
     func undo() { canvas?.undo() }

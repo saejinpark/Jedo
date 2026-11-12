@@ -13,6 +13,8 @@ final class CanvasView: UIView {
     var onHistoryChange: ((_ canUndo: Bool, _ canRedo: Bool) -> Void)?
     /// Called when the drawing or the tools change, for the overview map.
     var onOverviewChange: (() -> Void)?
+    /// Called when sheets come, go, change order or are hidden: the sheets bottom first, and which are hidden.
+    var onLayersChange: ((_ layers: [PaperLayer], _ hidden: Set<Int>) -> Void)?
     /// Called when a finger taps or rubs the paper away from any tool, as if trying to draw.
     var onFingerTouch: (() -> Void)?
     /// How the compass is handled; changing it pulls the needle out.
@@ -66,13 +68,17 @@ final class CanvasView: UIView {
     private var scale: CGFloat = 2
     private var paperLayers: [CALayer] = []
 
-    /// Soft sheets on the paper, bottom first: the carbon (if out) and then grid sheets.
+    /// Soft sheets on the paper, bottom first: grid sheets and the carbon, in any order.
     private(set) var layers: [PaperLayer] = []
     private var layerViews: [Int: PaperLayerView] = [:]
     /// Each grid sheet's own drawing, which moves with it.
     private var layerSurfaces: [Int: GraphiteSurface] = [:]
+    /// What carbon lying over a grid sheet has copied onto it.
+    private var layerCopies: [Int: GraphiteSurface] = [:]
     /// Fingers holding each sheet by its edge.
     private var layerHolders: [Int: [(touch: UITouch, point: CGPoint)]] = [:]
+    /// Sheets set aside for now: not seen, not drawn on, not picked up.
+    private var hiddenLayers: Set<Int> = []
     private var nextLayerID = 1
     /// Under the tools, above the paper.
     private let sheetsView = UIView()
@@ -100,7 +106,7 @@ final class CanvasView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         isMultipleTouchEnabled = true // a resting palm must not block the pencil
-        backgroundColor = UIColor(red: 0.965, green: 0.955, blue: 0.925, alpha: 1)
+        backgroundColor = Self.deskColour
         isOpaque = true
         accessibilityLabel = "제도 용지"
         // Graphite tiles live in their own layer, between the paper and the tools.
@@ -124,16 +130,29 @@ final class CanvasView: UIView {
 
     // MARK: Setup
 
+    /// Lays the drawing paper on the desk. Once only: it stays put, the background of everything.
+    func start(on paper: PaperSize) {
+        guard paperSize == nil else { return }
+        paperSize = paper
+        setUp()
+    }
+
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        guard sheet == nil, let screen = window?.windowScene?.screen else { return }
+        setUp()
+    }
+
+    private func setUp() {
+        guard sheet == nil, let paper = paperSize, let screen = window?.windowScene?.screen else { return }
         scale = screen.scale
-        // A square sheet a few screens across; the screen looks at part of it
-        // and the overview map moves the view. The desk turns it back when the
-        // interface turns.
+        // A square desk with the paper fixed in its middle; the screen looks
+        // at part of it and the overview map moves the view. The desk turns
+        // it back when the interface turns.
         let longSide = Double(max(screen.nativeBounds.width, screen.nativeBounds.height))
-        let side = Int((longSide * Self.sheetScreens).rounded(.up))
         let ppmm = DisplayDensity.pixelsPerMillimeter(nativeLongSidePixels: longSide)
+        let side = Int((paper.deskSideMM(minimumMM: longSide / ppmm) * ppmm).rounded(.up))
+        let (w, h) = (paper.sizeMM.width * ppmm, paper.sizeMM.height * ppmm)
+        paperRect = CGRect(x: ((Double(side) - w) / 2).rounded(), y: ((Double(side) - h) / 2).rounded(), width: w.rounded(), height: h.rounded())
         let sheet = DraftingSheet(width: side, height: side, pixelsPerMillimeter: ppmm)
         self.sheet = sheet
         let paperSurface = GraphiteSurface(sheet: sheet, scale: scale)
@@ -155,7 +174,19 @@ final class CanvasView: UIView {
         sheetsView.frame = bounds
     }
 
-    /// Side of the square sheet in points, once it exists.
+    /// The paper on the desk, in pixels.
+    private(set) var paperRect = CGRect.zero
+    private var paperSize: PaperSize?
+
+    private var paperOutline: [CGPoint] {
+        [CGPoint(x: paperRect.minX, y: paperRect.minY), CGPoint(x: paperRect.maxX, y: paperRect.minY),
+         CGPoint(x: paperRect.maxX, y: paperRect.maxY), CGPoint(x: paperRect.minX, y: paperRect.maxY)]
+    }
+
+    /// The desk the paper lies on.
+    static let deskColour = UIColor(red: 0.74, green: 0.72, blue: 0.68, alpha: 1)
+
+    /// Side of the square desk in points, once it exists.
     var sideInPoints: CGFloat? {
         sheet.map { CGFloat($0.width) / scale }
     }
@@ -166,19 +197,38 @@ final class CanvasView: UIView {
         let texture = sheet.paper
         let image = Self.makeImage(pixels: GraphiteShading.paperPixels(texture), width: texture.size, height: texture.size)
         let step = CGFloat(texture.size) / scale
-        let count = (sheet.width + texture.size - 1) / texture.size
-        for row in 0..<count {
-            for column in 0..<count {
+        let frame = CGRect(x: paperRect.minX / scale, y: paperRect.minY / scale, width: paperRect.width / scale, height: paperRect.height / scale)
+        // The paper's edge: clipped texture over a soft shadow on the desk.
+        let shadow = CALayer()
+        shadow.frame = frame
+        shadow.backgroundColor = UIColor(white: 0.5, alpha: 1).cgColor
+        shadow.shadowColor = UIColor.black.cgColor
+        shadow.shadowOpacity = 0.22
+        shadow.shadowRadius = 4
+        shadow.shadowOffset = CGSize(width: 0, height: 1.5)
+        shadow.shadowPath = CGPath(rect: CGRect(origin: .zero, size: frame.size), transform: nil)
+        let paper = CALayer()
+        paper.frame = frame
+        paper.masksToBounds = true
+        // Tiles keep to the desk's grid so the grain lines up with the graphite's.
+        let first = (x: Int(frame.minX / step), y: Int(frame.minY / step))
+        let last = (x: Int(frame.maxX / step), y: Int(frame.maxY / step))
+        for row in first.y...last.y {
+            for column in first.x...last.x {
                 let layer = CALayer()
                 layer.contents = image
                 layer.contentsScale = scale
                 layer.magnificationFilter = .nearest
                 layer.isOpaque = true
-                layer.frame = CGRect(x: CGFloat(column) * step, y: CGFloat(row) * step, width: step, height: step)
+                layer.frame = CGRect(x: CGFloat(column) * step - frame.minX, y: CGFloat(row) * step - frame.minY, width: step, height: step)
                 layer.actions = Self.noAnimations
-                self.layer.insertSublayer(layer, at: 0)
-                paperLayers.append(layer)
+                paper.addSublayer(layer)
             }
+        }
+        for layer in [paper, shadow] {
+            layer.actions = Self.noAnimations
+            self.layer.insertSublayer(layer, at: 0)
+            paperLayers.append(layer)
         }
     }
 
@@ -205,8 +255,6 @@ final class CanvasView: UIView {
         onOverviewChange?()
     }
 
-    /// How many screens across the square sheet is.
-    static let sheetScreens = 2.6
 
     /// A small picture of the drawing, `size` pixels square, in the sheet's own orientation.
     func overviewImage(size: Int) -> CGImage? {
@@ -215,8 +263,13 @@ final class CanvasView: UIView {
         if let copied = copySurface?.sheet.overview(size: size) {
             for i in densities.indices where copied[i] > densities[i] { densities[i] = copied[i] }
         }
-        let paper = (r: 0.965, g: 0.955, b: 0.925), lead = (r: 0.05, g: 0.05, b: 0.06)
-        let pixels = densities.map { d -> UInt32 in
+        let lead = (r: 0.05, g: 0.05, b: 0.06)
+        var desk: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) = (0, 0, 0, 0)
+        Self.deskColour.getRed(&desk.r, green: &desk.g, blue: &desk.b, alpha: &desk.a)
+        let cell = Double(sheet.width) / Double(size)
+        let pixels = densities.enumerated().map { i, d -> UInt32 in
+            let centre = CGPoint(x: (Double(i % size) + 0.5) * cell, y: (Double(i / size) + 0.5) * cell)
+            let paper = paperRect.contains(centre) ? (r: 0.965, g: 0.955, b: 0.925) : (r: Double(desk.r), g: Double(desk.g), b: Double(desk.b))
             let t = Double(min(d * 1.4, 1)) // thin lines vanish when shrunk, so darken a little
             let r = UInt32((paper.r + (lead.r - paper.r) * t) * 255), g = UInt32((paper.g + (lead.g - paper.g) * t) * 255)
             let b = UInt32((paper.b + (lead.b - paper.b) * t) * 255)
@@ -229,7 +282,7 @@ final class CanvasView: UIView {
     var toolOutlines: [[CGPoint]] {
         guard let sheet else { return [] }
         let side = Double(sheet.width)
-        let sheets = layers.map { layer in
+        let sheets = layers.filter { !hiddenLayers.contains($0.id) }.map { layer in
             layer.outline(pixelsPerMillimeter: sheet.pixelsPerMillimeter).map { CGPoint(x: Double($0.x) / side, y: Double($0.y) / side) }
         }
         return sheets + toolShapes.map { shape in
@@ -406,13 +459,17 @@ final class CanvasView: UIView {
         let layer = PaperLayer(id: nextLayerID, kind: .grid(pattern), pose: pose)
         nextLayerID += 1
         let size = layer.rasterSize(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
-        let surface = GraphiteSurface(sheet: DraftingSheet(width: size.width, height: size.height,
-                                                           pixelsPerMillimeter: sheet.pixelsPerMillimeter,
-                                                           paper: sheet.paper, historyBudgetBytes: DraftingSheet.defaultHistoryBudget / 4),
-                                      scale: scale)
+        let make = { (shading: [UInt32]) in
+            GraphiteSurface(sheet: DraftingSheet(width: size.width, height: size.height,
+                                                 pixelsPerMillimeter: sheet.pixelsPerMillimeter,
+                                                 paper: sheet.paper, historyBudgetBytes: DraftingSheet.defaultHistoryBudget / 8),
+                            scale: self.scale, shading: shading)
+        }
+        let surface = make(GraphiteShading.lookup), copies = make(GraphiteShading.carbonLookup)
         layerSurfaces[layer.id] = surface
+        layerCopies[layer.id] = copies
         layers.append(layer)
-        showLayer(layer, surface: surface, sheet: sheet)
+        showLayer(layer, surfaces: [copies, surface], sheet: sheet)
         layersChanged()
         return layer.id
     }
@@ -423,14 +480,18 @@ final class CanvasView: UIView {
         layers.removeAll { $0.id == id }
         layerViews.removeValue(forKey: id)?.removeFromSuperview()
         layerSurfaces[id] = nil
+        layerCopies[id] = nil
         layerHolders[id] = nil
-        undoStack = undoStack.map { $0.filter { $0 != .sheet(id) } }.filter { !$0.isEmpty }
-        redoStack = redoStack.map { $0.filter { $0 != .sheet(id) } }.filter { !$0.isEmpty }
+        hiddenLayers.remove(id)
+        let gone: Set<SurfaceID> = [.sheet(id), .sheetCopy(id)]
+        undoStack = undoStack.map { $0.filter { !gone.contains($0) } }.filter { !$0.isEmpty }
+        redoStack = redoStack.map { $0.filter { !gone.contains($0) } }.filter { !$0.isEmpty }
         layersChanged()
         notifyHistory()
     }
 
     /// Slips the carbon under everything on the paper, or takes it out.
+    /// Once out it is a sheet like any other: it can be moved up over grid sheets.
     func setCarbon(onDesk: Bool) {
         guard let sheet else { return }
         let id = Self.carbonID
@@ -438,18 +499,19 @@ final class CanvasView: UIView {
             layers.removeAll { $0.id == id }
             layerViews.removeValue(forKey: id)?.removeFromSuperview()
             layerHolders[id] = nil
+            hiddenLayers.remove(id)
             layersChanged()
             return
         }
         guard !layers.contains(where: { $0.id == id }), let pose = screenPose(at: CGPoint(x: 0.5, y: 0.5)) else { return }
         let layer = PaperLayer(id: id, kind: .carbon, pose: pose)
         layers.insert(layer, at: 0)
-        showLayer(layer, surface: nil, sheet: sheet)
+        showLayer(layer, surfaces: [], sheet: sheet)
         layersChanged()
     }
 
-    private func showLayer(_ layer: PaperLayer, surface: GraphiteSurface?, sheet: DraftingSheet) {
-        let view = PaperLayerView(layer: layer, surface: surface, scale: scale, pixelsPerMillimeter: sheet.pixelsPerMillimeter)
+    private func showLayer(_ layer: PaperLayer, surfaces: [GraphiteSurface], sheet: DraftingSheet) {
+        let view = PaperLayerView(layer: layer, surfaces: surfaces, scale: scale, pixelsPerMillimeter: sheet.pixelsPerMillimeter)
         layerViews[layer.id] = view
         sheetsView.addSubview(view)
         view.place(layer, scale: scale)
@@ -458,7 +520,26 @@ final class CanvasView: UIView {
     /// Restacks the sheets' views in the order the sheets lie.
     private func layersChanged() {
         for layer in layers { if let view = layerViews[layer.id] { sheetsView.bringSubviewToFront(view) } }
+        onLayersChange?(layers, hiddenLayers)
         onOverviewChange?()
+    }
+
+    /// Sets a sheet aside without taking it off, or brings it back.
+    func setLayer(_ id: Int, hidden: Bool) {
+        guard activeTouch == nil || !marking.contains(.sheet(id)) else { return }
+        if hidden { hiddenLayers.insert(id) } else { hiddenLayers.remove(id) }
+        layerViews[id]?.isHidden = hidden
+        layerHolders[id] = nil
+        layersChanged()
+    }
+
+    /// Moves a sheet one place up or down the stack.
+    func shiftLayer(_ id: Int, up: Bool) {
+        guard activeTouch == nil, let i = layers.firstIndex(where: { $0.id == id }) else { return }
+        let j = up ? i + 1 : i - 1
+        guard layers.indices.contains(j) else { return }
+        layers.swapAt(i, j)
+        layersChanged()
     }
 
     /// A fingertip on a sheet's edge picks it up and lays it over the other grid sheets.
@@ -466,12 +547,12 @@ final class CanvasView: UIView {
         guard let sheet else { return false }
         let ppmm = sheet.pixelsPerMillimeter
         guard let i = layers.indices.last(where: {
-            layers[$0].edgeBandContains(point, inner: Self.sheetGripMM * ppmm, outer: Self.gripMarginMM * ppmm, pixelsPerMillimeter: ppmm)
+            !hiddenLayers.contains(layers[$0].id) && layers[$0].edgeBandContains(point, inner: Self.sheetGripMM * ppmm, outer: Self.gripMarginMM * ppmm, pixelsPerMillimeter: ppmm)
                 && layerHolders[layers[$0].id, default: []].count < 2
         }) else { return false }
         let id = layers[i].id
         layerHolders[id, default: []].append((touch, point))
-        // The carbon stays at the bottom; a grid sheet comes up over the others.
+        // A grid sheet comes up over the others; the carbon keeps its place, as it is slid about under things.
         if activeTouch == nil, layers[i].kind != .carbon {
             layers.append(layers.remove(at: i))
             layersChanged()
@@ -501,14 +582,9 @@ final class CanvasView: UIView {
     private func layerStack() -> LayerStack {
         guard let sheet else { return LayerStack() }
         let ppmm = sheet.pixelsPerMillimeter
-        var stack = LayerStack()
-        for layer in layers {
-            switch layer.kind {
-            case .carbon: stack.carbon = layer.outline(pixelsPerMillimeter: ppmm)
-            case .grid: stack.sheets.append((layer.id, layer.outline(pixelsPerMillimeter: ppmm)))
-            }
-        }
-        return stack
+        return LayerStack(sheets: layers.filter { !hiddenLayers.contains($0.id) }.map {
+            LayerStack.Sheet(id: $0.id, outline: $0.outline(pixelsPerMillimeter: ppmm), isCarbon: $0.kind == .carbon)
+        }, paper: paperOutline)
     }
 
     private func surface(_ id: SurfaceID) -> GraphiteSurface? {
@@ -516,16 +592,21 @@ final class CanvasView: UIView {
         case .paper: paperSurface
         case .carbonCopy: copySurface
         case .sheet(let i): layerSurfaces[i]
+        case .sheetCopy(let i): layerCopies[i]
         }
     }
 
     private var allSurfaces: [GraphiteSurface] {
-        [paperSurface, copySurface].compactMap { $0 } + Array(layerSurfaces.values)
+        [paperSurface, copySurface].compactMap { $0 } + Array(layerSurfaces.values) + Array(layerCopies.values)
     }
 
     /// A sample or mask on the paper, moved onto the surface it marks.
     private func onSurface(_ id: SurfaceID) -> ((CGPoint) -> CGPoint, (StrokeSample) -> StrokeSample) {
-        guard case .sheet(let i) = id, let sheet, let layer = layers.first(where: { $0.id == i }) else { return ({ $0 }, { $0 }) }
+        let sheetID: Int? = switch id {
+        case .sheet(let i), .sheetCopy(let i): i
+        case .paper, .carbonCopy: nil
+        }
+        guard let i = sheetID, let sheet, let layer = layers.first(where: { $0.id == i }) else { return ({ $0 }, { $0 }) }
         let ppmm = sheet.pixelsPerMillimeter
         return ({ layer.surfacePoint($0, pixelsPerMillimeter: ppmm) }, { layer.surfaceSample($0, pixelsPerMillimeter: ppmm) })
     }

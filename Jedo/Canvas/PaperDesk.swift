@@ -3,7 +3,7 @@ import UIKit
 /// Holds the sheet the way a desk holds paper: when the iPad turns, the
 /// interface turns with it but the sheet does not move under the hand.
 ///
-/// The sheet is a square a few screens across. The screen looks at part of
+/// The desk is a square with the chosen paper fixed in its middle. The screen looks at part of
 /// it. The overview map in the corner, and the stick under it, move the view
 /// smoothly: the map glides to where it is touched or dragged, the stick pans
 /// steadily for as long as it is pushed. There is no zoom: the
@@ -77,6 +77,9 @@ final class PaperDeskView: UIView {
         minimap.frame = CGRect(x: max(safeAreaInsets.left, 20), y: inset, width: Self.minimapSide, height: Self.minimapSide)
         stick.frame = CGRect(x: minimap.frame.midX - PanStick.side / 2, y: minimap.frame.maxY + 14,
                              width: PanStick.side, height: PanStick.side)
+        // Nothing to map or move until the paper is laid.
+        minimap.isHidden = canvas.sheet == nil
+        stick.isHidden = canvas.sheet == nil
         refreshMinimap(drawing: minimap.drawing == nil)
     }
 
