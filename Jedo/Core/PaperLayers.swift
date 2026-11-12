@@ -4,10 +4,23 @@ import Foundation
 /// The drawing paper, chosen when a drawing starts. It lies fixed on the
 /// desk, the background everything else is laid on.
 struct PaperSize: Hashable, Sendable {
-    enum Series: CaseIterable, Hashable, Sendable { case a4, a3, a2, a1 }
+    enum Series: CaseIterable, Hashable, Sendable {
+        case a4, a3, a2, a1
+        case b5, b4, b3, b2
+        /// Exactly the screen: nothing to move about, so no map or stick.
+        case screen
+
+        static let aSizes: [Series] = [.a4, .a3, .a2, .a1]
+        static let bSizes: [Series] = [.b5, .b4, .b3, .b2]
+    }
 
     var series: Series
     var landscape: Bool
+    /// For `.screen`: the screen's size in millimetres, as it was held when the paper was laid.
+    var screenWidthMM = 0.0
+    var screenHeightMM = 0.0
+
+    var fitsScreen: Bool { series == .screen }
 
     var name: String {
         switch series {
@@ -15,16 +28,28 @@ struct PaperSize: Hashable, Sendable {
         case .a3: "A3"
         case .a2: "A2"
         case .a1: "A1"
+        case .b5: "B5"
+        case .b4: "B4"
+        case .b3: "B3"
+        case .b2: "B2"
+        case .screen: "화면 맞춤"
         }
     }
 
     /// Width and height in millimetres, as it lies.
     var sizeMM: (width: Double, height: Double) {
+        if series == .screen { return (screenWidthMM, screenHeightMM) }
         let (short, long): (Double, Double) = switch series {
         case .a4: (210, 297)
         case .a3: (297, 420)
         case .a2: (420, 594)
         case .a1: (594, 841)
+        // The B sizes used for Korean drafting paper (KS, as JIS).
+        case .b5: (182, 257)
+        case .b4: (257, 364)
+        case .b3: (364, 515)
+        case .b2: (515, 728)
+        case .screen: (screenWidthMM, screenHeightMM)
         }
         return landscape ? (long, short) : (short, long)
     }
@@ -32,9 +57,11 @@ struct PaperSize: Hashable, Sendable {
     /// How much desk shows around the paper at most, each side.
     static let deskMarginMM = 60.0
 
-    /// The square desk it lies on, in millimetres: room around the paper, and at least `minimumMM` across.
+    /// The square desk it lies on, in millimetres: room around the paper, and
+    /// at least `minimumMM` across. Paper fitted to the screen has no room around it.
     func deskSideMM(minimumMM: Double) -> Double {
-        max(max(sizeMM.width, sizeMM.height) + 2 * Self.deskMarginMM, minimumMM)
+        let long = max(sizeMM.width, sizeMM.height)
+        return max(fitsScreen ? long : long + 2 * Self.deskMarginMM, minimumMM)
     }
 }
 
@@ -48,7 +75,7 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
     case isometric
     /// A round sheet: rings every 5 mm and a ray every 15°.
     case polar
-    /// Clear in the middle, with a band of 1 mm grid around the edge to line it up by.
+    /// Nothing printed: a clear sheet to trace on.
     case plain
 
     var name: String {
@@ -357,7 +384,7 @@ enum GridRulings {
         case .isometric:
             return isometric(width: w, height: h, spacing: 5)
         case .plain:
-            return edgeBand(width: w, height: h, band: plainBandMM)
+            return []
         case .polar:
             let r = w / 2
             return stride(from: 0, to: 360, by: 15).map { degrees in
@@ -367,9 +394,6 @@ enum GridRulings {
             }
         }
     }
-
-    /// How wide the grid band around a plain sheet is.
-    static let plainBandMM = 10.0
 
     static func rings(_ pattern: GridPattern) -> [Ring] {
         guard pattern == .polar else { return [] }
@@ -390,37 +414,6 @@ enum GridRulings {
         for i in 0...Int((height / step).rounded(.down)) {
             let y = Double(i) * step
             out.append(Line(from: CGPoint(x: 0, y: y), to: CGPoint(x: width, y: y), weight: weight(i)))
-        }
-        return out
-    }
-
-    /// 1 mm grid only within `band` of the edges, heavier every 5 and 10 mm
-    /// and along the band's inner edge; the middle is left clear.
-    private static func edgeBand(width: Double, height: Double, band: Double) -> [Line] {
-        var out: [Line] = []
-        func weight(_ i: Int, _ at: Double, _ size: Double) -> Weight {
-            if i % 10 == 0 || abs(at - band) < 1e-9 || abs(at - (size - band)) < 1e-9 || abs(at - size) < 1e-9 { return .bold }
-            return i % 5 == 0 ? .medium : .fine
-        }
-        for i in 0...Int(width.rounded(.down)) {
-            let x = Double(i)
-            let w = weight(i, x, width)
-            if x <= band || x >= width - band {
-                out.append(Line(from: CGPoint(x: x, y: 0), to: CGPoint(x: x, y: height), weight: w))
-            } else {
-                out.append(Line(from: CGPoint(x: x, y: 0), to: CGPoint(x: x, y: band), weight: w))
-                out.append(Line(from: CGPoint(x: x, y: height - band), to: CGPoint(x: x, y: height), weight: w))
-            }
-        }
-        for i in 0...Int(height.rounded(.down)) {
-            let y = Double(i)
-            let w = weight(i, y, height)
-            if y <= band || y >= height - band {
-                out.append(Line(from: CGPoint(x: 0, y: y), to: CGPoint(x: width, y: y), weight: w))
-            } else {
-                out.append(Line(from: CGPoint(x: 0, y: y), to: CGPoint(x: band, y: y), weight: w))
-                out.append(Line(from: CGPoint(x: width - band, y: y), to: CGPoint(x: width, y: y), weight: w))
-            }
         }
         return out
     }

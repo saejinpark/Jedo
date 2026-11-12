@@ -13,7 +13,7 @@ import UIKit
 final class PaperDeskController: UIViewController {
     let canvas = CanvasView()
     private var turns = QuarterTurns(0)
-    private var desk: PaperDeskView { view as! PaperDeskView }
+    var desk: PaperDeskView { view as! PaperDeskView }
 
     override func loadView() {
         view = PaperDeskView(canvas: canvas)
@@ -39,6 +39,12 @@ final class PaperDeskView: UIView {
     let canvas: CanvasView
     let minimap = MinimapView()
     let stick = PanStick()
+    /// Millimetre scales of the paper along the top and left of the screen.
+    let topRuler = EdgeRulerView(side: .top)
+    let leftRuler = EdgeRulerView(side: .left)
+    var showsRulers = true {
+        didSet { setNeedsLayout() }
+    }
     /// Where the sheet's centre sits from the screen's centre, in screen points.
     private var offset = CGPoint.zero
     /// Where the map asked the view to go; the view glides there.
@@ -57,6 +63,8 @@ final class PaperDeskView: UIView {
         super.init(frame: .zero)
         backgroundColor = canvas.backgroundColor
         addSubview(canvas)
+        addSubview(topRuler)
+        addSubview(leftRuler)
         addSubview(minimap)
         addSubview(stick)
         minimap.onMove = { [weak self] spot in self?.glide(to: spot) }
@@ -73,26 +81,44 @@ final class PaperDeskView: UIView {
         // Bounds and centre, never frame: the canvas may be turned.
         canvas.bounds = CGRect(x: 0, y: 0, width: side, height: side)
         canvas.center = canvasCenter(in: bounds.size)
-        let inset = max(safeAreaInsets.top, 20)
-        minimap.frame = CGRect(x: max(safeAreaInsets.left, 20), y: inset, width: Self.minimapSide, height: Self.minimapSide)
+        let laid = canvas.sheet != nil
+        let ruled = laid && showsRulers
+        let t = EdgeRulerView.thickness
+        topRuler.isHidden = !ruled
+        leftRuler.isHidden = !ruled
+        topRuler.frame = CGRect(x: t, y: 0, width: bounds.width - t, height: t)
+        leftRuler.frame = CGRect(x: 0, y: 0, width: t, height: bounds.height)
+        let clear: CGFloat = ruled ? t : 0
+        let inset = max(safeAreaInsets.top, 20) + clear
+        minimap.frame = CGRect(x: max(safeAreaInsets.left, 20) + clear, y: inset, width: Self.minimapSide, height: Self.minimapSide)
         stick.frame = CGRect(x: minimap.frame.midX - PanStick.side / 2, y: minimap.frame.maxY + 14,
                              width: PanStick.side, height: PanStick.side)
         // Nothing to map or move until the paper is laid.
-        minimap.isHidden = canvas.sheet == nil
-        stick.isHidden = canvas.sheet == nil
+        // Paper fitted to the screen never moves, so it needs neither.
+        minimap.isHidden = !laid || canvas.paperFitsScreen
+        stick.isHidden = !laid || canvas.paperFitsScreen
         refreshMinimap(drawing: minimap.drawing == nil)
     }
 
     static let minimapSide: CGFloat = 150
 
-    /// The sheet's centre on a screen of `size`, kept so the sheet covers the screen.
+    /// The sheet's centre on a screen of `size`. The view stops at the
+    /// paper's edges: it never shows the desk beyond the paper, unless the
+    /// paper is smaller than the screen, when it sits in the middle.
     func canvasCenter(in size: CGSize) -> CGPoint {
-        offset = Self.clamp(offset, side: side, screen: size)
+        offset = canvas.paperFitsScreen ? .zero : Self.clamp(offset, extent: paperExtent, screen: size)
         return CGPoint(x: size.width / 2 + offset.x, y: size.height / 2 + offset.y)
     }
 
-    static func clamp(_ offset: CGPoint, side: CGFloat, screen: CGSize) -> CGPoint {
-        let spareX = max((side - screen.width) / 2, 0), spareY = max((side - screen.height) / 2, 0)
+    /// The paper as it lies on screen, turned with the canvas. It sits in the middle of the desk.
+    private var paperExtent: CGSize {
+        guard let paper = canvas.paperSizeInPoints else { return CGSize(width: side, height: side) }
+        let turned = abs(canvas.transform.b) > 0.5
+        return turned ? CGSize(width: paper.height, height: paper.width) : paper
+    }
+
+    static func clamp(_ offset: CGPoint, extent: CGSize, screen: CGSize) -> CGPoint {
+        let spareX = max((extent.width - screen.width) / 2, 0), spareY = max((extent.height - screen.height) / 2, 0)
         return CGPoint(x: min(max(offset.x, -spareX), spareX), y: min(max(offset.y, -spareY), spareY))
     }
 
@@ -104,7 +130,7 @@ final class PaperDeskView: UIView {
 
     /// Glides the screen's centre to `spot`, a point of the map as fractions of its side.
     private func glide(to spot: CGPoint) {
-        target = Self.clamp(CGPoint(x: -(spot.x - 0.5) * side, y: -(spot.y - 0.5) * side), side: side, screen: bounds.size)
+        target = Self.clamp(CGPoint(x: -(spot.x - 0.5) * side, y: -(spot.y - 0.5) * side), extent: paperExtent, screen: bounds.size)
         startTicking()
     }
 
@@ -161,6 +187,26 @@ final class PaperDeskView: UIView {
             minimap.tools = canvas.toolOutlines
         }
         minimap.setNeedsDisplay()
+        refreshRulers()
+    }
+
+    /// Reads the paper under each ruler's edge. The canvas may be turned, so
+    /// a ruler can run along either of the paper's sides, either way.
+    private func refreshRulers() {
+        guard showsRulers, let size = canvas.paperSizeMM else { return }
+        func scale(from a: CGPoint, to b: CGPoint) -> EdgeScale? {
+            guard let pa = canvas.paperMillimetres(at: canvas.convert(a, from: self)),
+                  let pb = canvas.paperMillimetres(at: canvas.convert(b, from: self)) else { return nil }
+            let length = Double(hypot(b.x - a.x, b.y - a.y))
+            guard length > 0 else { return nil }
+            let dx = Double(pb.x - pa.x), dy = Double(pb.y - pa.y)
+            return abs(dx) >= abs(dy)
+                ? EdgeScale(startMM: Double(pa.x), mmPerPoint: dx / length, length: length, paperMM: size.width)
+                : EdgeScale(startMM: Double(pa.y), mmPerPoint: dy / length, length: length, paperMM: size.height)
+        }
+        let top = topRuler.frame, left = leftRuler.frame
+        topRuler.scale = scale(from: CGPoint(x: top.minX, y: 0), to: CGPoint(x: top.maxX, y: 0))
+        leftRuler.scale = scale(from: CGPoint(x: 0, y: left.minY), to: CGPoint(x: 0, y: left.maxY))
     }
 
     static let overviewCells = 200

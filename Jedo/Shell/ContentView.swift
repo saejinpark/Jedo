@@ -27,11 +27,26 @@ struct ContentView: View {
             .animation(.spring(duration: 0.35), value: session.hint)
             }
 
+            if session.paper != nil {
+                Menu {
+                    Button("종이만") { session.export(includeSheets: false) }
+                    Button("얹힌 모눈종이·먹지까지") { session.export(includeSheets: true) }
+                } label: {
+                    RoundToolFace(icon: .symbol("square.and.arrow.up"), enabled: true, selected: false)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .accessibilityLabel("내보내기")
+                .padding(.top, 34)
+                .padding(.trailing, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
+
             #if DEBUG
             if session.compassOnDesk {
                 DraftPicker(session: session)
                     .padding(20)
-                    .padding(.top, 60) // below the hint
+                    .padding(.top, 96) // below the hint and the export button
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
             #endif
@@ -74,6 +89,10 @@ private struct ToolControls: View {
                     session.carbonOnDesk.toggle()
                 }
                 LayersButton(session: session)
+                RoundToolButton(icon: .symbol("square.dashed"), label: session.edgeRulers ? "가장자리 눈금 끄기" : "가장자리 눈금 켜기",
+                                enabled: true, selected: session.edgeRulers) {
+                    session.edgeRulers.toggle()
+                }
                 RoundToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
                                 enabled: true, selected: session.compassOnDesk) {
                     session.compassOnDesk.toggle()
@@ -181,7 +200,7 @@ private struct PaperPicker: View {
     @State private var landscape = false
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 22) {
             Text("종이 고르기").font(.title2.weight(.semibold))
             Picker("방향", selection: $landscape) {
                 Text("세로").tag(false)
@@ -189,32 +208,46 @@ private struct PaperPicker: View {
             }
             .pickerStyle(.segmented)
             .frame(width: 200)
-            HStack(alignment: .bottom, spacing: 22) {
-                ForEach(PaperSize.Series.allCases, id: \.self) { series in
-                    let paper = PaperSize(series: series, landscape: landscape)
-                    Button { choose(paper) } label: {
-                        VStack(spacing: 10) {
-                            let (w, h) = paper.sizeMM
-                            Rectangle()
-                                .fill(Color(red: 0.965, green: 0.955, blue: 0.925))
-                                .frame(width: w / 841 * 120, height: h / 841 * 120)
-                                .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
-                            Text(paper.name).font(.headline)
-                            Text("\(Int(w))×\(Int(h))mm").font(.caption).foregroundStyle(.secondary)
-                        }
-                        .frame(width: 130, height: 200, alignment: .bottom)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(paper.name) \(landscape ? "가로" : "세로")")
-                }
+            row(PaperSize.Series.aSizes)
+            row(PaperSize.Series.bSizes)
+            Button { choose(PaperSize(series: .screen, landscape: false)) } label: {
+                Label("화면 맞춤", systemImage: "ipad")
+                    .font(.headline)
+                    .padding(.horizontal, 18).padding(.vertical, 10)
+                    .background(Color(red: 0.965, green: 0.955, blue: 0.925), in: Capsule())
+                    .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
             }
-            Text("실제 크기로 책상에 고정됩니다. 화면은 지도와 조이스틱으로 옮겨 다닙니다.")
-                .font(.footnote).foregroundStyle(.secondary)
+            .buttonStyle(.plain)
+            .accessibilityHint("종이가 화면에 꼭 맞아 옮길 필요가 없습니다")
+            Text("실제 크기로 책상에 고정됩니다. 화면은 지도와 조이스틱으로 옮겨 다닙니다.\n화면 맞춤은 지금 화면 그대로가 종이라 지도와 조이스틱이 없습니다.")
+                .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
         .padding(32)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
         .animation(.spring(duration: 0.3), value: landscape)
+    }
+
+    private func row(_ series: [PaperSize.Series]) -> some View {
+        HStack(alignment: .bottom, spacing: 22) {
+            ForEach(series, id: \.self) { series in
+                let paper = PaperSize(series: series, landscape: landscape)
+                Button { choose(paper) } label: {
+                    VStack(spacing: 8) {
+                        let (w, h) = paper.sizeMM
+                        Rectangle()
+                            .fill(Color(red: 0.965, green: 0.955, blue: 0.925))
+                            .frame(width: w / 841 * 110, height: h / 841 * 110)
+                            .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+                        Text(paper.name).font(.headline)
+                        Text("\(Int(w))×\(Int(h))mm").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(width: 130, height: 170, alignment: .bottom)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(paper.name) \(landscape ? "가로" : "세로")")
+            }
+        }
     }
 }
 

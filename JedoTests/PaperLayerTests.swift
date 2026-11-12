@@ -136,12 +136,20 @@ struct PaperSizeTests {
         let wide = PaperSize(series: .a3, landscape: true)
         #expect(wide.sizeMM.width == 420 && wide.sizeMM.height == 297)
         #expect(PaperSize(series: .a1, landscape: false).sizeMM.height == 841)
+        #expect(PaperSize(series: .b4, landscape: false).sizeMM.width == 257)
     }
 
     @Test func theDeskLeavesRoomAroundThePaper() {
         let a4 = PaperSize(series: .a4, landscape: false)
         #expect(a4.deskSideMM(minimumMM: 0) == 297 + 120)
         #expect(a4.deskSideMM(minimumMM: 500) == 500, "never smaller than the screen")
+    }
+
+    @Test func screenFittedPaperIsTheScreenWithNoDeskAround() {
+        let fitted = PaperSize(series: .screen, landscape: true, screenWidthMM: 160, screenHeightMM: 230)
+        #expect(fitted.sizeMM.width == 160 && fitted.sizeMM.height == 230, "as the screen was held, not turned")
+        #expect(fitted.deskSideMM(minimumMM: 230) == 230)
+        #expect(fitted.fitsScreen)
     }
 
     @Test func nothingMarksTheDeskBeyondThePaper() {
@@ -213,20 +221,8 @@ struct GridRulingTests {
         #expect(angles == [90, 30, 150])
     }
 
-    @Test func thePlainSheetIsClearInsideItsEdgeBand() {
-        let (w, h) = GridPattern.plain.sizeMM
-        let band = GridRulings.plainBandMM
-        let lines = GridRulings.lines(.plain)
-        #expect(!lines.isEmpty)
-        // No ruling passes through the clear middle.
-        for line in lines {
-            let mid = CGPoint(x: (line.from.x + line.to.x) / 2, y: (line.from.y + line.to.y) / 2)
-            let inMiddle = mid.x > band + 1e-6 && mid.x < w - band - 1e-6 && mid.y > band + 1e-6 && mid.y < h - band - 1e-6
-            #expect(!inMiddle)
-        }
-        // The outer edge and the band's inner edge are both drawn heavy.
-        #expect(lines.contains { $0.weight == .bold && $0.from.x == band && $0.to.x == band })
-        #expect(lines.contains { $0.weight == .bold && $0.from.y == 0 && $0.to.y == 0 })
+    @Test func thePlainSheetHasNothingPrinted() {
+        #expect(GridRulings.lines(.plain).isEmpty)
         #expect(GridRulings.rings(.plain).isEmpty)
     }
 
@@ -234,5 +230,33 @@ struct GridRulingTests {
         #expect(GridRulings.rings(.polar).count == 12)
         #expect(GridRulings.lines(.polar).count == 24)
         #expect(GridRulings.rings(.square1).isEmpty)
+    }
+}
+
+struct EdgeScaleTests {
+    @Test func ticksFallOnWholeMillimetres() {
+        // 2 points per millimetre, starting 3.5 mm before the paper's edge.
+        let scale = EdgeScale(startMM: -3.5, mmPerPoint: 0.5, length: 40, paperMM: 297)
+        let ticks = scale.ticks
+        #expect(ticks.first?.mm == -3)
+        #expect(ticks.last?.mm == 16)
+        #expect(abs(ticks.first!.at - 1) < 1e-9)
+        #expect(ticks.first { $0.mm == 10 }?.weight == .bold)
+        #expect(ticks.first { $0.mm == 5 }?.weight == .medium)
+        #expect(ticks.first { $0.mm == 7 }?.weight == .fine)
+    }
+
+    @Test func thePaperSpanShowsWhereThePaperIs() {
+        let scale = EdgeScale(startMM: -10, mmPerPoint: 0.5, length: 100, paperMM: 297)
+        #expect(scale.paperSpan == 20...100)
+        let past = EdgeScale(startMM: 400, mmPerPoint: 0.5, length: 100, paperMM: 297)
+        #expect(past.paperSpan == nil, "all desk")
+    }
+
+    @Test func aTurnedPaperRunsBackwards() {
+        let scale = EdgeScale(startMM: 50, mmPerPoint: -0.5, length: 40, paperMM: 297)
+        #expect(scale.ticks.map(\.mm).first == 50)
+        #expect(scale.ticks.map(\.mm).last == 30)
+        #expect(scale.paperSpan == 0...40)
     }
 }

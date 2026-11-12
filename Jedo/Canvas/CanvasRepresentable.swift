@@ -14,6 +14,7 @@ struct CanvasRepresentable: UIViewControllerRepresentable {
         view.onLayersChange = { [weak session] layers, hidden in session?.layersChanged(layers, hidden: hidden) }
         view.compassStyle = session.compassStyle
         session.canvas = view
+        session.desk = controller.desk
         return controller
     }
 

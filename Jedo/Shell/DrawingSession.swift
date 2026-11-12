@@ -34,6 +34,10 @@ final class DrawingSession {
     var carbonOnDesk = false {
         didSet { canvas?.setCarbon(onDesk: carbonOnDesk) }
     }
+    /// Millimetre scales of the paper along the screen's edges.
+    var edgeRulers = true {
+        didSet { desk?.showsRulers = edgeRulers }
+    }
     /// Whether the hand holds the eraser, so a finger rubbing the paper erases.
     var eraserInHand = false {
         didSet {
@@ -83,6 +87,7 @@ final class DrawingSession {
     }
 
     @ObservationIgnored weak var canvas: CanvasView?
+    @ObservationIgnored weak var desk: PaperDeskView?
     @ObservationIgnored private var hintTask: Task<Void, Never>?
     @ObservationIgnored private var hintsShown: [Hint: Int] = [:]
     /// Enough to learn the rule without nagging.
@@ -99,6 +104,27 @@ final class DrawingSession {
         guard self.paper == nil else { return }
         self.paper = paper
         canvas?.start(on: paper)
+    }
+
+    /// Saves the paper as a PNG and offers it to share or save: the paper
+    /// alone, or with the sheets lying on it.
+    func export(includeSheets: Bool) {
+        guard let canvas, let image = canvas.exportImage(includeSheets: includeSheets),
+              let data = image.pngData() else { return }
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.dateFormat = "yyyy-MM-dd HHmm"
+        let stamp = format.string(from: .now)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("제도 \(stamp).png")
+        do { try data.write(to: url, options: .atomic) } catch { return }
+        guard let window = canvas.window, var top = window.rootViewController else { return }
+        while let shown = top.presentedViewController { top = shown }
+        let share = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if let popover = share.popoverPresentationController {
+            popover.sourceView = window
+            popover.sourceRect = CGRect(x: window.bounds.maxX - 50, y: 40, width: 1, height: 1)
+        }
+        top.present(share, animated: true)
     }
 
     /// Lays a new grid sheet on the paper.

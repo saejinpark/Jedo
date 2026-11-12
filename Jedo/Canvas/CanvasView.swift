@@ -143,13 +143,19 @@ final class CanvasView: UIView {
     }
 
     private func setUp() {
-        guard sheet == nil, let paper = paperSize, let screen = window?.windowScene?.screen else { return }
+        guard sheet == nil, var paper = paperSize, let screen = window?.windowScene?.screen else { return }
         scale = screen.scale
         // A square desk with the paper fixed in its middle; the screen looks
         // at part of it and the overview map moves the view. The desk turns
         // it back when the interface turns.
         let longSide = Double(max(screen.nativeBounds.width, screen.nativeBounds.height))
         let ppmm = DisplayDensity.pixelsPerMillimeter(nativeLongSidePixels: longSide)
+        if paper.fitsScreen, let window {
+            // The screen as it is held now, to the pixel.
+            paper.screenWidthMM = (Double(window.bounds.width * scale) / ppmm)
+            paper.screenHeightMM = (Double(window.bounds.height * scale) / ppmm)
+            paperSize = paper
+        }
         let side = Int((paper.deskSideMM(minimumMM: longSide / ppmm) * ppmm).rounded(.up))
         let (w, h) = (paper.sizeMM.width * ppmm, paper.sizeMM.height * ppmm)
         paperRect = CGRect(x: ((Double(side) - w) / 2).rounded(), y: ((Double(side) - h) / 2).rounded(), width: w.rounded(), height: h.rounded())
@@ -182,6 +188,56 @@ final class CanvasView: UIView {
         [CGPoint(x: paperRect.minX, y: paperRect.minY), CGPoint(x: paperRect.maxX, y: paperRect.minY),
          CGPoint(x: paperRect.maxX, y: paperRect.maxY), CGPoint(x: paperRect.minX, y: paperRect.maxY)]
     }
+
+    /// Paper millimetres, from its top-left corner, at a point of this view.
+    func paperMillimetres(at point: CGPoint) -> CGPoint? {
+        guard let sheet else { return nil }
+        let ppmm = sheet.pixelsPerMillimeter
+        return CGPoint(x: (Double(point.x * scale) - Double(paperRect.minX)) / ppmm,
+                       y: (Double(point.y * scale) - Double(paperRect.minY)) / ppmm)
+    }
+
+    /// The paper's size in points (untouched by the canvas's turn), once it is laid.
+    var paperSizeInPoints: CGSize? {
+        sheet == nil ? nil : CGSize(width: paperRect.width / scale, height: paperRect.height / scale)
+    }
+
+    /// Whether the paper is exactly the screen, so the view never moves.
+    var paperFitsScreen: Bool { sheet != nil && paperSize?.fitsScreen == true }
+
+    /// The paper's width and height in millimetres, once it is laid.
+    var paperSizeMM: (width: Double, height: Double)? { sheet == nil ? nil : paperSize?.sizeMM }
+
+    /// The paper as it looks, without the tools in the hand: the paper alone,
+    /// or with the grid sheets and carbon lying on it. Its long side is kept
+    /// under `exportMaxPixels`.
+    func exportImage(includeSheets: Bool) -> UIImage? {
+        guard sheet != nil, activeTouch == nil, paperRect.width > 0 else { return nil }
+        let frame = CGRect(x: paperRect.minX / scale, y: paperRect.minY / scale,
+                           width: paperRect.width / scale, height: paperRect.height / scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = min(scale, Self.exportMaxPixels / max(frame.width, frame.height))
+        format.opaque = true
+        let toolsShown = toolViews.filter { !$0.value.isHidden }.map(\.key)
+        let compassShown = !compassView.isHidden
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for kind in toolsShown { toolViews[kind]?.isHidden = true }
+        compassView.isHidden = true
+        sheetsView.isHidden = !includeSheets
+        defer {
+            for kind in toolsShown { toolViews[kind]?.isHidden = false }
+            compassView.isHidden = !compassShown
+            sheetsView.isHidden = false
+            CATransaction.commit()
+        }
+        return UIGraphicsImageRenderer(size: frame.size, format: format).image { context in
+            context.cgContext.translateBy(x: -frame.minX, y: -frame.minY)
+            layer.render(in: context.cgContext)
+        }
+    }
+
+    static let exportMaxPixels: CGFloat = 6000
 
     /// The desk the paper lies on.
     static let deskColour = UIColor(red: 0.74, green: 0.72, blue: 0.68, alpha: 1)
