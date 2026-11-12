@@ -1,12 +1,12 @@
 import SwiftUI
 
 /// The grade in hand: a row of grades, each with a swatch as dark as one
-/// ordinary stroke of that lead. Nothing else, so it stays out of the way.
-struct PencilTray: View {
+/// ordinary stroke of that lead. It sits first in the hand group.
+struct PencilGrades: View {
     @Binding var selection: PencilGrade
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Metric.cellGap) {
             ForEach(PencilGrade.allCases) { grade in
                 let selected = grade == selection
                 Button {
@@ -20,27 +20,22 @@ struct PencilTray: View {
                         Text(grade.label)
                             .font(.system(size: 13, weight: selected ? .bold : .medium, design: .rounded))
                     }
-                    .frame(width: 40, height: 48)
+                    .frame(width: 38, height: Metric.cell)
                     .foregroundStyle(selected ? Color.white : Palette.ink.opacity(0.8))
                     .background(selected ? AnyShapeStyle(Palette.ink) : AnyShapeStyle(Color.clear),
-                                in: RoundedRectangle(cornerRadius: 12))
-                    .contentShape(RoundedRectangle(cornerRadius: 12))
+                                in: RoundedRectangle(cornerRadius: Metric.cellRadius))
+                    .contentShape(RoundedRectangle(cornerRadius: Metric.cellRadius))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("연필 \(grade.label)")
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
-        .padding(4)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Palette.ink.opacity(0.08)))
-        .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
-        .fixedSize()
     }
 }
 
 #Preview {
     @Previewable @State var grade = PencilGrade.b2
-    PencilTray(selection: $grade)
+    ControlGroup { PencilGrades(selection: $grade) }
         .padding()
 }

@@ -25,6 +25,7 @@ final class DrawingSession {
         let id: Int
         let name: String
         let isCarbon: Bool
+        let isTone: Bool
         /// Whether it can be pressed onto the paper (grid sheets).
         let canStamp: Bool
         /// The sheet's symbol in the panel.
@@ -176,9 +177,14 @@ final class DrawingSession {
         if id == CanvasView.carbonID { carbonOnDesk = false } else { removeSheet(id) }
     }
 
+    /// Whether any tone lies on the paper, so the knife has something to cut.
+    var hasTone: Bool { layerRows.contains(where: \.isTone) }
+
     func layersChanged(_ layers: [PaperLayer], hidden: Set<Int>) {
+        defer { if !hasTone, knifeInHand { knifeInHand = false } }
         layerRows = layers.enumerated().reversed().map { i, layer in
             LayerRow(id: layer.id, name: Self.name(of: layer, among: layers), isCarbon: layer.kind == .carbon,
+                     isTone: layer.kind.isTone,
                      canStamp: { if case .grid = layer.kind { true } else { false } }(),
                      symbol: layer.kind == .carbon ? "square.fill" : layer.kind.isTone ? "circle.grid.3x3.fill" : "squareshape.split.3x3",
                      hidden: hidden.contains(layer.id), canRaise: i < layers.count - 1, canLower: i > 0)
