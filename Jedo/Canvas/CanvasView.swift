@@ -90,24 +90,8 @@ final class CanvasView: UIView {
     /// Surfaces the stroke in progress is marking.
     private var marking: [SurfaceID] = []
     private var markingErases = false
-    /// Each pencil's point, worn as it draws.
-    private var leads: [PencilGrade: LeadPoint] = [:]
-    /// The grade of the stroke in progress and where its line last was, for wear.
-    private var markingGrade: PencilGrade = .hb
-    private var lastWorn: CGPoint?
-    /// The barrel's turn in the hand, when the pencil reports it (Apple Pencil Pro).
-    private var roll: Double?
-    /// The range of roll readings seen; a pencil that can't sense its barrel
-    /// reports a constant, so roll counts only once it has been seen to change.
-    private var rollSeen: (low: Double, high: Double)?
-    private var rollSensed = false
-    /// Called when a pencil's point wears, turns or is sharpened, with how
-    /// blunt the side now touching the paper is (0...1).
-    var onLeadChange: ((PencilGrade, Double) -> Void)?
     /// The stroke in progress, pencil and line, for the stroke log.
     private var recorder: StrokeRecorder?
-    /// The pencil's own samples for what `lay` is about to draw, for the log.
-    private var pendingRaw: [StrokeSample]?
     private var recordStarted: (date: Date, time: CFTimeInterval) = (.now, 0)
     /// Strokes, rubs, cuts and peels, newest last.
     private var undoStack: [UndoStep] = []
@@ -175,11 +159,6 @@ final class CanvasView: UIView {
         addSubview(sheetsView)
         addSubview(pinsView)
         addSubview(compassView)
-        let pencil = UIPencilInteraction(delegate: self)
-        addInteraction(pencil)
-        // What the iPad is set to do on a double-tap (Settings › Apple Pencil), for diagnosis.
-        Self.logEvent(["event": "launch", "preferredTapAction": UIPencilInteraction.preferredTapAction.rawValue,
-                       "prefersPencilOnlyDrawing": UIPencilInteraction.prefersPencilOnlyDrawing ? 1 : 0])
         memoryWarningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -1103,8 +1082,6 @@ final class CanvasView: UIView {
         pending = PendingSampleQueue()
         lastPredicted = []
         let grade = currentGrade()
-        markingGrade = grade
-        lastWorn = nil
         marking = []
         markingErases = erasing
         recorder = StrokeRecorder(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
@@ -1142,10 +1119,6 @@ final class CanvasView: UIView {
             cut(along: samples)
             return
         }
-        var samples = samples, predicted = predicted
-        if !markingErases { wear(&samples, predicted: &predicted) }
-        if let raw = pendingRaw, raw.count == samples.count { recorder?.add(pencil: raw, line: samples) }
-        pendingRaw = nil
         // A sheet held while drawing moves its edge under the pencil.
         let masks = layerHolders.isEmpty ? nil : Dictionary(layerStack().targets(erasing: markingErases).map { ($0.surface, $0.mask) },
                                                             uniquingKeysWith: { a, _ in a })
@@ -1383,7 +1356,7 @@ final class CanvasView: UIView {
         if var guide {
             final = guide.guide(released, tools: toolShapes)
             self.guide = guide
-            pendingRaw = released
+            recorder?.add(pencil: released, line: final)
             var lookahead = guide
             ahead = lookahead.guide(ahead, tools: toolShapes)
             if let angle = lookahead.arc?.angle, var compass {
@@ -1404,92 +1377,9 @@ final class CanvasView: UIView {
         touch.type == .pencil && touch.estimatedPropertiesExpectingUpdates.contains(.force)
     }
 
-    // MARK: Lead point
-
-    /// Wears the point by the line just drawn, and gives every sample the
-    /// bluntness of the side touching the paper.
-    private func wear(_ samples: inout [StrokeSample], predicted: inout [StrokeSample]) {
-        guard let sheet else { return }
-        var lead = leads[markingGrade] ?? LeadPoint()
-        for i in samples.indices {
-            if let last = lastWorn {
-                lead.draw(last.distance(to: samples[i].location) / sheet.pixelsPerMillimeter,
-                          pressure: samples[i].pressure, grade: markingGrade, roll: roll)
-            }
-            lastWorn = samples[i].location
-            samples[i].bluntness = lead.bluntness(roll: roll)
-        }
-        let now = lead.bluntness(roll: roll)
-        for i in predicted.indices { predicted[i].bluntness = now }
-        let before = leads[markingGrade]?.bluntness(roll: roll) ?? 0
-        leads[markingGrade] = lead
-        // Report in steps, not every sample.
-        if Int(now * 20) != Int(before * 20) { onLeadChange?(markingGrade, now) }
-    }
-
-    /// Back to a fine point.
-    func sharpen(_ grade: PencilGrade) {
-        leads[grade] = LeadPoint()
-        onLeadChange?(grade, 0)
-    }
-
-    /// How blunt each pencil is where it touches now, for the grade strip.
-    func bluntness(_ grade: PencilGrade) -> Double {
-        leads[grade]?.bluntness(roll: roll) ?? 0
-    }
-
-    /// Turns the pencil in hand a sixth, for pencils that can't sense it.
-    func turnPencil(from source: String = "button") {
-        // The same double-tap may arrive by more than one route.
-        let now = CACurrentMediaTime()
-        guard now - lastTurn > 0.25 else { return }
-        lastTurn = now
-        let grade = currentGrade()
-        var lead = leads[grade] ?? LeadPoint()
-        let before = lead.bluntness(roll: roll)
-        lead.turn()
-        leads[grade] = lead
-        onLeadChange?(grade, lead.bluntness(roll: roll))
-        onPencilTurned?()
-        Self.logEvent(["event": "pencilTap", "source": source, "grade": grade.label, "before": before,
-                       "after": lead.bluntness(roll: roll), "rollSensed": rollSensed ? 1 : 0,
-                       "rollLow": rollSeen?.low ?? -99, "rollHigh": rollSeen?.high ?? -99])
-    }
-
-    private var lastTurn: CFTimeInterval = 0
-
-    /// Called after a double-tap turns the pencil.
-    var onPencilTurned: (() -> Void)?
-
-    /// Appends one event to Documents/events.jsonl, for diagnosing on the iPad.
-    nonisolated private static func logEvent(_ fields: [String: Any]) {
-        var fields = fields
-        fields["at"] = ISO8601DateFormatter().string(from: .now)
-        guard let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]),
-              let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-        var line = data
-        line.append(0x0A)
-        let url = folder.appendingPathComponent("events.jsonl")
-        if let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile()
-            handle.write(line)
-            try? handle.close()
-        } else {
-            try? line.write(to: url)
-        }
-    }
-
     private func sample(_ touch: UITouch) -> StrokeSample {
         let point = touch.preciseLocation(in: self)
         let isPencil = touch.type == .pencil
-        // Apple Pencil Pro reports the barrel's roll. Others report a constant: ignore it.
-        if isPencil {
-            let r = Double(touch.rollAngle)
-            let seen = rollSeen.map { (min($0.low, r), max($0.high, r)) } ?? (r, r)
-            rollSeen = seen
-            if !rollSensed, seen.1 - seen.0 > 0.25 { rollSensed = true }
-            if rollSensed { roll = r }
-        }
         return StrokeSample(
             location: CGPoint(x: point.x * scale, y: point.y * scale),
             pressure: isPencil
@@ -1520,19 +1410,5 @@ final class CanvasView: UIView {
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
             provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
         )
-    }
-}
-
-extension CanvasView: UIPencilInteractionDelegate {
-    /// A double-tap turns the pencil a sixth in the hand, so a fresh side of
-    /// the point touches the paper (Apple Pencil Pro senses the turn itself).
-    func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
-        turnPencil(from: "didReceiveTap")
-    }
-
-    /// The older route, still taken on some systems for Apple Pencil 2.
-    @available(iOS, deprecated: 17.5)
-    func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
-        turnPencil(from: "didTap")
     }
 }

@@ -6,8 +6,6 @@ import SwiftUI
 @Observable
 final class DrawingSession {
     var grade: PencilGrade = .hb
-    /// How worn each pencil's point is, its worst side (0 sharp ... 1 flat).
-    private(set) var leadWear: [PencilGrade: Double] = [:]
     /// The drawing paper, chosen once at the start.
     private(set) var paper: PaperSize?
     /// Tools lying on the paper.
@@ -101,12 +99,6 @@ final class DrawingSession {
         case eraser
         /// The knife was picked up.
         case knife
-        /// The pencil's point has gone blunt.
-        case blunt
-        /// A pencil was just sharpened.
-        case sharpened
-        /// The pencil was turned in the hand.
-        case turned
 
         var text: String {
             switch self {
@@ -114,9 +106,6 @@ final class DrawingSession {
             case .compass: "손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다."
             case .eraser: "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
             case .knife: "펜슬로 그으면 톤에 칼선이 납니다. 잘린 조각을 손가락으로 톡 치면 떼어집니다."
-            case .blunt: "심이 뭉툭해졌습니다. 펜슬을 두 번 톡 쳐서 돌려 잡거나, 고른 연필을 한 번 더 눌러 깎으세요."
-            case .sharpened: "연필을 깎았습니다."
-            case .turned: "연필을 1/6바퀴 돌려 잡았습니다."
             }
         }
 
@@ -126,9 +115,6 @@ final class DrawingSession {
             case .compass: "compass.drawing"
             case .eraser: "eraser"
             case .knife: "scissors"
-            case .blunt: "pencil.tip"
-            case .sharpened: "pencil.tip"
-            case .turned: "arrow.trianglehead.clockwise.rotate.90"
             }
         }
     }
@@ -235,43 +221,6 @@ final class DrawingSession {
     }
 
     func fingerTouchedPaper() { show(.pencil) }
-
-    func leadChanged(_ grade: PencilGrade, wear: Double) {
-        let before = leadWear[grade] ?? 0
-        leadWear[grade] = wear
-        if before < 0.45, wear >= 0.45 { show(.blunt) }
-    }
-
-    /// Sharpens a pencil back to a fine point.
-    func sharpen(_ grade: PencilGrade) {
-        canvas?.sharpen(grade)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        sharpened = grade
-        flash(.sharpened)
-    }
-
-    /// A double-tap arriving through SwiftUI rather than the canvas.
-    func pencilDoubleTapped() { canvas?.turnPencil(from: "swiftUI") }
-
-    /// The pencil was turned a sixth by a double-tap.
-    func pencilTurned() {
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        flash(.turned)
-    }
-
-    /// Shows a brief confirmation, whatever was showing.
-    private func flash(_ shown: Hint) {
-        hintTask?.cancel()
-        hint = shown
-        hintTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1.2))
-            guard !Task.isCancelled else { return }
-            self?.hint = nil
-        }
-    }
-
-    /// The pencil last sharpened, for the hint.
-    @ObservationIgnored private(set) var sharpened: PencilGrade = .hb
 
     private func show(_ hint: Hint) {
         guard self.hint == nil, hintsShown[hint, default: 0] < Self.maxHintsPerLaunch else { return }

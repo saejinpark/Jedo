@@ -49,10 +49,6 @@ struct PencilDynamics: Sendable {
     static let pressureGrain = 0.6
     /// Pressing harder squashes the point a little wider.
     static let pressureWidening = 0.5
-    /// A lead worn flat lays a line this much wider than a sharp one…
-    static let bluntWidening = 2.2
-    /// …and spreads the same graphite thinner.
-    static let bluntOpacityDrop = 0.25
     /// Never thinner than this, so the lightest touch still shows.
     static let minimumRadiusPixels = 0.6
 
@@ -67,16 +63,13 @@ struct PencilDynamics: Sendable {
         let params = grade.parameters
         let side = sideAmount(altitude: sample.altitude.isFinite ? sample.altitude : .pi / 2)
 
-        let blunt = min(max(sample.bluntness.isFinite ? sample.bluntness : 0, 0), 1)
         let tipRadius = max(params.lineWidthMM / 2 * pixelsPerMillimeter
-                            * (1 - Self.pressureWidening / 2 + Self.pressureWidening * p)
-                            * (1 + Self.bluntWidening * blunt),
+                            * (1 - Self.pressureWidening / 2 + Self.pressureWidening * p),
                             Self.minimumRadiusPixels)
 
         // Light touches lay little graphite; medium pressure is the grade's own value.
         let pressureResponse = 0.15 + 1.7 * pow(p, 0.9)
-        let opacity = min(params.passOpacity * pressureResponse / (1 + Self.sideOpacityDrop * side)
-                          * (1 - Self.bluntOpacityDrop * blunt), 1)
+        let opacity = min(params.passOpacity * pressureResponse / (1 + Self.sideOpacityDrop * side), 1)
 
         // Pressing fills the valleys of the paper; a light hand only touches the peaks.
         let threshold = params.grainThreshold + style.grainShift

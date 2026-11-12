@@ -7,9 +7,6 @@ CAD가 아니다. 치수 입력, 도형 자동 생성은 없다. 레이어는 �
 
 - 종이 질감 위에 연필 11종(4H, 2H, H, F, HB, B, 2B–6B)으로 긋는다. 단단한 심(4H–F)은 가늘고 옅어서 작도선을 긋고, HB 이상으로 마무리선을 긋는다. 왼쪽 아래 손 묶음에서 진하기를 고른다. 각 칸의 점은 그 연필로 보통 한 번 그은 진하기다.
 - 펜슬만 긋는다. 손가락은 도구를 잡고 컴퍼스 바늘을 꽂는다. 손가락으로 종이를 두드리거나 문지르면 안내가 잠깐 뜬다.
-- 심이 닳는다. 그을수록 종이에 닿는 쪽 심이 닳아 선이 굵고 흐려진다. 무른 심일수록, 세게 누를수록 빨리 닳는다(한 쪽만 쓰면 HB는 약 1.5m, 4H는 4.5m, 6B는 42cm를 그으면 선이 두 배 가까이 굵어지고, 닳을수록 더 천천히 닳는다). 연필 칸 아래 막대가 지금 그 연필로 그어지는 선의 굵기다. 깎으면 진동과 함께 짧은 안내가 뜬다.
-  - 실제 제도처럼 연필을 돌려 가며 그으면 여러 쪽이 고르게 닳아 선이 오래 가늘다. Apple Pencil Pro는 펜슬을 돌리는 것을 그대로 읽는다. 다른 펜슬은 두 번 톡 치면 연필을 1/6바퀴 돌려 잡은 것으로 친다.
-  - 고른 연필 칸을 한 번 더 누르면 깎여서 다시 뾰족해진다.
 - 필압이 셀수록 굵고 진하며 종이결 골까지 흑연이 들어간다.
 - 펜슬을 50° 아래로 눕히면 심의 옆면이 닿아 넓고 옅은 면이 되고 종이결이 더 드러난다.
 - 같은 자리를 다시 그으면 진해지지만 경도마다 한계 농도가 있다. 6B는 세게 덧칠하면 검정이 되고, HB는 회색에서 멈춘다.
@@ -191,7 +188,6 @@ xcodebuild -project Jedo.xcodeproj -scheme Jedo -destination 'platform=iOS Simul
 | 얼마나 세게 눌러야 최대 필압인지, 가벼운 필압 끌어올림 | `PressureCurve.fullScale`, `gamma` |
 | 몇 도부터 심 옆면이 닿는지, 눕혔을 때 얼마나 넓고 옅어지는지 | `PencilDynamics`의 `tiltStartsBelow`, `fullSideBelow`, `sideStretch*`, `sideOpacityDrop`, `sideGrainLift` |
 | 필압이 굵기를 얼마나 바꾸는지 | `PencilDynamics.pressureWidening` |
-| 심이 닳는 빠르기(경도별), 닳았을 때 굵어지고 흐려지는 정도 | `LeadPoint.lifeMM`, `PencilDynamics.bluntWidening`, `bluntOpacityDrop` |
 | 종이결의 크기·밀도 | `PaperTexture.bumpsPerPixel`, `bumpRadius` |
 | 종이결이 얼마나 드러나는지(빈 종이의 음영, 흑연이 골까지 드는 정도, 심의 거친 정도) | `GrainStyle.standard` |
 | 세게 누를 때 종이결 골이 얼마나 메워지는지 | `PencilDynamics.pressureGrain` |

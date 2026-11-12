@@ -48,8 +48,6 @@ struct ContentView: View {
             }
             #endif
         }
-        // A second route for Apple Pencil double-taps; the canvas takes them too.
-        .onPencilDoubleTap { _ in session.pencilDoubleTapped() }
         .preferredColorScheme(.light)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
@@ -75,7 +73,7 @@ private struct HandGroup: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             ControlGroup {
-                PencilGrades(selection: $session.grade, wear: session.leadWear) { session.sharpen($0) }
+                PencilGrades(selection: $session.grade)
                 GroupDivider()
                 ToolButton(icon: .symbol("eraser"), label: session.eraserInHand ? "지우개 내려놓기" : "지우개 들기",
                            selected: session.eraserInHand) {
