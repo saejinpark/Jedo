@@ -45,6 +45,7 @@ enum ShapeTemplate {
         case .squareTemplate: "사각·삼각"
         case .hexTemplate: "육각·팔각"
         case .arcTemplate: "원주 1/4"
+        case .letteringGuide: "레터링"
         default: "원"
         }
     }
@@ -125,6 +126,7 @@ enum ShapeTemplate {
             out[kind] = (CGSize(width: width, height: height), cuts)
         }
         out[.arcTemplate] = arcLayout()
+        out[.letteringGuide] = letteringLayout()
         return out
     }()
 
@@ -167,6 +169,69 @@ enum ShapeTemplate {
                                axisMarks: false, labelAt: at(r + 6.5, -.pi / 4))
         }
         return (CGSize(width: arcPlateMM, height: arcPlateMM), cuts)
+    }
+
+    // MARK: Lettering guide (레터링 가이드)
+
+    /// Letter heights h of KS A ISO 3098, in millimetres.
+    static let letterHeightsMM: [Double] = [2.5, 3.5, 5, 7, 10]
+    /// Lower-case letters stand 7/10 of h. Only the larger heights get a
+    /// slot for them: on the small ones it would leave too thin a web.
+    static let lowerCaseRatio = 0.7
+    static let lowerCaseFromMM = 7.0
+    /// Slots wide enough for a 0.5 mm lead: run along either side, the line lands on the slot's middle.
+    static let letteringSlotMM = 0.6
+    static let letteringPlate = CGSize(width: 160, height: 70)
+    /// The slant of inclined lettering: 15° from upright.
+    static let letteringSlantDegrees = 75.0
+
+    /// A clear plate, laid on the parallel rule, with a set of slots for each
+    /// letter height: the base line, the cap line and, for larger letters,
+    /// the lower-case line. Run the pencil along each slot, slide the plate
+    /// down the rule, and repeat. Two short slots on the right draw upright
+    /// and 75° slant guides.
+    private static func letteringLayout() -> (size: CGSize, cuts: [TemplateCut]) {
+        let w = letteringSlotMM / 2
+        let plate = letteringPlate
+        let from = -plate.width / 2 + 22, to = plate.width / 2 - 34
+        func slot(_ a: CGPoint, _ b: CGPoint, label: String = "", labelAt: CGPoint? = nil) -> TemplateCut {
+            let dx = Double(b.x - a.x), dy = Double(b.y - a.y)
+            let angle = atan2(dy, dx)
+            var rim: [CGPoint] = []
+            for (end, start) in [(b, angle - .pi / 2), (a, angle + .pi / 2)] {
+                for k in 0...12 {
+                    let t = start + Double(k) / 12 * .pi
+                    rim.append(CGPoint(x: Double(end.x) + cos(t) * w, y: Double(end.y) + sin(t) * w))
+                }
+            }
+            return TemplateCut(outline: rim, center: CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2), label: label,
+                               halfSize: CGSize(width: abs(dx) / 2 + w, height: abs(dy) / 2 + w), axisMarks: false,
+                               labelAt: labelAt ?? (label.isEmpty ? nil : a))
+        }
+        var cuts: [TemplateCut] = []
+        let gap = 6.0
+        let total = letterHeightsMM.reduce(0, +) + gap * Double(letterHeightsMM.count - 1)
+        var top = -total / 2
+        for h in letterHeightsMM {
+            let cap = top, base = top + h
+            let label = h == h.rounded() ? "\(Int(h))" : "\(h)"
+            cuts.append(slot(CGPoint(x: from, y: base), CGPoint(x: to, y: base),
+                             label: label, labelAt: CGPoint(x: from - 9, y: (cap + base) / 2)))
+            cuts.append(slot(CGPoint(x: from, y: cap), CGPoint(x: to, y: cap)))
+            if h >= lowerCaseFromMM {
+                let lower = base - h * lowerCaseRatio
+                cuts.append(slot(CGPoint(x: from + 6, y: lower), CGPoint(x: to, y: lower)))
+            }
+            top = base + gap
+        }
+        // Upright and slanted stems, for lining up letters.
+        let span = total / 2
+        cuts.append(slot(CGPoint(x: to + 12, y: -span), CGPoint(x: to + 12, y: span), label: "90°",
+                         labelAt: CGPoint(x: to + 12, y: span + 4.5)))
+        let lean = tan((90 - letteringSlantDegrees) * .pi / 180) * span
+        cuts.append(slot(CGPoint(x: to + 24 - lean, y: span), CGPoint(x: to + 24 + lean, y: -span), label: "75°",
+                         labelAt: CGPoint(x: to + 24 - lean, y: span + 4.5)))
+        return (plate, cuts)
     }
 
     static func size(_ kind: ToolKind) -> CGSize { layouts[kind]?.size ?? .zero }

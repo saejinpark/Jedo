@@ -89,6 +89,11 @@ CAD가 아니다. 치수 입력, 도형 자동 생성은 없다. 레이어는 �
 - 커터를 든 채 손가락으로 칼선에 둘러싸인 조각을 톡 치면 그 조각이 떨어진다. 조각을 오려 남기려면 둘레를 떼고, 구멍을 내려면 안쪽을 뗀다. 칼선이 아무것도 끊어 놓지 않았으면 떨어지지 않는다(시트 전체가 날아가지 않게).
 - 자르기와 떼기는 각각 실행 취소 한 번이다.
 
+### 레터링 가이드
+
+- 형판 메뉴에서 꺼낸다. 16×7cm의 투명한 판에 글자 높이(KS A ISO 3098의 2.5, 3.5, 5, 7, 10mm)마다 가는 홈이 뚫려 있다. 홈은 밑선과 윗선이고, 7·10mm에는 소문자 높이(0.7h) 홈이 더 있다. 오른쪽에는 세로(90°)와 기울임 글씨(75°)용 짧은 홈이 있다.
+- 홈은 폭 0.6mm라 0.5mm 심이 어느 쪽 가장자리를 따라가든 선이 홈 가운데에 그어진다. 판을 평행자에 대고 홈을 따라 가이드선을 긋고, 평행자를 따라 판을 내려 다음 줄을 긋는다.
+
 ### 평행자
 
 - 책상 위 도구 묶음 맨 앞 버튼으로 꺼낸다. 길이 90cm, 폭 4cm로 종이를 가로질러 놓인다. 제도판 양 끝에 줄로 매달린 실제 평행자처럼 위아래로만 움직이고, 기울거나 옆으로 밀리지 않는다.
@@ -176,7 +181,7 @@ xcodebuild -project Jedo.xcodeproj -scheme Jedo -destination 'platform=iOS Simul
 | 붙고 떨어질 때 선이 다가가는 기울기, 도중에 붙으려면 나란해야 하는 각도 | `EdgeGuide.easeRate`, `alongAngleDegrees` |
 | 운형자 외곽선(따 온 도면 데이터) | `FrenchCurveData` |
 | 대나무 곡자 길이·폭·곧은 구간·휨 | `CurveTools.hipCurveProfile` |
-| 형판의 구멍 크기·배치·여유, 원주 형판의 반지름·홈 폭 | `ShapeTemplate` |
+| 형판의 구멍 크기·배치·여유, 원주 형판의 반지름·홈 폭, 레터링 가이드의 글자 높이·홈 폭 | `ShapeTemplate` (`letterHeightsMM`, `letteringSlotMM`) |
 | 화면이 따라가는 빠르기, 조이스틱 최고 속도 | `PaperDeskView.glideTime`, `stickSpeed` |
 | 각도기 크기 | `Protractor` |
 | 종이 크기, 종이 둘레로 보이는 책상 폭, 책상 색, 지도 크기 | `PaperSize`, `PaperSize.deskMarginMM`, `CanvasView.deskColour`, `PaperDeskView.minimapSide` |

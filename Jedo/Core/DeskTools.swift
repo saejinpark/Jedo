@@ -4,7 +4,7 @@ import Foundation
 /// The rigid tools that can lie on the paper.
 enum ToolKind: String, CaseIterable, Hashable, Sendable {
     /// The templates are taken out from one button.
-    static let templates: [ToolKind] = [.circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate]
+    static let templates: [ToolKind] = [.circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide]
     /// The French curves are taken out from one button.
     static let frenchCurves: [ToolKind] = [.frenchCurveA, .frenchCurveB, .frenchCurveC]
 
@@ -18,6 +18,8 @@ enum ToolKind: String, CaseIterable, Hashable, Sendable {
     case setSquare60
     /// Templates (형판): sheets of round, elliptical and angular cut-outs.
     case circleTemplate, ellipseTemplate, squareTemplate, hexTemplate, arcTemplate
+    /// A clear plate slotted for lettering guidelines, at the standard letter heights.
+    case letteringGuide
     /// The French curves (운형자) of the classic three-piece set.
     case frenchCurveA, frenchCurveB, frenchCurveC
     /// A long bamboo hip curve, gently bending, as used in pattern drafting.
@@ -51,7 +53,7 @@ struct DeskTool: Equatable, Sendable {
                     ToolShape.Hole(center: $0.center.scaled(ppmm), radius: CircleTemplate.holeRadiusMM($0.diameter) * ppmm)
                 }
             )
-        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate:
+        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide:
             let size = ShapeTemplate.size(kind)
             let w = Double(size.width) / 2 * ppmm, h = Double(size.height) / 2 * ppmm
             return ToolShape(

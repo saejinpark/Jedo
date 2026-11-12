@@ -370,6 +370,8 @@ final class ShapeTemplateView: OutlineToolView {
         case .ellipseTemplate: UIColor(red: 0.70, green: 0.88, blue: 0.70, alpha: 0.34)
         case .squareTemplate: UIColor(red: 0.66, green: 0.80, blue: 0.95, alpha: 0.34)
         case .arcTemplate: UIColor(red: 0.98, green: 0.76, blue: 0.22, alpha: 0.42)
+        // Clear acrylic, like the rulers.
+        case .letteringGuide: UIColor(red: 0.80, green: 0.80, blue: 0.79, alpha: 0.32)
         default: UIColor(red: 0.95, green: 0.72, blue: 0.80, alpha: 0.34)
         }
     }

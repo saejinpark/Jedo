@@ -482,7 +482,7 @@ struct OverviewTests {
 struct ShapeTemplateTests {
     static let ppmm = 10.0
     static let kinds: [ToolKind] = [.ellipseTemplate, .squareTemplate, .hexTemplate]
-    static let all: [ToolKind] = kinds + [.arcTemplate]
+    static let all: [ToolKind] = kinds + [.arcTemplate, .letteringGuide]
 
     @Test func cutsFitInsideTheSheetWithoutTouching() {
         for kind in Self.all {
@@ -495,7 +495,7 @@ struct ShapeTemplateTests {
                     #expect(abs(p.x) < size.width / 2 - 2 && abs(p.y) < size.height / 2 - 2)
                 }
             }
-            for i in cuts.indices { for j in cuts.indices where j > i && kind != .arcTemplate {
+            for i in cuts.indices { for j in cuts.indices where j > i && kind != .arcTemplate && kind != .letteringGuide {
                 let a = cuts[i], b = cuts[j]
                 let apartX = abs(a.center.x - b.center.x) - a.halfSize.width - b.halfSize.width
                 let apartY = abs(a.center.y - b.center.y) - a.halfSize.height - b.halfSize.height
@@ -697,5 +697,50 @@ struct ToolAdvanceTests {
         goal.center.y -= 300
         goal.angle = 0.4
         #expect(ToolContact.advance(from: resting, to: goal, outline: outline, against: [ruler]) == goal)
+    }
+}
+
+struct LetteringGuideTests {
+    static let ppmm = 10.0
+    var plate: ToolShape {
+        DeskTool(kind: .letteringGuide, pose: ToolPose(center: CGPoint(x: 2000, y: 2000), angle: 0)).shape(pixelsPerMillimeter: Self.ppmm)
+    }
+
+    /// Where a 0.5 mm lead run along the slot whose middle is at `y` (plate mm) draws, in plate mm.
+    func drawnY(inSlotAt y: Double, nudge: Double) -> Double {
+        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 0.25 * Self.ppmm)
+        var last = CGPoint.zero
+        for x in stride(from: -40.0, through: 20, by: 1) {
+            let p = CGPoint(x: 2000 + x * Self.ppmm, y: 2000 + (y + nudge) * Self.ppmm)
+            last = g.guide(StrokeSample(location: p), tools: [plate]).location
+        }
+        return (Double(last.y) - 2000) / Self.ppmm
+    }
+
+    @Test func eachSlotDrawsItsLineOnItsMiddle() {
+        let cuts = ShapeTemplate.cuts(.letteringGuide).filter { abs($0.halfSize.height - 0.3) < 1e-9 }
+        #expect(cuts.count == 12, "five heights, with a lower-case slot on 7 and 10")
+        for cut in cuts {
+            for nudge in [-0.2, 0.2] {
+                #expect(abs(drawnY(inSlotAt: Double(cut.center.y), nudge: nudge) - Double(cut.center.y)) < 0.1)
+            }
+        }
+    }
+
+    @Test func capAndBaseLinesStandALetterHeightApart() {
+        let rows = ShapeTemplate.cuts(.letteringGuide).filter { !$0.label.isEmpty && $0.label.last != "°" }
+        #expect(rows.map(\.label) == ["2.5", "3.5", "5", "7", "10"])
+        let slots = ShapeTemplate.cuts(.letteringGuide).map { Double($0.center.y) }
+        for (row, h) in zip(rows, ShapeTemplate.letterHeightsMM) {
+            let base = Double(row.center.y)
+            #expect(slots.contains { abs($0 - (base - h)) < 1e-9 }, "a cap line h above the base line")
+        }
+    }
+
+    @Test func slotsLeaveAtLeastAMillimetreOfPlastic() {
+        let horizontal = ShapeTemplate.cuts(.letteringGuide).filter { $0.halfSize.width > $0.halfSize.height }
+        for a in horizontal { for b in horizontal where a.center != b.center && abs(a.center.y - b.center.y) < 5 {
+            #expect(abs(a.center.y - b.center.y) - 2 * ShapeTemplate.letteringSlotMM / 2 >= 0.9)
+        } }
     }
 }

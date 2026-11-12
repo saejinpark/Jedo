@@ -11,7 +11,7 @@ enum ToolContact {
     static func collides(_ kind: ToolKind) -> Bool {
         switch kind {
         case .ruler, .parallelRule, .setSquare45, .setSquare60, .protractor,
-             .circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate: true
+             .circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide: true
         case .frenchCurveA, .frenchCurveB, .frenchCurveC, .hipCurve: false
         }
     }

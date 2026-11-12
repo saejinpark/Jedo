@@ -446,6 +446,14 @@ struct ToolGlyph: View {
                 let outline = FrenchCurve.outline(kind)
                 path = Self.fitted(outline, in: size)
                 for slot in FrenchCurve.slots(kind) { path.addPath(Self.fitted(slot, in: size, like: outline)) }
+            case .letteringGuide:
+                path.addRoundedRect(in: CGRect(x: 1, y: 4, width: w - 2, height: h - 8), cornerSize: CGSize(width: 2, height: 2))
+                for y in [8.0, 10.5, 14.0, 17.0] {
+                    path.move(to: CGPoint(x: 4, y: y))
+                    path.addLine(to: CGPoint(x: w - 8, y: y))
+                }
+                path.move(to: CGPoint(x: w - 5, y: 7))
+                path.addLine(to: CGPoint(x: w - 4, y: h - 7))
             case .arcTemplate:
                 path.addRect(CGRect(x: 2, y: 2, width: w - 4, height: h - 4))
                 for r in [6.0, 11, 16] {
@@ -499,6 +507,7 @@ extension ToolKind {
         case .setSquare60: "30°·60° 삼각자"
         case .circleTemplate: "원 형판"
         case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate: "\(ShapeTemplate.name(self)) 형판"
+        case .letteringGuide: "레터링 가이드"
         case .frenchCurveA, .frenchCurveB, .frenchCurveC:
             "운형자 \((ToolKind.frenchCurves.firstIndex(of: self) ?? 0) + 1) · \(FrenchCurve.form(self)?.name ?? "")"
         case .hipCurve: "대나무 곡자"
