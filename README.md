@@ -156,13 +156,18 @@ xcodebuild -project Jedo.xcodeproj -scheme Jedo -destination 'platform=iOS Simul
 - `Tools/Specimen/render.sh` — 경도별 견본(필압 변화, 겹쳐 긋기, 눕혀 칠하기, 해칭, 세게 칠하기)을 맥에서 PNG로 렌더링한다. 아래 손잡이를 바꾼 뒤 결과를 바로 비교할 수 있다.
 - `Tools/Icon/render.sh` — 같은 렌더러로 앱 아이콘을 그린다.
 
+## 획 기록 (손맛을 수치로 보기)
+
+- 획마다 펜슬이 실제로 지난 자리와 선이 그려진 자리, 필압, 경도, 꺼내 둔 도구를 앱의 Documents/strokes.jsonl에 한 줄씩 남긴다. 8MB가 넘으면 새로 시작하고, 직전 기록은 하나 남긴다.
+- `Tools/StrokeLog/pull.sh`는 iPad에서 기록을 가져와 획마다 선이 펜슬에서 얼마나 끌려갔는지(최대·평균 mm, 옮겨진 비율)를 보여 준다. 시뮬레이터에서 가져올 때는 `--sim`을 붙인다.
+
 ## 손맛 조율 손잡이
 
 모두 눈으로 정한 첫 값이다. 실제 아이패드에서 써 보고 바꾼다.
 
 | 무엇 | 어디 |
 |---|---|
-| 자 가장자리에 붙는 거리·떨어지는 거리 | `EdgeGuideStyle.standard` |
+| 자 가장자리에 붙는 거리·떨어지는 거리 (0.5mm·1.2mm, 처음 2.5·4mm는 자석 같아서 줄임) | `EdgeGuideStyle.standard` |
 | 붙고 떨어질 때 선이 다가가는 기울기, 도중에 붙으려면 나란해야 하는 각도 | `EdgeGuide.easeRate`, `alongAngleDegrees` |
 | 운형자 외곽선(따 온 도면 데이터) | `FrenchCurveData` |
 | 대나무 곡자 길이·폭·곧은 구간·휨 | `CurveTools.hipCurveProfile` |

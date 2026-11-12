@@ -164,7 +164,7 @@ struct ArcGuideTests {
 
 struct StrokeGuideTests {
     @Test func theEdgeGivesOneSampleForOne() {
-        var guide = StrokeGuide.edge(EdgeGuide(style: .standard, pixelsPerMillimeter: ppmm, contactOffset: 0))
+        var guide = StrokeGuide.edge(EdgeGuide(style: .magnetic, pixelsPerMillimeter: ppmm, contactOffset: 0))
         let out = guide.guide(StrokeSample(location: CGPoint(x: 10, y: 10)), tools: [])
         #expect(out == [StrokeSample(location: CGPoint(x: 10, y: 10))])
     }

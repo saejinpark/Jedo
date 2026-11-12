@@ -90,7 +90,7 @@ struct RigidMotionTests {
 extension EdgeGuideStyle {
     static let stickUntilLift = EdgeGuideStyle(captureMM: 2.5, releaseMM: .infinity)
     static let blockOnly = EdgeGuideStyle(captureMM: 0, releaseMM: 0)
-    static let all: [EdgeGuideStyle] = [.stickUntilLift, .standard, .blockOnly]
+    static let all: [EdgeGuideStyle] = [.stickUntilLift, .magnetic, .blockOnly]
 }
 
 struct EdgeGuideTests {
@@ -126,7 +126,7 @@ struct EdgeGuideTests {
             let y = 840.0 - Double(i % 3) * 5
             return (x, y)
         }
-        for style in [EdgeGuideStyle.stickUntilLift, .standard] {
+        for style in [EdgeGuideStyle.stickUntilLift, .magnetic] {
             let ys = Set(run(style, wobble).map(\.y))
             #expect(ys == [848], "on the edge, lead centre 2 px outside it")
         }
@@ -152,7 +152,7 @@ struct EdgeGuideTests {
     }
 
     @Test func theStandardGuideLetsGoWhenPulledAway() {
-        let path = run(.standard, [(600, 840), (700, 830), (800, 800), (900, 760)])
+        let path = run(.magnetic, [(600, 840), (700, 830), (800, 800), (900, 760)])
         #expect(path[0].y == 848 && path[1].y == 848, "within 4 mm it stays on the edge")
         #expect(path[2].y < 848 && path[2].y > 800, "5 mm away it has let go, easing off the edge")
         #expect(path[3] == CGPoint(x: 900, y: 760), "and soon follows the pencil again")
@@ -171,7 +171,7 @@ struct EdgeGuideTests {
     }
 
     @Test func aCopyRunsAheadWithoutChangingTheStroke() {
-        var g = guide(.standard)
+        var g = guide(.magnetic)
         _ = g.guide(StrokeSample(location: CGPoint(x: 600, y: 840)), ruler: ruler)
         var lookahead = g
         _ = lookahead.guide(StrokeSample(location: CGPoint(x: 700, y: 500)), ruler: ruler)
@@ -181,7 +181,7 @@ struct EdgeGuideTests {
 
     @Test func followsATurnedRuler() {
         let turned = Ruler(pose: RulerPose(center: CGPoint(x: 0, y: 0), angle: .pi / 4), length: 2000, width: 300)
-        var g = guide(.standard)
+        var g = guide(.magnetic)
         // A point 10 px outside the upper edge, half way along.
         let near = turned.pointAlong(.upper, u: 300, offset: 10)
         let out = g.guide(StrokeSample(location: near), ruler: turned).location
@@ -197,7 +197,7 @@ struct EdgeEasingTests {
     let ruler = Ruler(pose: RulerPose(center: CGPoint(x: 1000, y: 1000), angle: 0), length: 2000, width: 300)
 
     func run(_ points: [(Double, Double)]) -> [CGPoint] {
-        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: ppmm, contactOffset: 2)
+        var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: ppmm, contactOffset: 2)
         return points.map { g.guide(StrokeSample(location: CGPoint(x: $0.0, y: $0.1)), ruler: ruler).location }
     }
 
@@ -249,5 +249,47 @@ struct EdgeEasingTests {
         #expect(out[0] == CGPoint(x: 300, y: 800))
         #expect(out.suffix(50).allSatisfy { $0.y == 848 }, "eased onto the edge")
         #expect(worstJump(path, out) < 1.5)
+    }
+}
+
+struct PhysicalEdgeTests {
+    let ppmm = 10.0
+    // A ruler 300 mm long, 30 mm wide, lying level: its upper edge at y = 850.
+    var ruler: ToolShape { Ruler(pose: RulerPose(center: CGPoint(x: 1000, y: 1000), angle: 0), length: 3000, width: 300).shape }
+
+    func run(_ points: [(Double, Double)]) -> [CGPoint] {
+        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: ppmm, contactOffset: 0)
+        return points.map { g.guide(StrokeSample(location: CGPoint(x: $0.0, y: $0.1)), tools: [ruler]).location }
+    }
+
+    @Test func aLineDrawnBesideTheEdgeIsLeftAlone() {
+        // 2 mm clear of the edge: the old guide pulled this onto the ruler.
+        let path = run(stride(from: 600.0, through: 1200, by: 20).map { ($0, 830) })
+        #expect(path.allSatisfy { abs(Double($0.y) - 830) < 1e-6 })
+    }
+
+    @Test func pressingIntoTheRulerRunsAlongItsEdge() {
+        // The pencil pushes into the body, unevenly: the line stays on the edge.
+        let path = run(stride(from: 600.0, through: 1200, by: 20).map { ($0, 852 + 12 * abs(sin($0 / 60))) })
+        #expect(path.allSatisfy { abs(Double($0.y) - 850) < 1e-6 })
+    }
+
+    @Test func drawingAwayLetsGoAtOnce() {
+        let path = run([(600, 849), (650, 850), (700, 851), (750, 838), (800, 825), (850, 812), (900, 800)])
+        #expect(abs(Double(path.last!.y) - 800) < 1, "a millimetre away it is free again")
+    }
+}
+
+struct StrokeRecordTests {
+    @Test func pullMeasuresHowFarTheLineMoved() {
+        var rec = StrokeRecorder(pixelsPerMillimeter: 10)
+        let raw = [StrokeSample(location: CGPoint(x: 0, y: 0)), StrokeSample(location: CGPoint(x: 100, y: 0))]
+        let drawn = [StrokeSample(location: CGPoint(x: 0, y: 0)), StrokeSample(location: CGPoint(x: 100, y: 30))]
+        rec.add(pencil: raw, line: drawn)
+        let r = rec.record(guide: "edge", grade: "HB", tools: ["ruler"], startedAt: .now, seconds: 0.2)
+        #expect(abs(r.pull.max - 3) < 1e-9)
+        #expect(abs(r.pull.mean - 1.5) < 1e-9)
+        #expect(r.pull.movedShare == 0.5)
+        #expect(abs(r.length - 10) < 1e-9)
     }
 }

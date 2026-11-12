@@ -72,7 +72,7 @@ struct SetSquareTests {
     @Test func aLineAlongTheHypotenuseFollowsIt() {
         let tool = DeskTool(kind: .setSquare45, pose: ToolPose(center: CGPoint(x: 1000, y: 1000), angle: 0))
         let shape = tool.shape(pixelsPerMillimeter: ppmm)
-        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: ppmm, contactOffset: 2)
+        var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: ppmm, contactOffset: 2)
         // Walk along the hypotenuse, wobbling 5–15 px outside it.
         let corners = SetSquare.cornersMM(.setSquare45).map { shape.world($0.scaled(ppmm)) }
         let a = corners[1], b = corners[2]
@@ -113,7 +113,7 @@ struct CircleTemplateTests {
         let index = CircleTemplate.holes.firstIndex { $0.diameter == 20 }!
         let center = shape.world(CircleTemplate.holes[index].center.scaled(ppmm))
         let lineWidth = 0.5 * ppmm
-        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: ppmm, contactOffset: lineWidth / 2)
+        var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: ppmm, contactOffset: lineWidth / 2)
         var radii: [Double] = []
         for i in 0..<36 {
             let a = Double(i) * .pi / 18, r = 92.0 + Double(i % 4) * 3 // the pencil wanders 0.5–1.7 mm inside the rim
@@ -128,7 +128,7 @@ struct CircleTemplateTests {
     @Test func thePencilCannotReachPaperThroughThePlastic() {
         let shape = DeskTool(kind: .circleTemplate, pose: ToolPose(center: CGPoint(x: 1000, y: 1000), angle: 0))
             .shape(pixelsPerMillimeter: ppmm)
-        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: ppmm, contactOffset: 2)
+        var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: ppmm, contactOffset: 2)
         let path = (0..<40).map { CGPoint(x: 300 + Double($0) * 35, y: 1000 + sin(Double($0)) * 200) }
         for p in path {
             #expect(!shape.covers(g.guide(StrokeSample(location: p), tools: [shape]).location))
@@ -141,7 +141,7 @@ struct EdgeGuideWithSeveralToolsTests {
         let ruler = Ruler(pose: ToolPose(center: CGPoint(x: 1000, y: 1000), angle: 0), length: 2000, width: 300).shape
         let other = Ruler(pose: ToolPose(center: CGPoint(x: 1000, y: 680), angle: 0), length: 2000, width: 300).shape
         // Gap between them runs from y = 830 to 850.
-        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: ppmm, contactOffset: 2)
+        var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: ppmm, contactOffset: 2)
         let out = g.guide(StrokeSample(location: CGPoint(x: 500, y: 846)), tools: [ruler, other])
         #expect(out.location == CGPoint(x: 500, y: 848))
         #expect(g.attached?.tool == 0)
@@ -317,7 +317,7 @@ struct CurveToolTests {
                     }
                     let p = s.world(near.scaled(Self.ppmm))
                     #expect(!s.covers(p), "inside the cutout is paper")
-                    var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+                    var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
                     let out = g.guide(StrokeSample(location: p), tools: [s]).location
                     #expect(abs(s.contact(.cutout(index), at: out, offset: 0).distance - 2) < 0.05)
                 }
@@ -341,7 +341,7 @@ struct CurveToolTests {
     @Test func aWobblyLineAlongEachFrenchCurveHugsItEverywhere() {
         for kind in ToolKind.frenchCurves {
             let s = shape(kind, angle: 0.4)
-            var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 3)
+            var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: Self.ppmm, contactOffset: 3)
             let rim = FrenchCurve.outline(kind)
             var outs: [CGPoint] = []
             for (i, q) in rim.enumerated() where i < rim.count - 1 {
@@ -363,7 +363,7 @@ struct CurveToolTests {
 
     @Test func thePencilNeverGetsUnderTheBambooCurve() {
         let s = shape(.hipCurve, angle: -0.2)
-        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+        var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
         for i in 0..<200 {
             let p = CGPoint(x: -1000 + Double(i) * 30, y: 2000 + sin(Double(i) * 0.3) * 400)
             let out = g.guide(StrokeSample(location: p), tools: [s]).location
@@ -383,7 +383,7 @@ struct CurveToolTests {
                     normal = (-normal.x, -normal.y)
                 }
                 let p = s.world(CGPoint(x: Double(q.x) + normal.x * 1.5, y: Double(q.y) + normal.y * 1.5).scaled(Self.ppmm))
-                var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+                var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
                 let out = g.guide(StrokeSample(location: p), tools: [s]).location
                 #expect(abs(distance(s, out) - 2) < 0.05)
             }
@@ -430,7 +430,7 @@ struct ProtractorTests {
 
     @Test func aLineRoundTheArcFollowsIt() {
         let s = shape()
-        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+        var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
         let r = Protractor.radiusMM * Self.ppmm
         for i in 0...60 {
             let a = Double.pi * (0.2 + 0.6 * Double(i) / 60)
@@ -443,7 +443,7 @@ struct ProtractorTests {
 
     @Test func theBaseIsAStraightEdge() {
         let s = shape()
-        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+        var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
         let base = 1000 + Protractor.baseMM * Self.ppmm
         for i in 0..<40 {
             let p = CGPoint(x: 600 + Double(i) * 20, y: base + 10 + Double(i % 3) * 4)
@@ -519,7 +519,7 @@ struct ShapeTemplateTests {
         let cut = ShapeTemplate.cuts(.squareTemplate)[index]
         // Run along the inside of the top side, 1–2 mm below it.
         let top = Double(cut.center.y - cut.halfSize.height)
-        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+        var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
         for i in 0..<20 {
             let x = Double(cut.center.x) - 7 + Double(i) * 0.7
             let p = shape.world(CGPoint(x: x, y: top + 1 + Double(i % 3) * 0.5).scaled(Self.ppmm))
@@ -568,7 +568,7 @@ struct RadiusTemplateTests {
         let s = shape()
         let index = ShapeTemplate.arcRadiiMM.firstIndex(of: 100)!
         let centre = s.world(ShapeTemplate.arcCentre.scaled(Self.ppmm))
-        var g = EdgeGuide(style: .standard, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
+        var g = EdgeGuide(style: .magnetic, pixelsPerMillimeter: Self.ppmm, contactOffset: 2)
         var radii: [Double] = []
         for k in 0..<40 {
             let a = -Double.pi / 2 + 0.15 + Double(k) / 40 * 1.2

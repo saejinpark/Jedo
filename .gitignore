@@ -15,3 +15,4 @@ build/
 
 # Specimen renders (regenerate with Tools/Specimen/render.sh)
 Tools/Specimen/out/
+Tools/StrokeLog/strokes.jsonl

@@ -90,6 +90,9 @@ final class CanvasView: UIView {
     /// Surfaces the stroke in progress is marking.
     private var marking: [SurfaceID] = []
     private var markingErases = false
+    /// The stroke in progress, pencil and line, for the stroke log.
+    private var recorder: StrokeRecorder?
+    private var recordStarted: (date: Date, time: CFTimeInterval) = (.now, 0)
     /// Strokes, rubs, cuts and peels, newest last.
     private var undoStack: [UndoStep] = []
     private var redoStack: [UndoStep] = []
@@ -1082,6 +1085,8 @@ final class CanvasView: UIView {
         let grade = currentGrade()
         marking = []
         markingErases = erasing
+        recorder = StrokeRecorder(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
+        recordStarted = (.now, CACurrentMediaTime())
         if knifeInHand, !erasing {
             // The knife: follows the tools like the pencil, but cuts tone and leaves no line.
             cutting = [:]
@@ -1127,8 +1132,52 @@ final class CanvasView: UIView {
         refresh()
     }
 
+    /// Appends the stroke just finished to Documents/strokes.jsonl, one JSON
+    /// object a line, so its feel can be measured off the iPad
+    /// (`xcrun devicectl device copy from … --domain-type appDataContainer`).
+    private func logStroke() {
+        guard let recorder, !recorder.pencil.isEmpty else { return }
+        self.recorder = nil
+        let kind: String = if cutting != nil { "knife" } else {
+            switch guide {
+            case .edge: "edge"
+            case .arc: "arc"
+            case .rub: "rub"
+            case nil: "free"
+            }
+        }
+        let record = recorder.record(guide: kind, grade: currentGrade().label, tools: tools.map(\.kind.rawValue),
+                                     startedAt: recordStarted.date, seconds: CACurrentMediaTime() - recordStarted.time)
+        Self.logQueue.async { Self.append(record) }
+    }
+
+    private static let logQueue = DispatchQueue(label: "Jedo.strokeLog", qos: .utility)
+
+    nonisolated private static func append(_ record: StrokeRecord) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard var line = try? encoder.encode(record),
+              let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        line.append(0x0A)
+        let url = folder.appendingPathComponent("strokes.jsonl")
+        // Keep it small: past 8 MB the log starts again, the last one kept beside it.
+        if let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int, size > 8 << 20 {
+            let old = folder.appendingPathComponent("strokes.old.jsonl")
+            try? FileManager.default.removeItem(at: old)
+            try? FileManager.default.moveItem(at: url, to: old)
+        }
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(line)
+            try? handle.close()
+        } else {
+            try? line.write(to: url)
+        }
+    }
+
     /// Lays the stroke down on every surface it marked, as one step to undo.
     private func finishMarking() {
+        logStroke()
         if let before = cutting {
             cutting = nil
             defer { lastCut = nil; cutStart = nil }
@@ -1157,6 +1206,7 @@ final class CanvasView: UIView {
     }
 
     private func cancelMarking() {
+        recorder = nil
         if let before = cutting {
             for (id, old) in before { setTone(id, old) }
             cutting = nil
@@ -1307,6 +1357,7 @@ final class CanvasView: UIView {
         if var guide {
             final = guide.guide(released, tools: toolShapes)
             self.guide = guide
+            recorder?.add(pencil: released, line: final)
             var lookahead = guide
             ahead = lookahead.guide(ahead, tools: toolShapes)
             if let angle = lookahead.arc?.angle, var compass {

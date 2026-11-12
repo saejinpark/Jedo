@@ -11,8 +11,15 @@ struct EdgeGuideStyle: Equatable, Sendable {
     /// How far outside the edge the pencil may wander before the line leaves it.
     var releaseMM: Double
 
-    /// Takes to the edge within 2.5 mm and leaves it beyond 4 mm.
-    static let standard = EdgeGuideStyle(captureMM: 2.5, releaseMM: 4)
+    /// Like a real edge: it stops the pencil going into the tool, and the
+    /// line takes to it only when the lead is all but touching (0.5 mm) and
+    /// leaves as soon as it is drawn away (1.2 mm). Pressing toward the tool
+    /// keeps the line on the edge for as long as you like, as with a real ruler.
+    static let standard = EdgeGuideStyle(captureMM: 0.5, releaseMM: 1.2)
+
+    /// The first draft: took to the edge within 2.5 mm and left beyond 4 mm.
+    /// On the iPad it felt like a magnet pulling the line in.
+    static let magnetic = EdgeGuideStyle(captureMM: 2.5, releaseMM: 4)
 }
 
 /// Bends a stroke's samples onto the edge of whatever tool the pencil meets,
