@@ -9,8 +9,8 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
             VStack {
-                if session.showsPencilHint {
-                    PencilHint()
+                if let hint = session.hint {
+                    HintBubble(hint: hint)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 Spacer(minLength: 0)
@@ -21,7 +21,15 @@ struct ContentView: View {
                 }
             }
             .padding(20)
-            .animation(.spring(duration: 0.35), value: session.showsPencilHint)
+            .animation(.spring(duration: 0.35), value: session.hint)
+
+            #if DEBUG
+            if session.compassOnDesk {
+                CompassDraftPicker(session: session)
+                    .padding(20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
+            #endif
         }
         .preferredColorScheme(.light)
         .statusBarHidden()
@@ -30,7 +38,7 @@ struct ContentView: View {
     }
 }
 
-/// The ruler, then undo and redo (also on ⌘Z and ⇧⌘Z).
+/// The ruler and the compass, then undo and redo (also on ⌘Z and ⇧⌘Z).
 private struct HistoryControls: View {
     @Bindable var session: DrawingSession
 
@@ -39,6 +47,10 @@ private struct HistoryControls: View {
             RoundToolButton(symbol: "ruler", label: session.rulerOnDesk ? "자 치우기" : "자 꺼내기",
                             enabled: true, selected: session.rulerOnDesk) {
                 session.rulerOnDesk.toggle()
+            }
+            RoundToolButton(symbol: "compass.drawing", label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
+                            enabled: true, selected: session.compassOnDesk) {
+                session.compassOnDesk.toggle()
             }
             .padding(.trailing, 8)
             RoundToolButton(symbol: "arrow.uturn.backward", label: "실행 취소", enabled: session.canUndo) {
@@ -78,9 +90,11 @@ private struct RoundToolButton: View {
     }
 }
 
-private struct PencilHint: View {
+private struct HintBubble: View {
+    let hint: DrawingSession.Hint
+
     var body: some View {
-        Label("선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡습니다.", systemImage: "applepencil.tip")
+        Label(hint.text, systemImage: hint.symbol)
             .font(.callout.weight(.medium))
             .foregroundStyle(Palette.ink)
             .padding(.horizontal, 16)
@@ -89,6 +103,42 @@ private struct PencilHint: View {
             .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
     }
 }
+
+#if DEBUG
+/// Compares compass handling drafts on the iPad. Goes once one is chosen.
+private struct CompassDraftPicker: View {
+    @Bindable var session: DrawingSession
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
+            GridRow {
+                Text("컴퍼스 시안").font(.caption.weight(.semibold)).gridCellColumns(2)
+            }
+            GridRow {
+                Text("다리").font(.caption)
+                Picker("다리", selection: $session.compassStyle.spread) {
+                    Text("닿을 때마다 벌림").tag(CompassStyle.Spread.eachTouch)
+                    Text("벌린 폭 유지").tag(CompassStyle.Spread.kept)
+                }
+                .pickerStyle(.segmented)
+            }
+            GridRow {
+                Text("바늘").font(.caption)
+                Picker("바늘", selection: $session.compassStyle.needle) {
+                    Text("누르는 동안").tag(CompassStyle.Needle.whileHeld)
+                    Text("꽂아 둠").tag(CompassStyle.Needle.planted)
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+        .foregroundStyle(Palette.ink)
+        .frame(width: 300)
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+    }
+}
+#endif
 
 enum Palette {
     static let ink = Color(red: 0.16, green: 0.17, blue: 0.20)

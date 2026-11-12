@@ -11,15 +11,38 @@ final class CanvasView: UIView {
     var currentGrade: () -> PencilGrade = { .hb }
     /// Called after every change to what can be undone or redone.
     var onHistoryChange: ((_ canUndo: Bool, _ canRedo: Bool) -> Void)?
-    /// Called when a finger touches the paper away from any tool.
+    /// Called when a finger taps or rubs the paper away from any tool, as if trying to draw.
     var onFingerTouch: (() -> Void)?
+    /// How the compass is handled; changing it pulls the needle out.
+    var compassStyle: CompassStyle = .firstDraft {
+        didSet {
+            guard compassStyle != oldValue else { return }
+            keptSpread = nil
+            pullNeedle()
+        }
+    }
 
     /// The ruler, if it is on the paper. Canvas pixels.
     private(set) var ruler: Ruler?
     private let rulerView = RulerView()
     /// Fingers holding the ruler, oldest first, with where each was last (canvas pixels).
     private var holders: [(touch: UITouch, point: CGPoint)] = []
-    private var guide: EdgeGuide?
+    /// Whether the compass is out, so a finger held still plants its needle.
+    private(set) var compassOnDesk = false
+    /// The compass, once its needle is in the paper. Canvas pixels.
+    private(set) var compass: Compass?
+    private let compassView = CompassView()
+    /// The finger that planted the needle, while it stays down, and where it was last.
+    private var needleFinger: (touch: UITouch, point: CGPoint)?
+    /// Until the compass first draws, the planting finger can still nudge the needle.
+    private var needleSettled = false
+    private var pullNeedleAfterStroke = false
+    /// The legs' last spread and lead direction, for the next time the needle goes in.
+    private var keptSpread: (spread: Double, angle: Double)?
+    /// Fingers that might be held still to plant the needle.
+    private var presses = LongPress<UITouch>(slop: 20)
+
+    private var guide: StrokeGuide?
     private let inkLayer = CALayer()
 
     private(set) var sheet: DraftingSheet?
@@ -51,6 +74,7 @@ final class CanvasView: UIView {
         inkLayer.actions = Self.noAnimations
         layer.addSublayer(inkLayer)
         addSubview(rulerView)
+        addSubview(compassView)
         memoryWarningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -76,9 +100,15 @@ final class CanvasView: UIView {
         let ppmm = DisplayDensity.pixelsPerMillimeter(nativeLongSidePixels: Double(side))
         let sheet = DraftingSheet(width: side, height: side, pixelsPerMillimeter: ppmm)
         self.sheet = sheet
+        presses = LongPress(slop: Self.pressSlopMM * ppmm)
         layPaper(for: sheet)
         superview?.setNeedsLayout()
         notifyHistory()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        compassView.frame = bounds
     }
 
     /// Side of the square sheet in points, once it exists.
@@ -191,6 +221,90 @@ final class CanvasView: UIView {
     /// How far outside the ruler a fingertip still catches it.
     private static let gripMarginMM = 4.0
 
+    // MARK: Compass
+
+    /// Takes the compass out, ready for its needle, or puts it away.
+    func setCompass(onDesk: Bool) {
+        compassOnDesk = onDesk
+        if !onDesk { pullNeedle() }
+    }
+
+    private func plantNeedle(at point: CGPoint, finger: UITouch) {
+        guard compassOnDesk, activeTouch == nil else { return }
+        var compass = Compass(needle: point)
+        if compassStyle.spread == .kept, let keptSpread {
+            compass.spread = keptSpread.spread
+            compass.leadAngle = keptSpread.angle
+        }
+        self.compass = compass
+        needleFinger = (finger, point)
+        needleSettled = false
+        pullNeedleAfterStroke = false
+        showCompass()
+    }
+
+    /// Takes the needle out of the paper, or does so as soon as the compass stops drawing.
+    private func pullNeedle() {
+        needleFinger = nil
+        if activeTouch != nil, guide?.arc != nil {
+            pullNeedleAfterStroke = true
+            return
+        }
+        compass = nil
+        pullNeedleAfterStroke = false
+        compassView.hide()
+    }
+
+    private func moveNeedle(with finger: UITouch) {
+        guard let held = needleFinger, held.touch == finger else { return }
+        let now = pixelLocation(finger)
+        needleFinger?.point = now
+        guard !needleSettled, var compass else { return }
+        compass.needle.x += now.x - held.point.x
+        compass.needle.y += now.y - held.point.y
+        self.compass = compass
+        showCompass()
+    }
+
+    private func showCompass() {
+        guard let compass, let sheet else { return }
+        compassView.show(compass, scale: scale, pixelsPerMillimeter: sheet.pixelsPerMillimeter)
+    }
+
+    /// Lead and needle follow the compass that just drew, and the legs keep their spread.
+    private func finishCompassStroke(drew: Bool) {
+        if drew, let arc = guide?.arc, let angle = arc.angle, var compass {
+            compass.leadAngle = angle
+            self.compass = compass
+            keptSpread = (arc.radius, angle)
+        }
+        guide = nil
+        if pullNeedleAfterStroke { pullNeedle() } else { showCompass() }
+    }
+
+    private func scheduleLongPressCheck() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + presses.duration + 0.02) { [weak self] in
+            self?.checkLongPresses()
+        }
+    }
+
+    private func checkLongPresses() {
+        for (touch, _) in presses.due(at: CACurrentMediaTime()) where touch.phase != .ended && touch.phase != .cancelled {
+            if compassOnDesk {
+                // While a finger holds the needle in, another one can't move it.
+                guard needleFinger == nil else { continue }
+                plantNeedle(at: pixelLocation(touch), finger: touch)
+            } else if isDeliberateFinger(touch) {
+                onFingerTouch?()
+            }
+        }
+    }
+
+    /// A finger may drift this far and still be holding still.
+    private static let pressSlopMM = 2.5
+    /// A tap this close to the needle pulls it out.
+    private static let needleHeadMM = 6.0
+
     // MARK: Touches
 
     /// In the simulator the mouse is the pencil, and a two-finger (option-drag) gesture is the hand.
@@ -205,18 +319,59 @@ final class CanvasView: UIView {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        let now = CACurrentMediaTime()
         for touch in touches where isFinger(touch, event) {
             if grabRuler(touch) { continue }
-            if isDeliberateFinger(touch) { onFingerTouch?() }
+            guard touch.majorRadius < Self.fingertipRadius else { continue }
+            presses.begin(touch, at: pixelLocation(touch), time: now)
+            scheduleLongPressCheck()
         }
         guard activeTouch == nil, let sheet, let touch = touches.first(where: { draws($0, event) }) else { return }
         activeTouch = touch
         pending = PendingSampleQueue()
+        lastPredicted = []
         let grade = currentGrade()
-        guide = EdgeGuide(style: .standard, pixelsPerMillimeter: sheet.pixelsPerMillimeter,
-                          contactOffset: grade.parameters.lineWidthMM / 2 * sheet.pixelsPerMillimeter)
+        guide = makeGuide(startingAt: sample(touch).location, grade: grade, sheet: sheet)
         sheet.beginStroke(grade: grade)
         feed(touch, event: event)
+    }
+
+    /// The compass if its lead can reach where the pencil landed, otherwise the ruler's edge.
+    private func makeGuide(startingAt start: CGPoint, grade: PencilGrade, sheet: DraftingSheet) -> StrokeGuide {
+        let ppmm = sheet.pixelsPerMillimeter
+        if var compass, let spread = compass.spread(forPencilAt: start, keepsSpread: compassStyle.spread == .kept,
+                                                    pixelsPerMillimeter: ppmm) {
+            compass.spread = spread
+            self.compass = compass
+            needleSettled = true
+            return .arc(ArcGuide(center: compass.needle, radius: spread, pixelsPerMillimeter: ppmm))
+        }
+        return .edge(EdgeGuide(style: .standard, pixelsPerMillimeter: ppmm,
+                               contactOffset: grade.parameters.lineWidthMM / 2 * ppmm))
+    }
+
+    /// Fingers that end or are taken away: the ruler lets go, the needle may come out.
+    private func fingersLifted(_ touches: Set<UITouch>, cancelled: Bool) {
+        releaseRuler(touches)
+        let now = CACurrentMediaTime()
+        for touch in touches where touch.type == .direct {
+            if let held = needleFinger, held.touch == touch {
+                needleFinger = nil
+                if compassStyle.needle == .whileHeld { pullNeedle() }
+                presses.cancel(touch)
+                continue
+            }
+            let ending = cancelled ? nil : presses.end(touch, time: now)
+            if cancelled { presses.cancel(touch) }
+            guard ending == .tap else { continue }
+            let point = pixelLocation(touch)
+            if let compass, needleFinger == nil, let sheet,
+               compass.needleHeadContains(point, radius: Self.needleHeadMM * sheet.pixelsPerMillimeter) {
+                pullNeedle()
+            } else if isDeliberateFinger(touch) {
+                onFingerTouch?()
+            }
+        }
     }
 
     /// A fingertip on the paper while the pencil is idle, not a palm resting as you draw.
@@ -233,36 +388,50 @@ final class CanvasView: UIView {
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         if holders.contains(where: { touches.contains($0.touch) }) { moveRuler() }
+        for touch in touches where touch.type == .direct && touch != activeTouch {
+            if let held = needleFinger, held.touch == touch {
+                moveNeedle(with: touch)
+            } else if presses.move(touch, to: pixelLocation(touch)), isDeliberateFinger(touch) {
+                onFingerTouch?() // rubbing the paper as if to draw
+            }
+        }
         guard let touch = activeTouch, touches.contains(touch) else { return }
         feed(touch, event: event)
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        releaseRuler(touches)
-        guard let touch = activeTouch, touches.contains(touch), let sheet else { return }
-        feed(touch, event: event, predicting: false)
-        // Whatever is still estimated goes in as it is; the pencil has lifted.
-        sheet.extendStroke(with: pending.flush(), predicted: [])
-        sheet.endStroke()
-        activeTouch = nil
-        refresh()
-        notifyHistory()
+        let pencil = activeTouch
+        if let touch = activeTouch, touches.contains(touch), let sheet {
+            feed(touch, event: event, predicting: false)
+            // Whatever is still estimated goes in as it is; the pencil has lifted.
+            extend(with: pending.flush())
+            sheet.endStroke()
+            activeTouch = nil
+            finishCompassStroke(drew: true)
+            refresh()
+            notifyHistory()
+        }
+        fingersLifted(touches.filter { $0 != pencil }, cancelled: false)
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        releaseRuler(touches)
-        guard let touch = activeTouch, touches.contains(touch), let sheet else { return }
-        sheet.cancelStroke()
-        _ = pending.flush()
-        activeTouch = nil
-        refresh()
-        notifyHistory()
+        let pencil = activeTouch
+        if let touch = activeTouch, touches.contains(touch), let sheet {
+            sheet.cancelStroke()
+            _ = pending.flush()
+            lastPredicted = []
+            activeTouch = nil
+            finishCompassStroke(drew: false)
+            refresh()
+            notifyHistory()
+        }
+        fingersLifted(touches.filter { $0 != pencil }, cancelled: true)
     }
 
     /// Apple Pencil first reports force as an estimate and sends the measured
     /// value a moment later. Held-back samples are drawn as provisional until then.
     override func touchesEstimatedPropertiesUpdated(_ touches: Set<UITouch>) {
-        guard activeTouch != nil, let sheet else { return }
+        guard activeTouch != nil else { return }
         var released: [StrokeSample] = []
         for touch in touches {
             guard let index = touch.estimationUpdateIndex else { continue }
@@ -274,30 +443,40 @@ final class CanvasView: UIView {
             }
         }
         guard !released.isEmpty else { return }
-        sheet.extendStroke(with: released, predicted: pending.provisional + lastPredicted)
-        refresh()
+        extend(with: released)
     }
 
     private func feed(_ touch: UITouch, event: UIEvent?, predicting: Bool = true) {
-        guard let sheet else { return }
         lastPencilActivity = CACurrentMediaTime()
-        var final: [StrokeSample] = []
+        var released: [StrokeSample] = []
         for coalesced in event?.coalescedTouches(for: touch) ?? [touch] {
             let key = Self.awaitsForce(coalesced) ? coalesced.estimationUpdateIndex : nil
-            final += pending.append(guided(sample(coalesced)), awaitingUpdate: key)
+            released += pending.append(sample(coalesced), awaitingUpdate: key)
         }
-        // Predicted touches go through a copy of the guide, so they never change the real one.
-        var lookahead = guide
-        lastPredicted = predicting
-            ? (event?.predictedTouches(for: touch) ?? []).map { lookahead?.guide(sample($0), ruler: ruler) ?? sample($0) }
-            : []
-        sheet.extendStroke(with: final, predicted: pending.provisional + lastPredicted)
-        refresh()
+        lastPredicted = predicting ? (event?.predictedTouches(for: touch) ?? []).map(sample) : []
+        extend(with: released)
     }
 
-    /// Bends a sample onto the ruler's edge where the pencil meets it.
-    private func guided(_ sample: StrokeSample) -> StrokeSample {
-        guide?.guide(sample, ruler: ruler) ?? sample
+    /// Runs samples whose pressure is now known through the guide (ruler edge
+    /// or compass) into the stroke. Samples still waiting and predicted ones
+    /// go through a copy of the guide, so they never change the real one.
+    private func extend(with released: [StrokeSample]) {
+        guard let sheet else { return }
+        var final = released
+        var ahead = pending.provisional + lastPredicted
+        if var guide {
+            final = guide.guide(released, ruler: ruler)
+            self.guide = guide
+            var lookahead = guide
+            ahead = lookahead.guide(ahead, ruler: ruler)
+            if let angle = lookahead.arc?.angle, var compass {
+                compass.leadAngle = angle
+                self.compass = compass
+                showCompass()
+            }
+        }
+        sheet.extendStroke(with: final, predicted: ahead)
+        refresh()
     }
 
     private func pixelLocation(_ touch: UITouch) -> CGPoint {

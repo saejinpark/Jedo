@@ -10,6 +10,9 @@ struct StrokeSample: Equatable, Sendable {
     var altitude: Double
     /// Radians, in the canvas plane: the direction the pencil leans.
     var azimuth: Double
+    /// The lead starts going over its own line again here, so what follows
+    /// darkens what the stroke already laid, as a second pass would.
+    var beginsPass = false
 
     init(location: CGPoint, pressure: Double = 0.5, altitude: Double = .pi / 2, azimuth: Double = 0) {
         self.location = location
@@ -18,7 +21,7 @@ struct StrokeSample: Equatable, Sendable {
         self.azimuth = azimuth
     }
 
-    /// Linear blend; the azimuth takes the short way round.
+    /// Linear blend; the azimuth takes the short way round. Never begins a pass.
     static func interpolate(_ a: StrokeSample, _ b: StrokeSample, _ t: Double) -> StrokeSample {
         StrokeSample(
             location: CGPoint(x: a.location.x + (b.location.x - a.location.x) * t,

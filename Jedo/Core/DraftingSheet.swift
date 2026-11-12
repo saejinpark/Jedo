@@ -27,6 +27,8 @@ final class DraftingSheet {
         var buffer: GraphiteRaster
         var seed: UInt32
         var maxDensity: Float
+        /// Tiles as they were before the stroke, kept once an earlier pass has been laid down.
+        var before: [TileCoord: [Float]?] = [:]
     }
 
     let width: Int
@@ -89,6 +91,7 @@ final class DraftingSheet {
         guard var active = stroke else { return }
         let dynamics = active.dynamics
         for sample in samples {
+            if sample.beginsPass { layPass(&active) }
             for dab in active.spacer.append(sample, spacing: { dynamics.spacing(for: dynamics.shape(for: $0)) }) {
                 let rect = DabRasterizer.stamp(center: dab.location, shape: dynamics.shape(for: dab),
                                                into: &active.buffer, paper: paper, seed: active.seed)
@@ -108,24 +111,16 @@ final class DraftingSheet {
         stroke = active
     }
 
-    /// Lays the stroke onto the sheet as one undoable step.
+    /// Lays the stroke onto the sheet as one undoable step, every pass of it.
     func endStroke() {
-        guard let active = stroke else { return }
+        guard var active = stroke else { return }
         stroke = nil
         clearPrediction()
+        layPass(&active)
 
         var changes: [TileCoord: TileChange] = [:]
-        for (coord, strokeTile) in active.buffer.tiles {
-            let before = graphite.tile(coord)
-            graphite.withMutableTile(coord) { base in
-                strokeTile.withUnsafeBufferPointer { s in
-                    for i in 0..<GraphiteRaster.tileArea where s[i] > 0 {
-                        base[i] = GraphiteMath.composite(base: base[i], stroke: s[i], maxDensity: active.maxDensity)
-                    }
-                }
-            }
+        for (coord, before) in active.before {
             changes[coord] = TileChange(before: before, after: graphite.tile(coord))
-            markDirty(graphite.rect(of: coord))
         }
         guard !changes.isEmpty else { return }
         let edit = TileEdit(changes: changes)
@@ -138,6 +133,30 @@ final class DraftingSheet {
         stroke = nil
         clearPrediction()
         for coord in active.buffer.tiles.keys { markDirty(graphite.rect(of: coord)) }
+        for (coord, before) in active.before {
+            graphite.setTile(coord, before)
+            markDirty(graphite.rect(of: coord))
+        }
+    }
+
+    /// Lays what the stroke has drawn so far onto the sheet, so the next
+    /// pass darkens it. The tiles' earlier state is kept for undo.
+    private func layPass(_ active: inout ActiveStroke) {
+        for (coord, strokeTile) in active.buffer.tiles {
+            if active.before.index(forKey: coord) == nil {
+                active.before[coord] = .some(graphite.tile(coord))
+            }
+            let maxDensity = active.maxDensity
+            graphite.withMutableTile(coord) { base in
+                strokeTile.withUnsafeBufferPointer { s in
+                    for i in 0..<GraphiteRaster.tileArea where s[i] > 0 {
+                        base[i] = GraphiteMath.composite(base: base[i], stroke: s[i], maxDensity: maxDensity)
+                    }
+                }
+            }
+            markDirty(graphite.rect(of: coord))
+        }
+        active.buffer.removeAll()
     }
 
     // MARK: Undo
