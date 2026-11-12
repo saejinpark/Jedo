@@ -64,6 +64,10 @@ private struct ToolControls: View {
                 }
             }
             HStack(spacing: 8) {
+                RoundToolButton(icon: .symbol("squareshape.split.3x3"), label: session.graphPaper ? "백지로" : "모눈종이로",
+                                enabled: true, selected: session.graphPaper) {
+                    session.graphPaper.toggle()
+                }
                 RoundToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
                                 enabled: true, selected: session.compassOnDesk) {
                     session.compassOnDesk.toggle()

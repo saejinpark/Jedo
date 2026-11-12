@@ -8,6 +8,10 @@ final class DrawingSession {
     var grade: PencilGrade = .hb
     /// Tools lying on the paper.
     private(set) var toolsOnDesk: Set<ToolKind> = []
+    /// Graph paper instead of plain.
+    var graphPaper = false {
+        didSet { canvas?.setGraphPaper(graphPaper) }
+    }
     /// Whether the hand holds the eraser, so a finger rubbing the paper erases.
     var eraserInHand = false {
         didSet {

@@ -74,17 +74,17 @@ class OutlineToolView: UIView, ToolDisplay {
     }
 
     static let ink = UIColor(red: 0.16, green: 0.17, blue: 0.20, alpha: 0.85)
-    static let rim = UIColor(red: 0.35, green: 0.45, blue: 0.50, alpha: 0.55)
+    static let rim = UIColor(red: 0.36, green: 0.36, blue: 0.36, alpha: 0.55)
 }
 
-/// A clear acrylic set square: graduations along its bottom leg, its angles marked.
+/// A smoky-grey acrylic set square: graduations along its bottom leg, its angles marked.
 final class SetSquareView: OutlineToolView {
     override var outlineMM: [CGPoint] { SetSquare.cornersMM(kind) }
 
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         let body = bodyPath()
-        UIColor(red: 0.88, green: 0.95, blue: 0.93, alpha: 0.32).setFill()
+        UIColor(red: 0.80, green: 0.80, blue: 0.79, alpha: 0.32).setFill()
         body.fill()
         Self.rim.setStroke()
         body.lineWidth = 0.6
@@ -101,7 +101,7 @@ final class SetSquareView: OutlineToolView {
             i == 0 ? bevel.move(to: pt(q)) : bevel.addLine(to: pt(q))
         }
         bevel.close()
-        UIColor(red: 0.55, green: 0.65, blue: 0.70, alpha: 0.30).setStroke()
+        UIColor(red: 0.55, green: 0.55, blue: 0.55, alpha: 0.30).setStroke()
         bevel.lineWidth = 0.5
         bevel.stroke()
 
@@ -304,7 +304,7 @@ final class HipCurveView: OutlineToolView {
     }
 }
 
-/// A clear acrylic protractor: degrees round the arc both ways, a base line
+/// A smoky-grey acrylic protractor: degrees round the arc both ways, a base line
 /// with its centre marked.
 final class ProtractorView: OutlineToolView {
     init() { super.init(kind: .protractor) }
@@ -315,7 +315,7 @@ final class ProtractorView: OutlineToolView {
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         let body = bodyPath()
-        UIColor(red: 0.86, green: 0.93, blue: 0.97, alpha: 0.32).setFill()
+        UIColor(red: 0.80, green: 0.80, blue: 0.79, alpha: 0.32).setFill()
         body.fill()
         Self.rim.setStroke()
         body.lineWidth = 0.6
@@ -339,7 +339,7 @@ final class ProtractorView: OutlineToolView {
         // An inner arc the numbers sit against.
         let inner = UIBezierPath(arcCenter: pt(.zero), radius: (Protractor.radiusMM - 16) * pointsPerMM,
                                  startAngle: .pi, endAngle: 0, clockwise: true)
-        UIColor(red: 0.35, green: 0.45, blue: 0.50, alpha: 0.35).setStroke()
+        UIColor(red: 0.36, green: 0.36, blue: 0.36, alpha: 0.35).setStroke()
         inner.lineWidth = 0.5
         inner.stroke()
 

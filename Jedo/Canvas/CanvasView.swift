@@ -53,6 +53,8 @@ final class CanvasView: UIView {
 
     private var guide: StrokeGuide?
     private let inkLayer = CALayer()
+    /// Graph-paper rulings, printed on the paper: under the graphite, never erased.
+    private let gridLayer = CALayer()
 
     private(set) var sheet: DraftingSheet?
     private var scale: CGFloat = 2
@@ -81,6 +83,9 @@ final class CanvasView: UIView {
         accessibilityLabel = "제도 용지"
         // Graphite tiles live in their own layer, between the paper and the tools.
         inkLayer.actions = Self.noAnimations
+        gridLayer.actions = Self.noAnimations
+        gridLayer.isHidden = true
+        layer.addSublayer(gridLayer)
         layer.addSublayer(inkLayer)
         addSubview(compassView)
         memoryWarningObserver = NotificationCenter.default.addObserver(
@@ -145,6 +150,44 @@ final class CanvasView: UIView {
                 self.layer.insertSublayer(layer, at: 0)
                 paperLayers.append(layer)
             }
+        }
+    }
+
+    // MARK: Graph paper
+
+    /// Prints graph-paper rulings on the sheet (1 mm, 5 mm and 10 mm), or plain paper.
+    func setGraphPaper(_ on: Bool) {
+        guard let sheet else { return }
+        if on, gridLayer.sublayers == nil { ruleGrid(sheet) }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gridLayer.isHidden = !on
+        CATransaction.commit()
+    }
+
+    private func ruleGrid(_ sheet: DraftingSheet) {
+        let side = CGFloat(sheet.width) / scale
+        let mm = CGFloat(sheet.pixelsPerMillimeter) / scale
+        gridLayer.frame = CGRect(x: 0, y: 0, width: side, height: side)
+        let colour = UIColor(red: 0.42, green: 0.52, blue: 0.40, alpha: 1)
+        for (every, alpha, width) in [(1, 0.16, 0.3), (5, 0.28, 0.45), (10, 0.42, 0.65)] as [(Int, CGFloat, CGFloat)] {
+            let path = CGMutablePath()
+            let count = Int(side / mm)
+            for k in 0...count where k % every == 0 && (every == 10 || k % (every * (every == 1 ? 5 : 2)) != 0) {
+                let at = CGFloat(k) * mm
+                path.move(to: CGPoint(x: at, y: 0))
+                path.addLine(to: CGPoint(x: at, y: side))
+                path.move(to: CGPoint(x: 0, y: at))
+                path.addLine(to: CGPoint(x: side, y: at))
+            }
+            let lines = CAShapeLayer()
+            lines.frame = gridLayer.bounds
+            lines.path = path
+            lines.strokeColor = colour.withAlphaComponent(alpha).cgColor
+            lines.lineWidth = width
+            lines.fillColor = nil
+            lines.actions = Self.noAnimations
+            gridLayer.addSublayer(lines)
         }
     }
 
