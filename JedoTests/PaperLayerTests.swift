@@ -221,9 +221,13 @@ struct GridRulingTests {
         #expect(angles == [90, 30, 150])
     }
 
-    @Test func thePlainSheetHasNothingPrinted() {
-        #expect(GridRulings.lines(.plain).isEmpty)
-        #expect(GridRulings.rings(.plain).isEmpty)
+    @Test func tracingPaperHasNothingPrinted() {
+        for plain in [GridPattern.tracing, .butter] {
+            #expect(GridRulings.lines(plain).isEmpty)
+            #expect(GridRulings.rings(plain).isEmpty)
+            #expect(plain.isPlain)
+        }
+        #expect(GridPattern.tracing.sizeMM.width == 210 && GridPattern.tracing.sizeMM.height == 297, "A4")
     }
 
     @Test func polarRingsAndRays() {

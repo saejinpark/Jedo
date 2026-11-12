@@ -202,7 +202,8 @@ final class DrawingSession {
             LayerRow(id: layer.id, name: Self.name(of: layer, among: layers), isCarbon: layer.kind == .carbon,
                      isTone: layer.kind.isTone,
                      canStamp: { if case .grid = layer.kind { true } else { false } }(),
-                     symbol: layer.kind == .carbon ? "square.fill" : layer.kind.isTone ? "circle.grid.3x3.fill" : "squareshape.split.3x3",
+                     symbol: layer.kind == .carbon ? "square.fill" : layer.kind.isTone ? "circle.grid.3x3.fill"
+                        : { if case .grid(let p) = layer.kind, p.isPlain { "doc.plaintext" } else { "squareshape.split.3x3" } }(),
                      hidden: hidden.contains(layer.id), canRaise: i < layers.count - 1, canLower: i > 0)
         }
     }

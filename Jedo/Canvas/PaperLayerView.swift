@@ -33,8 +33,12 @@ final class PaperLayerView: UIView {
         case .carbon:
             // Dark but see-through, so the drawing under it still shows faintly. Pitch black was tried and set aside.
             body.fillColor = UIColor(red: 0.08, green: 0.09, blue: 0.16, alpha: 0.58).cgColor
+        case .grid(.butter):
+            // Yellow trace: thin and warm, the drawing under it shows clearly.
+            body.fillColor = UIColor(red: 1.0, green: 0.93, blue: 0.64, alpha: 0.30).cgColor
         case .grid:
-            body.fillColor = UIColor(white: 1, alpha: 0.30).cgColor
+            // Tracing paper is frosted, not clear: what lies under it dims a little.
+            body.fillColor = UIColor(red: 0.98, green: 0.98, blue: 0.97, alpha: 0.36).cgColor
         case .tone:
             // Clear film: only the print shows.
             body.fillColor = UIColor(white: 1, alpha: 0.06).cgColor

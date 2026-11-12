@@ -215,7 +215,7 @@ private struct ViewGroup: View {
             }
             Menu {
                 Button("종이만") { session.export(includeSheets: false) }
-                Button("얹힌 모눈종이·먹지·톤까지") { session.export(includeSheets: true) }
+                Button("얹힌 트레이싱지·먹지·톤까지") { session.export(includeSheets: true) }
             } label: {
                 ToolFace(icon: .symbol("square.and.arrow.up"))
             }
@@ -332,25 +332,10 @@ private struct SheetsPanel: View {
     @Bindable var session: DrawingSession
 
     var body: some View {
+        // The list of what lies on the paper on top, what can be laid on below:
+        // the popover grows upward from its arrow, so the buttons below stay
+        // under the finger as the list lengthens.
         VStack(alignment: .leading, spacing: 0) {
-            PanelSection(title: "모눈종이 얹기") {
-                chips(GridPattern.allCases.map { p in (p.name, { session.addSheet(p) }) })
-            }
-            Divider()
-            PanelSection(title: "톤 얹기") {
-                chips(TonePattern.allCases.map { p in (p.name, { session.addTone(p) }) })
-            }
-            Divider()
-            PanelSection(title: "먹지") {
-                HStack {
-                    Chip(title: session.carbonOnDesk ? "먹지 치우기" : "먹지 깔기", selected: session.carbonOnDesk) {
-                        session.carbonOnDesk.toggle()
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-            }
-            Divider()
             PanelSection(title: "레이어 (위에서부터)") {
                 VStack(spacing: 0) {
                     ForEach(session.layerRows) { row in
@@ -368,9 +353,27 @@ private struct SheetsPanel: View {
                     .padding(.horizontal, 16).padding(.vertical, 8)
                 }
             }
+            Divider()
+            PanelSection(title: "먹지") {
+                HStack {
+                    Chip(title: session.carbonOnDesk ? "먹지 치우기" : "먹지 깔기", selected: session.carbonOnDesk) {
+                        session.carbonOnDesk.toggle()
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+            }
+            Divider()
+            PanelSection(title: "톤 얹기") {
+                chips(TonePattern.allCases.map { p in (p.name, { session.addTone(p) }) })
+            }
+            Divider()
+            PanelSection(title: "트레이싱지 얹기") {
+                chips(GridPattern.allCases.map { p in (p.name, { session.addSheet(p) }) })
+            }
         }
         .padding(.vertical, 4)
-        .frame(width: 420)
+        .frame(width: 450)
     }
 
     private func chips(_ items: [(String, () -> Void)]) -> some View {

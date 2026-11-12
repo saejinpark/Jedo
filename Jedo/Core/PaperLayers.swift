@@ -66,7 +66,14 @@ struct PaperSize: Hashable, Sendable {
 }
 
 /// The printed pattern of a transparent grid sheet.
+/// Every sheet laid over the drawing is tracing paper: plain, or with a grid
+/// printed on it (as gridded tracing paper is sold). `GridPattern` is its print.
 enum GridPattern: CaseIterable, Hashable, Sendable {
+    /// Plain white tracing paper, A4: enough to trace a whole drawing.
+    case tracing
+    /// Yellow trace (버터지), torn from a 30 cm roll: thin, cheap, for
+    /// laying one design idea over another.
+    case butter
     /// 1 mm squares, 5 mm and 1 cm lines heavier.
     case square1
     /// 5 mm squares, every fifth line heavier, on a long sheet.
@@ -75,16 +82,14 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
     case isometric
     /// A round sheet: rings every 5 mm and a ray every 15°.
     case polar
-    /// Nothing printed: a clear sheet to trace on.
-    case plain
-
     var name: String {
         switch self {
-        case .square1: "방안 1mm"
-        case .square5: "방안 5mm"
-        case .isometric: "등각 5mm"
-        case .polar: "극좌표"
-        case .plain: "민무늬"
+        case .square1: "모눈 방안 1mm"
+        case .square5: "모눈 방안 5mm"
+        case .isometric: "모눈 등각 5mm"
+        case .polar: "모눈 극좌표"
+        case .tracing: "트레이싱지 A4"
+        case .butter: "버터지"
         }
     }
 
@@ -95,11 +100,15 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
         case .square5: (140, 100)
         case .isometric: (110, 110)
         case .polar: (120, 120)
-        case .plain: (140, 140)
+        case .tracing: (210, 297)
+        case .butter: (300, 300)
         }
     }
 
     var isRound: Bool { self == .polar }
+
+    /// Nothing printed on it.
+    var isPlain: Bool { self == .tracing || self == .butter }
 }
 
 /// A sheet that lies on the paper and moves with the hand: a transparent
@@ -393,7 +402,7 @@ enum GridRulings {
             return square(width: w, height: h, step: 5) { $0 % 5 == 0 ? .medium : .fine }
         case .isometric:
             return isometric(width: w, height: h, spacing: 5)
-        case .plain:
+        case .tracing, .butter:
             return []
         case .polar:
             let r = w / 2
