@@ -16,6 +16,7 @@ struct CanvasRepresentable: UIViewControllerRepresentable {
         view.eraserKind = session.eraserKind
         view.onPinsChange = { [weak session] count in session?.pinsChanged(count) }
         view.onLeadChange = { [weak session] grade, wear in session?.leadChanged(grade, wear: wear) }
+        view.onPencilTurned = { [weak session] in session?.pencilTurned() }
         session.canvas = view
         session.desk = controller.desk
         return controller

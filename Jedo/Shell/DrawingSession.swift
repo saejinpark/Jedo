@@ -105,6 +105,8 @@ final class DrawingSession {
         case blunt
         /// A pencil was just sharpened.
         case sharpened
+        /// The pencil was turned in the hand.
+        case turned
 
         var text: String {
             switch self {
@@ -114,6 +116,7 @@ final class DrawingSession {
             case .knife: "펜슬로 그으면 톤에 칼선이 납니다. 잘린 조각을 손가락으로 톡 치면 떼어집니다."
             case .blunt: "심이 뭉툭해졌습니다. 펜슬을 두 번 톡 쳐서 돌려 잡거나, 고른 연필을 한 번 더 눌러 깎으세요."
             case .sharpened: "연필을 깎았습니다."
+            case .turned: "연필을 1/6바퀴 돌려 잡았습니다."
             }
         }
 
@@ -125,6 +128,7 @@ final class DrawingSession {
             case .knife: "scissors"
             case .blunt: "pencil.tip"
             case .sharpened: "pencil.tip"
+            case .turned: "arrow.trianglehead.clockwise.rotate.90"
             }
         }
     }
@@ -243,8 +247,19 @@ final class DrawingSession {
         canvas?.sharpen(grade)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         sharpened = grade
+        flash(.sharpened)
+    }
+
+    /// The pencil was turned a sixth by a double-tap.
+    func pencilTurned() {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        flash(.turned)
+    }
+
+    /// Shows a brief confirmation, whatever was showing.
+    private func flash(_ shown: Hint) {
         hintTask?.cancel()
-        hint = .sharpened
+        hint = shown
         hintTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.2))
             guard !Task.isCancelled else { return }

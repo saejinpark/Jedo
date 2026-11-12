@@ -38,11 +38,13 @@ struct LeadPoint: Equatable, Sendable {
     }
 
     /// The side touching the paper: from the barrel's roll when it is known.
+    /// The side touching the paper: how far the barrel is rolled, when the
+    /// pencil senses it, plus every sixth it has been turned by a double-tap.
     func side(roll: Double?) -> Int {
         guard let roll, roll.isFinite else { return turned }
         let turn = roll.truncatingRemainder(dividingBy: 2 * .pi)
         let positive = turn < 0 ? turn + 2 * .pi : turn
-        return min(Int(positive / (2 * .pi) * Double(Self.sides)), Self.sides - 1)
+        return (min(Int(positive / (2 * .pi) * Double(Self.sides)), Self.sides - 1) + turned) % Self.sides
     }
 
     /// How blunt the point is where it touches. A cone is round, so the

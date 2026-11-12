@@ -132,6 +132,20 @@ struct LeadPointTests {
         #expect(early.bluntness() < 0.25)
     }
 
+    @Test func aTurnBringsAFresherSideDown() {
+        var lead = LeadPoint()
+        for _ in 0..<4 { lead.draw(300, pressure: 0.5, grade: .hb) }
+        let worn = lead.bluntness()
+        lead.turn()
+        #expect(lead.bluntness() < worn * 0.6, "the next side is much less worn")
+        // Turning also counts on top of a sensed roll.
+        var rolled = LeadPoint()
+        rolled.draw(1200, pressure: 0.5, grade: .hb, roll: 0.1)
+        let before = rolled.bluntness(roll: 0.1)
+        rolled.turn()
+        #expect(rolled.bluntness(roll: 0.1) < before)
+    }
+
     @Test func barrelRollPicksTheSide() {
         var lead = LeadPoint()
         lead.draw(1200, pressure: 0.5, grade: .hb, roll: 0.1)
