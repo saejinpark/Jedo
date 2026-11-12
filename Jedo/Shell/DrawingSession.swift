@@ -250,6 +250,9 @@ final class DrawingSession {
         flash(.sharpened)
     }
 
+    /// A double-tap arriving through SwiftUI rather than the canvas.
+    func pencilDoubleTapped() { canvas?.turnPencil(from: "swiftUI") }
+
     /// The pencil was turned a sixth by a double-tap.
     func pencilTurned() {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()

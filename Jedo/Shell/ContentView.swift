@@ -48,6 +48,8 @@ struct ContentView: View {
             }
             #endif
         }
+        // A second route for Apple Pencil double-taps; the canvas takes them too.
+        .onPencilDoubleTap { _ in session.pencilDoubleTapped() }
         .preferredColorScheme(.light)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)

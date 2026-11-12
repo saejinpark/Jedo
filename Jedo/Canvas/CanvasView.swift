@@ -177,6 +177,9 @@ final class CanvasView: UIView {
         addSubview(compassView)
         let pencil = UIPencilInteraction(delegate: self)
         addInteraction(pencil)
+        // What the iPad is set to do on a double-tap (Settings › Apple Pencil), for diagnosis.
+        Self.logEvent(["event": "launch", "preferredTapAction": UIPencilInteraction.preferredTapAction.rawValue,
+                       "prefersPencilOnlyDrawing": UIPencilInteraction.prefersPencilOnlyDrawing ? 1 : 0])
         memoryWarningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -1436,7 +1439,11 @@ final class CanvasView: UIView {
     }
 
     /// Turns the pencil in hand a sixth, for pencils that can't sense it.
-    func turnPencil() {
+    func turnPencil(from source: String = "button") {
+        // The same double-tap may arrive by more than one route.
+        let now = CACurrentMediaTime()
+        guard now - lastTurn > 0.25 else { return }
+        lastTurn = now
         let grade = currentGrade()
         var lead = leads[grade] ?? LeadPoint()
         let before = lead.bluntness(roll: roll)
@@ -1444,10 +1451,12 @@ final class CanvasView: UIView {
         leads[grade] = lead
         onLeadChange?(grade, lead.bluntness(roll: roll))
         onPencilTurned?()
-        Self.logEvent(["event": "pencilTap", "grade": grade.label, "before": before,
+        Self.logEvent(["event": "pencilTap", "source": source, "grade": grade.label, "before": before,
                        "after": lead.bluntness(roll: roll), "rollSensed": rollSensed ? 1 : 0,
                        "rollLow": rollSeen?.low ?? -99, "rollHigh": rollSeen?.high ?? -99])
     }
+
+    private var lastTurn: CFTimeInterval = 0
 
     /// Called after a double-tap turns the pencil.
     var onPencilTurned: (() -> Void)?
@@ -1518,6 +1527,12 @@ extension CanvasView: UIPencilInteractionDelegate {
     /// A double-tap turns the pencil a sixth in the hand, so a fresh side of
     /// the point touches the paper (Apple Pencil Pro senses the turn itself).
     func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
-        turnPencil()
+        turnPencil(from: "didReceiveTap")
+    }
+
+    /// The older route, still taken on some systems for Apple Pencil 2.
+    @available(iOS, deprecated: 17.5)
+    func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+        turnPencil(from: "didTap")
     }
 }
