@@ -28,6 +28,8 @@ final class CanvasView: UIView {
 
     /// Whether the hand holds the eraser, so a finger rubbing the paper erases.
     var eraserInHand = false
+    /// Which eraser is in hand.
+    var eraserKind: EraserKind = .rubber
     /// Whether the hand holds the knife: the pencil cuts tone instead of
     /// drawing, and a finger tapping a cut-off piece of tone peels it away.
     var knifeInHand = false
@@ -637,6 +639,21 @@ final class CanvasView: UIView {
         return false
     }
 
+    /// Empties the paper, or a grid sheet, of everything drawn on it: a fresh
+    /// sheet for the next try. Copies the carbon made go too. One step to undo.
+    @discardableResult
+    func clearLayer(_ id: Int?) -> Bool {
+        guard activeTouch == nil else { return false }
+        let ids: [SurfaceID] = id.map { [.sheet($0), .sheetCopy($0)] } ?? [.paper, .carbonCopy]
+        let cleared = ids.filter { surface($0)?.sheet.clear() == true }
+        guard !cleared.isEmpty else { return false }
+        undoStack.append(.marks(cleared))
+        redoStack.removeAll()
+        refresh()
+        notifyHistory()
+        return true
+    }
+
     /// Presses a grid sheet onto the paper: what is drawn on it is printed
     /// where it lies now, as one step to undo. The sheet keeps its drawing.
     @discardableResult
@@ -974,7 +991,7 @@ final class CanvasView: UIView {
         for (id, mask) in layerStack().targets(erasing: erasing) {
             guard let target = surface(id)?.sheet else { continue }
             let local = mask.mapped(onSurface(id).0)
-            if erasing { target.beginErasing(mask: local) } else { target.beginStroke(grade: grade, mask: local) }
+            if erasing { target.beginErasing(mask: local, kind: eraserKind) } else { target.beginStroke(grade: grade, mask: local) }
             marking.append(id)
         }
         if erasing {

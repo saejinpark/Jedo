@@ -60,18 +60,31 @@ private struct HandGroup: View {
     @Bindable var session: DrawingSession
 
     var body: some View {
-        ControlGroup {
-            PencilGrades(selection: $session.grade)
-            GroupDivider()
-            ToolButton(icon: .symbol("eraser"), label: session.eraserInHand ? "지우개 내려놓기" : "지우개 들기",
-                       selected: session.eraserInHand) {
-                session.eraserInHand.toggle()
+        VStack(alignment: .leading, spacing: Metric.groupGap) {
+            if session.eraserInHand {
+                // Which eraser, while one is in hand: a small group over the hand.
+                ControlGroup {
+                    ForEach(EraserKind.allCases, id: \.self) { kind in
+                        TextCell(title: kind.name, selected: session.eraserKind == kind) { session.eraserKind = kind }
+                            .accessibilityLabel("\(kind.name)지우개")
+                    }
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            ToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
-                       selected: session.compassOnDesk) {
-                session.compassOnDesk.toggle()
+            ControlGroup {
+                PencilGrades(selection: $session.grade)
+                GroupDivider()
+                ToolButton(icon: .symbol("eraser"), label: session.eraserInHand ? "지우개 내려놓기" : "지우개 들기",
+                           selected: session.eraserInHand) {
+                    session.eraserInHand.toggle()
+                }
+                ToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
+                           selected: session.compassOnDesk) {
+                    session.compassOnDesk.toggle()
+                }
             }
         }
+        .animation(.snappy(duration: 0.2), value: session.eraserInHand)
     }
 }
 
@@ -292,10 +305,12 @@ private struct SheetsPanel: View {
                         layerRow(row)
                         Divider().padding(.leading, 52)
                     }
-                    HStack(spacing: 14) {
+                    HStack(spacing: 10) {
                         Image(systemName: "doc").frame(width: 22)
                         Text("용지 (배경)")
                         Spacer()
+                        iconButton("eraser.line.dashed", label: "용지 비우기") { session.clearLayer(nil) }
+                            .foregroundStyle(Palette.ink)
                     }
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 16).padding(.vertical, 8)
@@ -334,6 +349,9 @@ private struct SheetsPanel: View {
             }
             iconButton("chevron.up", label: "위로", enabled: row.canRaise) { session.shiftLayer(row.id, up: true) }
             iconButton("chevron.down", label: "아래로", enabled: row.canLower) { session.shiftLayer(row.id, up: false) }
+            if !row.isCarbon && !row.isTone {
+                iconButton("eraser.line.dashed", label: "비우기") { session.clearLayer(row.id) }
+            }
             iconButton("trash", label: row.isCarbon ? "먹지 치우기" : "치우기 (그린 것도 함께)") { session.removeLayer(row.id) }
                 .foregroundStyle(.red)
         }

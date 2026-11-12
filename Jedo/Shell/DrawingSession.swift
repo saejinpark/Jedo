@@ -53,6 +53,10 @@ final class DrawingSession {
             }
         }
     }
+    /// Which eraser is in hand.
+    var eraserKind: EraserKind = .rubber {
+        didSet { canvas?.eraserKind = eraserKind }
+    }
     /// Whether the hand holds the knife, so the pencil cuts tone and a finger peels it.
     var knifeInHand = false {
         didSet {
@@ -165,6 +169,9 @@ final class DrawingSession {
         canvas?.removeGridLayer(id)
         gridSheets.removeAll { $0.id == id }
     }
+
+    /// Empties a grid sheet, or the paper with `nil`, for a fresh try.
+    func clearLayer(_ id: Int?) { canvas?.clearLayer(id) }
 
     /// Prints a grid sheet's drawing onto the paper where it lies.
     func stampLayer(_ id: Int) { canvas?.stampLayer(id) }

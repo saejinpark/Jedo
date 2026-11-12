@@ -6,20 +6,81 @@ import Foundation
 /// draft compared on the iPad; rubbing with a finger was chosen.)
 struct EraserDynamics: Sendable {
     let pixelsPerMillimeter: Double
+    var kind: EraserKind = .rubber
 
-    /// The worn corner of a drafting eraser.
-    static let widthMM = 5.0
-    /// Fraction of the graphite one light rub lifts, and how much more a firm one does.
-    static let baseStrength = 0.25
-    static let pressureStrength = 0.45
-    /// Graphite in the paper's valleys is harder to reach than on its peaks.
-    static let valleyResistance = 0.3
+    /// The worn corner of a drafting eraser (the rubber's width; kept for older callers).
+    static let widthMM = EraserKind.rubber.widthMM
+    static let valleyResistance = EraserKind.rubber.valleyResistance
 
-    var radius: Double { Self.widthMM / 2 * pixelsPerMillimeter }
+    var radius: Double { kind.widthMM / 2 * pixelsPerMillimeter }
     var spacing: Double { max(radius * 0.2, 0.5) }
 
     func strength(for sample: StrokeSample) -> Double {
-        min(Self.baseStrength + Self.pressureStrength * sample.pressure, 0.95)
+        min(kind.baseStrength + kind.pressureStrength * sample.pressure, kind.maxStrength)
+    }
+}
+
+/// The erasers on a drafting desk. Each takes graphite off its own way, and
+/// none is free: the rubber still needs going over, which is what makes a
+/// line worth drawing carefully the first time.
+enum EraserKind: CaseIterable, Hashable, Sendable {
+    /// The plastic drafting eraser: lifts a share each pass, leaves a ghost in the grain.
+    case rubber
+    /// Kneaded rubber, dabbed and rolled: lightens a line evenly without taking it all.
+    case kneaded
+    /// The electric eraser: a small spinning strip that takes a line clean in a pass.
+    case electric
+
+    var name: String {
+        switch self {
+        case .rubber: "고무"
+        case .kneaded: "떡"
+        case .electric: "전동"
+        }
+    }
+
+    /// Width of the part that touches the paper.
+    var widthMM: Double {
+        switch self {
+        case .rubber: 5
+        case .kneaded: 9
+        case .electric: 2.5
+        }
+    }
+
+    /// Share of the graphite one light rub lifts, and how much more a firm one does.
+    var baseStrength: Double {
+        switch self {
+        case .rubber: 0.25
+        case .kneaded: 0.12
+        case .electric: 0.97
+        }
+    }
+
+    var pressureStrength: Double {
+        switch self {
+        case .rubber: 0.45
+        case .kneaded: 0.16
+        case .electric: 0
+        }
+    }
+
+    /// The most one pass can lift.
+    var maxStrength: Double {
+        switch self {
+        case .rubber: 0.95
+        case .kneaded: 0.3
+        case .electric: 0.97
+        }
+    }
+
+    /// How much harder the graphite in the paper's valleys is to reach than on its peaks.
+    var valleyResistance: Double {
+        switch self {
+        case .rubber: 0.3
+        case .kneaded: 0.05
+        case .electric: 0.02
+        }
     }
 }
 
@@ -36,7 +97,7 @@ enum EraserRasterizer {
 
     @discardableResult
     static func stamp(center: CGPoint, radius: Double, strength: Double, into raster: inout GraphiteRaster,
-                      paper: PaperTexture) -> PixelRect {
+                      paper: PaperTexture, valleyResistance: Double = EraserKind.rubber.valleyResistance) -> PixelRect {
         guard center.x.isFinite, center.y.isFinite, radius > 0, strength > 0 else { return .empty }
         let area = bounds(center: center, radius: radius).intersection(raster.bounds)
         guard !area.isEmpty else { return .empty }
@@ -45,7 +106,7 @@ enum EraserRasterizer {
         let r = Float(radius)
         let soft = max(r * 0.3, 1)
         let amount = Float(strength)
-        let resistance = Float(EraserDynamics.valleyResistance)
+        let resistance = Float(valleyResistance)
         let size = GraphiteRaster.tileSize
 
         for coord in raster.tileCoords(overlapping: area) {

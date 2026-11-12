@@ -94,11 +94,11 @@ final class DraftingSheet {
 
     /// Starts rubbing with the eraser. Samples arrive through `extendStroke`;
     /// each pass lifts a share of the graphite under it.
-    func beginErasing(mask: StrokeMask = .everywhere) {
+    func beginErasing(mask: StrokeMask = .everywhere, kind: EraserKind = .rubber) {
         if stroke != nil { cancelStroke() }
         strokeCounter &+= 1
         stroke = ActiveStroke(
-            lead: .eraser(EraserDynamics(pixelsPerMillimeter: pixelsPerMillimeter)),
+            lead: .eraser(EraserDynamics(pixelsPerMillimeter: pixelsPerMillimeter, kind: kind)),
             buffer: GraphiteRaster(width: width, height: height),
             seed: strokeCounter &* 0x9E37_79B9,
             maxDensity: 1,
@@ -151,7 +151,8 @@ final class DraftingSheet {
                 let coverage = mask.coverage(EraserRasterizer.bounds(center: dab.location, radius: eraser.radius))
                 guard coverage != .none else { continue }
                 let rect = EraserRasterizer.stamp(center: dab.location, radius: eraser.radius,
-                                                  strength: eraser.strength(for: dab), into: &raster, paper: paper)
+                                                  strength: eraser.strength(for: dab), into: &raster, paper: paper,
+                                                  valleyResistance: eraser.kind.valleyResistance)
                 if coverage == .part { Self.clip(&raster, rect, to: mask) }
                 markDirty(rect)
             }
@@ -226,6 +227,24 @@ final class DraftingSheet {
             markDirty(graphite.rect(of: coord))
         }
         active.buffer.removeAll()
+    }
+
+    // MARK: Clearing
+
+    /// Takes everything off the sheet at once, as one undoable step: a fresh
+    /// sheet for the next try. Returns whether there was anything to take.
+    @discardableResult
+    func clear() -> Bool {
+        guard stroke == nil, !graphite.isEmpty else { return false }
+        var changes: [TileCoord: TileChange] = [:]
+        for (coord, tile) in graphite.tiles {
+            changes[coord] = TileChange(before: tile, after: nil)
+            markDirty(graphite.rect(of: coord))
+        }
+        graphite.removeAll()
+        let edit = TileEdit(changes: changes)
+        history.record(edit, cost: edit.cost)
+        return true
     }
 
     // MARK: Stamping

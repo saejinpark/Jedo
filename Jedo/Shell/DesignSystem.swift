@@ -119,6 +119,27 @@ struct ToolButton: View {
     }
 }
 
+/// A narrow control cell with a word on it, for choosing among a few kinds.
+struct TextCell: View {
+    let title: String
+    var selected = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: selected ? .bold : .medium, design: .rounded))
+                .frame(width: 38, height: Metric.cell)
+                .foregroundStyle(selected ? Color.white : Palette.ink.opacity(0.8))
+                .background(selected ? AnyShapeStyle(Palette.ink.opacity(0.75)) : AnyShapeStyle(Color.clear),
+                            in: RoundedRectangle(cornerRadius: Metric.cellRadius))
+                .contentShape(RoundedRectangle(cornerRadius: Metric.cellRadius))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
 /// A titled part of a panel.
 struct PanelSection<Content: View>: View {
     let title: String

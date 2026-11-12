@@ -337,3 +337,51 @@ struct StampTests {
         #expect(!paper.canUndo)
     }
 }
+
+struct EraserKindTests {
+    func sheetWithALine() -> DraftingSheet {
+        let sheet = DraftingSheet(width: 300, height: 200, pixelsPerMillimeter: ppmm, paper: PaperTexture(size: 64, seed: 3))
+        sheet.beginStroke(grade: .b4)
+        sheet.extendStroke(with: (0...40).map { StrokeSample(location: CGPoint(x: 20 + Double($0) * 6.5, y: 100), pressure: 0.8) },
+                           predicted: [])
+        sheet.endStroke()
+        return sheet
+    }
+
+    func ink(_ sheet: DraftingSheet) -> Float {
+        var total: Float = 0
+        for y in 90..<110 { for x in 120..<180 { total += sheet.graphite.value(x: x, y: y) } }
+        return total
+    }
+
+    func rubOnce(_ sheet: DraftingSheet, _ kind: EraserKind) {
+        sheet.beginErasing(kind: kind)
+        sheet.extendStroke(with: stride(from: 100.0, through: 200, by: 2).map { StrokeSample(location: CGPoint(x: $0, y: 100)) },
+                           predicted: [])
+        sheet.endStroke()
+    }
+
+    @Test func eachEraserTakesItsOwnShare() {
+        let start = ink(sheetWithALine())
+        var left: [EraserKind: Float] = [:]
+        for kind in EraserKind.allCases {
+            let sheet = sheetWithALine()
+            rubOnce(sheet, kind)
+            left[kind] = ink(sheet) / start
+        }
+        #expect(left[.electric]! < 0.08, "the electric eraser takes a line clean in one pass")
+        #expect(left[.rubber]! > 0.25 && left[.rubber]! < 0.7, "the rubber needs going over")
+        #expect(left[.kneaded]! > 0.7, "the kneaded rubber only lightens")
+    }
+
+    @Test func clearingTakesAllAndUndoBringsItBack() {
+        let sheet = sheetWithALine()
+        let before = ink(sheet)
+        #expect(sheet.clear())
+        #expect(ink(sheet) == 0)
+        #expect(sheet.undo())
+        #expect(ink(sheet) == before)
+        let empty = DraftingSheet(width: 100, height: 100, pixelsPerMillimeter: ppmm)
+        #expect(!empty.clear())
+    }
+}
