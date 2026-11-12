@@ -583,3 +583,64 @@ struct RadiusTemplateTests {
         #expect(radii.allSatisfy { abs($0 - ((100 + ShapeTemplate.arcSlotWidthMM / 2) * Self.ppmm - 2)) < 0.05 })
     }
 }
+
+struct ToolContactTests {
+    static let ppmm = 10.0
+
+    func square(_ x: Double, _ y: Double, _ half: Double = 50) -> [CGPoint] {
+        [CGPoint(x: x - half, y: y - half), CGPoint(x: x + half, y: y - half),
+         CGPoint(x: x + half, y: y + half), CGPoint(x: x - half, y: y + half)]
+    }
+
+    @Test func apartNeedsNoPush() {
+        #expect(ToolContact.separation(square(0, 0), from: square(200, 0)) == nil)
+    }
+
+    @Test func overlapIsUndoneTheShortWay() {
+        let push = ToolContact.separation(square(90, 10), from: square(0, 0))!
+        #expect(abs(push.dx - 10) < 0.01 && abs(push.dy) < 1e-9)
+    }
+
+    @Test func aSetSquarePushedIntoTheRulerSlidesAlongIt() {
+        let ruler = DeskTool(kind: .ruler, pose: ToolPose(center: CGPoint(x: 1000, y: 1000), angle: 0))
+            .shape(pixelsPerMillimeter: Self.ppmm)
+        // The set square sits on the ruler's upper edge (y = 850), then is dragged
+        // down and to the right: it should only move right.
+        let corners = SetSquare.cornersMM(.setSquare45).map { $0.scaled(Self.ppmm) }
+        let lowest = corners.map(\.y).max()!
+        var pose = ToolPose(center: CGPoint(x: 800, y: 850 - lowest), angle: 0)
+        for _ in 0..<10 {
+            pose.center.x += 20
+            pose.center.y += 15
+            let moved = DeskTool(kind: .setSquare45, pose: pose).shape(pixelsPerMillimeter: Self.ppmm)
+            let push = ToolContact.resolve(ToolContact.polygon(moved), against: [ToolContact.polygon(ruler)])
+            pose.center.x += push.dx
+            pose.center.y += push.dy
+        }
+        #expect(abs(pose.center.x - 1000) < 0.5, "slid 200 px along the edge")
+        #expect(abs(pose.center.y - (850 - lowest)) < 0.5, "still resting on the edge")
+    }
+
+    @Test func aTurnedRulerGuidesTheSlideAlongItsSlope() {
+        let ruler = DeskTool(kind: .ruler, pose: ToolPose(center: CGPoint(x: 1000, y: 1000), angle: 0.4))
+            .shape(pixelsPerMillimeter: Self.ppmm)
+        var pose = ToolPose(center: CGPoint(x: 1000, y: 500), angle: 0.4)
+        for _ in 0..<40 {
+            pose.center.y += 20
+            let moved = DeskTool(kind: .setSquare60, pose: pose).shape(pixelsPerMillimeter: Self.ppmm)
+            let push = ToolContact.resolve(ToolContact.polygon(moved), against: [ToolContact.polygon(ruler)])
+            pose.center.x += push.dx
+            pose.center.y += push.dy
+        }
+        let final = DeskTool(kind: .setSquare60, pose: pose).shape(pixelsPerMillimeter: Self.ppmm)
+        #expect(!ToolContact.overlaps(ToolContact.polygon(final), ToolContact.polygon(ruler)))
+        // Pushed straight down, it slid along the ruler's slope instead (sideways).
+        #expect(abs(pose.center.x - 1000) > 50)
+    }
+
+    @Test func curvesStayFree() {
+        #expect(!ToolContact.collides(.frenchCurveA))
+        #expect(!ToolContact.collides(.hipCurve))
+        #expect(ToolContact.collides(.setSquare45))
+    }
+}

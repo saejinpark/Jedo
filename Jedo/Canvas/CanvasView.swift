@@ -34,6 +34,9 @@ final class CanvasView: UIView {
     private var toolViews: [ToolKind: any ToolDisplay] = [:]
     /// Fingers holding each tool, oldest first, with where each was last (canvas pixels).
     private var holders: [ToolKind: [(touch: UITouch, point: CGPoint)]] = [:]
+    /// Tools lying on top of or under a tool when it was picked up: they pass
+    /// over each other freely instead of butting.
+    private var stacked: [ToolKind: Set<ToolKind>] = [:]
     /// Whether the compass is out, so a finger held still plants its needle.
     private(set) var compassOnDesk = false
     /// The compass while its needle is in the paper. Canvas pixels.
@@ -335,6 +338,7 @@ final class CanvasView: UIView {
             toolShapes[$0].outlineContains(point, margin: margin) && holders[tools[$0].kind, default: []].count < 2
         }) else { return false }
         let kind = tools[i].kind
+        if holders[kind, default: []].isEmpty { stacked[kind] = overlapping(kind) }
         holders[kind, default: []].append((touch, point))
         raise(kind)
         return true
@@ -351,12 +355,31 @@ final class CanvasView: UIView {
             case 1: pose = RigidMotion.slide(pose, from: held[0].point, to: now[0])
             default: pose = RigidMotion.slideAndTurn(pose, from: (held[0].point, held[1].point), to: (now[0], now[1]))
             }
+            // Butt against the other tools instead of passing through them.
+            if ToolContact.collides(kind) {
+                let moving = ToolContact.polygon(DeskTool(kind: kind, pose: pose).shape(pixelsPerMillimeter: sheet.pixelsPerMillimeter))
+                let free = stacked[kind] ?? []
+                let obstacles = tools.indices
+                    .filter { tools[$0].kind != kind && ToolContact.collides(tools[$0].kind) && !free.contains(tools[$0].kind) }
+                    .map { ToolContact.polygon(toolShapes[$0]) }
+                let push = ToolContact.resolve(moving, against: obstacles)
+                pose.center.x += push.dx
+                pose.center.y += push.dy
+            }
             tools[i].pose = pose
             holders[kind] = zip(held, now).map { ($0.touch, $1) }
             showTool(tools[i], sheet: sheet)
             moved = true
         }
         if moved { toolsChanged() }
+    }
+
+    /// The rigid tools overlapping `kind` where it lies now.
+    private func overlapping(_ kind: ToolKind) -> Set<ToolKind> {
+        guard ToolContact.collides(kind), let i = tools.firstIndex(where: { $0.kind == kind }) else { return [] }
+        let mine = ToolContact.polygon(toolShapes[i])
+        return Set(tools.indices.filter { $0 != i && ToolContact.collides(tools[$0].kind)
+            && ToolContact.overlaps(mine, ToolContact.polygon(toolShapes[$0])) }.map { tools[$0].kind })
     }
 
     private func releaseTools(_ touches: Set<UITouch>) {

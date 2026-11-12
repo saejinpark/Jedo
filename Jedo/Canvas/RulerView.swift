@@ -64,7 +64,7 @@ final class RulerView: UIView {
         // A grid across the body, every 5 mm, stronger every centimetre, as on a
         // clear pattern-drafting ruler: for parallels and seam allowances.
         let gridTop = 7.5 * mm, gridBottom = bounds.height - 2.2 * mm
-        for (step, alpha, width) in [(5, 0.16, 0.4), (10, 0.30, 0.55)] as [(Int, CGFloat, CGFloat)] {
+        for (step, alpha, width) in [(5, 0.42, 0.45), (10, 0.62, 0.6)] as [(Int, CGFloat, CGFloat)] {
             ink.withAlphaComponent(alpha).setStroke()
             ctx.setLineWidth(width)
             for along in stride(from: 0, through: 200, by: step) where step == 10 || along % 10 != 0 {
