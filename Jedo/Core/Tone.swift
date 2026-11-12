@@ -57,11 +57,96 @@ struct ToneCut: Equatable, Sendable {
     let columns: Int
     let rows: Int
     private(set) var cells: [Cell]
+    /// How much of the printed ink is left on the film at each cell, 1 as
+    /// printed. Scraping with the blade laid flat takes it off.
+    private(set) var ink: [Float]
 
     init(widthMM: Double, heightMM: Double) {
         columns = max(Int((widthMM / Self.cellMM).rounded(.up)), 1)
         rows = max(Int((heightMM / Self.cellMM).rounded(.up)), 1)
         cells = Array(repeating: .kept, count: columns * rows)
+        ink = Array(repeating: 1, count: columns * rows)
+    }
+
+    /// Whether the print shows at cell `i`: the film is there, and enough ink
+    /// is left there. Scraped ink comes off dot by dot, not as a fading wash:
+    /// each cell gives way at its own point, so a dot breaks up as it thins.
+    func shows(_ i: Int) -> Bool {
+        cells[i] == .kept && ink[i] > Self.grit(i)
+    }
+
+    /// A fixed roughness for each cell, 0 ..< 1: where the blade catches first.
+    static func grit(_ i: Int) -> Float {
+        var h = UInt32(truncatingIfNeeded: i) &* 0x9E37_79B1
+        h ^= h >> 15
+        h = h &* 0x85EB_CA6B
+        h ^= h >> 13
+        return Float(h & 0xFFFF) / 65536
+    }
+
+    /// The blade's flat edge: this wide.
+    static let scrapeWidthMM = 3.0
+    /// Ink one stroke of the blade lifts at full pressure, in the middle of its edge.
+    static let scrapeStrength: Float = 0.35
+
+    /// One sweep of the blade: what it has lifted so far. The blade passes
+    /// each spot once per sweep, so within a sweep the firmest scrape counts,
+    /// however finely the stroke is sampled. Turning back starts a new sweep.
+    struct ScrapePass: Sendable {
+        var base: [Float]
+        var lift: [Float]
+        var heading: (x: Double, y: Double)?
+
+        init(_ tone: ToneCut) {
+            base = tone.ink
+            lift = Array(repeating: 0, count: tone.ink.count)
+        }
+    }
+
+    /// Scrapes along a stretch, in millimetres, with the blade laid flat:
+    /// each sweep lifts a share of the ink under it, most in the middle of
+    /// the edge, so highlights are built up sweep by sweep. Returns whether
+    /// any ink came off.
+    @discardableResult
+    mutating func scrape(from a: CGPoint, to b: CGPoint, pressure: Double, pass: inout ScrapePass) -> Bool {
+        let ex = Double(b.x - a.x), ey = Double(b.y - a.y), length2 = ex * ex + ey * ey
+        if length2 > 0.04 {
+            let length = length2.squareRoot(), dir = (x: ex / length, y: ey / length)
+            if let h = pass.heading, h.x * dir.x + h.y * dir.y < -0.3 {
+                // Back the other way: a fresh sweep.
+                pass.base = ink
+                pass.lift = Array(repeating: 0, count: ink.count)
+            }
+            pass.heading = dir
+        }
+        let reach = Self.scrapeWidthMM / 2
+        let lo = (x: min(Double(a.x), Double(b.x)) - reach, y: min(Double(a.y), Double(b.y)) - reach)
+        let hi = (x: max(Double(a.x), Double(b.x)) + reach, y: max(Double(a.y), Double(b.y)) + reach)
+        let c0 = max(Int(lo.x / Self.cellMM), 0), c1 = min(Int(hi.x / Self.cellMM), columns - 1)
+        let r0 = max(Int(lo.y / Self.cellMM), 0), r1 = min(Int(hi.y / Self.cellMM), rows - 1)
+        guard c0 <= c1, r0 <= r1 else { return false }
+        let amount = Self.scrapeStrength * Float(0.3 + 0.7 * min(max(pressure, 0), 1))
+        var changed = false
+        for row in r0...r1 {
+            for column in c0...c1 {
+                let i = row * columns + column
+                guard cells[i] == .kept else { continue }
+                let px = (Double(column) + 0.5) * Self.cellMM, py = (Double(row) + 0.5) * Self.cellMM
+                let t = length2 > 0 ? min(max(((px - Double(a.x)) * ex + (py - Double(a.y)) * ey) / length2, 0), 1) : 0
+                let d = hypot(px - Double(a.x) - ex * t, py - Double(a.y) - ey * t)
+                guard d < reach else { continue }
+                // Firm in the middle of the edge, light at its ends.
+                let lift = amount * Float(1 - (d / reach) * (d / reach))
+                guard lift > pass.lift[i] else { continue }
+                pass.lift[i] = lift
+                let left = max(pass.base[i] - lift, 0)
+                if left != ink[i] {
+                    ink[i] = left
+                    changed = true
+                }
+            }
+        }
+        return changed
     }
 
     func cell(_ column: Int, _ row: Int) -> Cell {

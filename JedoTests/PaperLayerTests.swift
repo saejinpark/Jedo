@@ -456,3 +456,60 @@ struct ParallelRuleTests {
         #expect(push.dy < 0 && abs(push.dx) < 1e-6, "pushed straight back up, free to slide sideways")
     }
 }
+
+struct ToneScrapeTests {
+    func visible(_ tone: ToneCut, inside rect: (Int, Int, Int, Int)) -> Int {
+        var n = 0
+        for row in rect.1..<rect.3 { for column in rect.0..<rect.2 where tone.shows(row * tone.columns + column) { n += 1 } }
+        return n
+    }
+
+    /// Strokes back and forth across a band 30 mm long at y = 10 mm.
+    func scrape(_ tone: inout ToneCut, strokes: Int, pressure: Double = 0.6) {
+        var pass = ToneCut.ScrapePass(tone)
+        for k in 0..<strokes {
+            let xs = stride(from: 5.0, through: 35, by: 1).map { $0 }
+            let path = k % 2 == 0 ? xs : xs.reversed()
+            for (a, b) in zip(path, path.dropFirst()) {
+                tone.scrape(from: CGPoint(x: a, y: 10), to: CGPoint(x: b, y: 10), pressure: pressure, pass: &pass)
+            }
+        }
+    }
+
+    @Test func eachStrokeLiftsMoreDotsGradually() {
+        var tone = ToneCut(widthMM: 40, heightMM: 20)
+        let band = (40, 36, 120, 44) // 10..30 mm across, 9..11 mm down: the middle of the blade
+        let all = visible(tone, inside: band)
+        scrape(&tone, strokes: 1)
+        let once = visible(tone, inside: band)
+        scrape(&tone, strokes: 2)
+        let thrice = visible(tone, inside: band)
+        scrape(&tone, strokes: 6)
+        let many = visible(tone, inside: band)
+        #expect(once < all && once > all / 2, "one stroke only thins it")
+        #expect(thrice < once)
+        #expect(many < all / 10, "worked over, it comes nearly clean")
+    }
+
+    @Test func itLeavesTheFilmAndWhatIsBesideTheBlade() {
+        var tone = ToneCut(widthMM: 40, heightMM: 20)
+        scrape(&tone, strokes: 12)
+        #expect(tone.isKept(at: CGPoint(x: 20, y: 10)), "the film is still there to peel or cut")
+        let away = (40, 60, 120, 76) // 15..19 mm down: beyond the blade's edge
+        #expect(visible(tone, inside: away) == 80 * 16, "untouched beside it")
+    }
+
+    @Test func fineSamplingScrapesNoHarderThanCoarse() {
+        var fine = ToneCut(widthMM: 40, heightMM: 20), coarse = ToneCut(widthMM: 40, heightMM: 20)
+        var finePass = ToneCut.ScrapePass(fine), coarsePass = ToneCut.ScrapePass(coarse)
+        for x in stride(from: 5.0, to: 35, by: 0.25) {
+            fine.scrape(from: CGPoint(x: x, y: 10), to: CGPoint(x: x + 0.25, y: 10), pressure: 0.6, pass: &finePass)
+        }
+        for x in stride(from: 5.0, to: 35, by: 3) {
+            coarse.scrape(from: CGPoint(x: x, y: 10), to: CGPoint(x: x + 3, y: 10), pressure: 0.6, pass: &coarsePass)
+        }
+        let band = (40, 36, 120, 44)
+        let a = visible(fine, inside: band), b = visible(coarse, inside: band)
+        #expect(a == b, "the same, however the stroke is sampled")
+    }
+}

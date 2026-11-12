@@ -133,6 +133,11 @@ final class CanvasView: UIView {
     private var cutting: [Int: ToneCut]?
     private var lastCut: CGPoint?
     private var cutStart: CGPoint?
+    /// The knife laid flat: it scrapes the print off instead of cutting.
+    private var scraping = false
+    private var scrapePasses: [Int: ToneCut.ScrapePass] = [:]
+    /// Below this the knife is lying on the flat of its blade.
+    static let scrapeBelowAltitude = 35.0 * .pi / 180
     private var activeTouch: UITouch?
     private var pending = PendingSampleQueue<NSNumber>()
     private var lastPredicted: [StrokeSample] = []
@@ -721,7 +726,11 @@ final class CanvasView: UIView {
             for layer in layers where layer.kind.isTone && !hiddenLayers.contains(layer.id) {
                 guard var tone = toneCuts[layer.id] else { continue }
                 let before = tone
-                if tone.cut(from: sheetMillimetres(layer, from), to: sheetMillimetres(layer, s.location)) {
+                let a = sheetMillimetres(layer, from), b = sheetMillimetres(layer, s.location)
+                var pass = scrapePasses[layer.id] ?? ToneCut.ScrapePass(tone)
+                let changed = scraping ? tone.scrape(from: a, to: b, pressure: s.pressure, pass: &pass) : tone.cut(from: a, to: b)
+                if scraping { scrapePasses[layer.id] = pass }
+                if changed {
                     if cutting?[layer.id] == nil { cutting?[layer.id] = before }
                     toneCuts[layer.id] = tone
                     touched.insert(layer.id)
@@ -1095,6 +1104,8 @@ final class CanvasView: UIView {
             cutting = [:]
             lastCut = nil
             cutStart = nil
+            scraping = Double(touch.altitudeAngle) < Self.scrapeBelowAltitude
+            scrapePasses = [:]
             guide = makeGuide(startingAt: sample(touch).location, grade: grade, sheet: sheet)
             notifyHistory()
             feed(touch, event: event)

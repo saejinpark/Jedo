@@ -97,7 +97,7 @@ final class PaperLayerView: UIView {
         // White with the cells as its alpha: a layer mask reads only the alpha.
         let count = cut.columns * cut.rows
         var pixels = [UInt32](repeating: 0, count: count)
-        for i in 0..<count where cut.cells[i] == .kept { pixels[i] = 0xFFFF_FFFF }
+        for i in 0..<count where cut.shows(i) { pixels[i] = 0xFFFF_FFFF }
         guard let image = CanvasView.makeImage(pixels: pixels, width: cut.columns, height: cut.rows) else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
