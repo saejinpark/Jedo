@@ -571,14 +571,13 @@ final class CanvasView: UIView {
             }
             // Butt against the other tools instead of passing through them.
             if ToolContact.collides(kind), !onPin, kind != .parallelRule {
-                let moving = ToolContact.polygon(DeskTool(kind: kind, pose: pose).shape(pixelsPerMillimeter: sheet.pixelsPerMillimeter))
                 let free = stacked[kind] ?? []
                 let obstacles = tools.indices
                     .filter { tools[$0].kind != kind && ToolContact.collides(tools[$0].kind) && !free.contains(tools[$0].kind) }
                     .map { ToolContact.polygon(toolShapes[$0]) }
-                let push = ToolContact.resolve(moving, against: obstacles)
-                pose.center.x += push.dx
-                pose.center.y += push.dy
+                // Travel until it touches, then slide and turn: never shoved back out from under the fingers.
+                pose = ToolContact.advance(from: tools[i].pose, to: pose, outline: { ToolContact.polygon(shapeAt($0)) },
+                                           against: obstacles)
             }
             tools[i].pose = pose
             holders[kind] = zip(held, now).map { ($0.touch, $1) }

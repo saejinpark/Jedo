@@ -644,3 +644,58 @@ struct ToolContactTests {
         #expect(ToolContact.collides(.setSquare45))
     }
 }
+
+struct ToolAdvanceTests {
+    static let ppmm = 10.0
+    let ruler = ToolContact.polygon(DeskTool(kind: .ruler, pose: ToolPose(center: CGPoint(x: 1000, y: 1000), angle: 0))
+        .shape(pixelsPerMillimeter: ToolAdvanceTests.ppmm))
+    let outline = { (pose: ToolPose) in
+        ToolContact.polygon(DeskTool(kind: .setSquare45, pose: pose).shape(pixelsPerMillimeter: ToolAdvanceTests.ppmm))
+    }
+
+    /// The set square resting on the ruler's upper edge (y = 850), level.
+    var resting: ToolPose {
+        let lowest = SetSquare.cornersMM(.setSquare45).map { Double($0.y) * Self.ppmm }.max()!
+        return ToolPose(center: CGPoint(x: 800, y: 850 - lowest - 0.01), angle: 0)
+    }
+
+    func lowestY(_ pose: ToolPose) -> Double { outline(pose).map { Double($0.y) }.max()! }
+
+    @Test func pushedStraightInItStopsAtTheEdge() {
+        var goal = resting
+        goal.center.y += 40
+        let moved = ToolContact.advance(from: resting, to: goal, outline: outline, against: [ruler])
+        #expect(abs(lowestY(moved) - 850) < 0.5)
+        #expect(abs(Double(moved.center.x) - 800) < 1e-6, "not shoved sideways")
+    }
+
+    @Test func pushedAslantItSlidesAlong() {
+        var goal = resting
+        goal.center.x += 120
+        goal.center.y += 60
+        let moved = ToolContact.advance(from: resting, to: goal, outline: outline, against: [ruler])
+        #expect(abs(Double(moved.center.x) - 920) < 0.5)
+        #expect(abs(lowestY(moved) - 850) < 0.5)
+    }
+
+    @Test func turningAgainstTheRulerIsNotPushedAway() {
+        // Two fingers turn it 10° about its centre: a corner would dig into the ruler.
+        var goal = resting
+        goal.angle = 10 * .pi / 180
+        let moved = ToolContact.advance(from: resting, to: goal, outline: outline, against: [ruler])
+        #expect(hypot(Double(moved.center.x - resting.center.x), Double(moved.center.y - resting.center.y)) < 1e-6,
+                "it stays under the fingers")
+        #expect(moved.angle >= 0 && moved.angle < goal.angle)
+        #expect(!ToolContact.overlaps(outline(moved), ruler))
+        // The old way shoved the whole square up off the ruler.
+        let push = ToolContact.resolve(outline(goal), against: [ruler])
+        #expect(hypot(Double(push.dx), Double(push.dy)) > 5)
+    }
+
+    @Test func clearOfEverythingItGoesWhereTheFingersPutIt() {
+        var goal = resting
+        goal.center.y -= 300
+        goal.angle = 0.4
+        #expect(ToolContact.advance(from: resting, to: goal, outline: outline, against: [ruler]) == goal)
+    }
+}

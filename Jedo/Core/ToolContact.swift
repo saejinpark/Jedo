@@ -64,6 +64,63 @@ enum ToolContact {
         return shift
     }
 
+    /// Moves a tool from where it lies toward where the fingers would put it,
+    /// the way a real one goes: it travels until it touches another tool and
+    /// stops there, then slides along it and turns as far as it can. It is
+    /// never pushed back or sideways, out from under the fingers.
+    static func advance(from start: ToolPose, to goal: ToolPose, outline: (ToolPose) -> [CGPoint],
+                        against obstacles: [[CGPoint]]) -> ToolPose {
+        guard !obstacles.isEmpty else { return goal }
+        func free(_ pose: ToolPose) -> Bool {
+            let polygon = outline(pose)
+            return !obstacles.contains { overlaps(polygon, $0) }
+        }
+        if free(goal) { return goal }
+        // Already overlapping (laid down on top of one): free it the short way.
+        guard free(start) else {
+            let push = resolve(outline(goal), against: obstacles)
+            return ToolPose(center: CGPoint(x: goal.center.x + push.dx, y: goal.center.y + push.dy), angle: goal.angle)
+        }
+
+        // As far along the way as it can go.
+        var pose = farthest(from: start, to: goal, free: free)
+
+        // Then slide: what is left of the move, less the part heading into what it touched.
+        let pushes = obstacles.compactMap { separation(outline(goal), from: $0) }
+        let n = pushes.reduce(CGVector.zero) { CGVector(dx: $0.dx + $1.dx, dy: $0.dy + $1.dy) }
+        let nLength = hypot(Double(n.dx), Double(n.dy))
+        var rest = (x: Double(goal.center.x - pose.center.x), y: Double(goal.center.y - pose.center.y))
+        if nLength > 1e-9 {
+            let nx = Double(n.dx) / nLength, ny = Double(n.dy) / nLength
+            let into = rest.x * nx + rest.y * ny
+            if into < 0 { rest = (rest.x - into * nx, rest.y - into * ny) }
+        }
+        let slid = ToolPose(center: CGPoint(x: Double(pose.center.x) + rest.x, y: Double(pose.center.y) + rest.y), angle: pose.angle)
+        pose = farthest(from: pose, to: slid, free: free)
+
+        // And turn as far as it will.
+        pose = farthest(from: pose, to: ToolPose(center: pose.center, angle: goal.angle), free: free)
+        return pose
+    }
+
+    /// The last pose on the way from `start` (free) to `goal` that is still free.
+    private static func farthest(from start: ToolPose, to goal: ToolPose, free: (ToolPose) -> Bool) -> ToolPose {
+        func at(_ t: Double) -> ToolPose {
+            var turn = goal.angle - start.angle
+            turn = atan2(sin(turn), cos(turn))
+            return ToolPose(center: CGPoint(x: Double(start.center.x) + Double(goal.center.x - start.center.x) * t,
+                                            y: Double(start.center.y) + Double(goal.center.y - start.center.y) * t),
+                            angle: start.angle + turn * t)
+        }
+        if free(goal) { return goal }
+        var lo = 0.0, hi = 1.0
+        for _ in 0..<14 {
+            let mid = (lo + hi) / 2
+            if free(at(mid)) { lo = mid } else { hi = mid }
+        }
+        return at(lo)
+    }
+
     private static func project(_ polygon: [CGPoint], _ axis: (x: Double, y: Double)) -> (Double, Double) {
         var lo = Double.infinity, hi = -Double.infinity
         for p in polygon {
