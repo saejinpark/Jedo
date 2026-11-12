@@ -419,7 +419,8 @@ final class CanvasView: UIView {
             toolsChanged()
             return
         }
-        guard !tools.contains(where: { $0.kind == kind }), let pose = screenPose(at: Self.restingSpot(kind)) else { return }
+        guard !tools.contains(where: { $0.kind == kind }), var pose = screenPose(at: Self.restingSpot(kind)) else { return }
+        if kind == .parallelRule { pose = ParallelRule.constrain(pose, boardCentreX: Double(paperRect.midX)) }
         tools.append(DeskTool(kind: kind, pose: pose))
         showTool(tools[tools.count - 1], sheet: sheet)
         raise(kind)
@@ -439,6 +440,7 @@ final class CanvasView: UIView {
     private static func restingSpot(_ kind: ToolKind) -> CGPoint {
         switch kind {
         case .ruler: CGPoint(x: 0.5, y: 0.5)
+        case .parallelRule: CGPoint(x: 0.5, y: 0.62)
         case .setSquare45: CGPoint(x: 0.3, y: 0.38)
         case .setSquare60: CGPoint(x: 0.66, y: 0.38)
         case .circleTemplate: CGPoint(x: 0.5, y: 0.7)
@@ -458,6 +460,7 @@ final class CanvasView: UIView {
         if let view = toolViews[kind] { return view }
         let view: any ToolDisplay = switch kind {
         case .ruler: RulerView()
+        case .parallelRule: ParallelRuleView(kind: kind)
         case .setSquare45, .setSquare60: SetSquareView(kind: kind)
         case .circleTemplate: CircleTemplateView()
         case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate: ShapeTemplateView(kind: kind)
@@ -511,7 +514,7 @@ final class CanvasView: UIView {
         if holders[kind, default: []].isEmpty {
             stacked[kind] = overlapping(kind)
             // Already resting on a pin: one finger swings it about the pin from the start.
-            if ToolContact.collides(kind),
+            if ToolContact.collides(kind), kind != .parallelRule,
                let p = pins.indices.first(where: { PinPivot.contact(toolShapes[i], pin: pins[$0], pixelsPerMillimeter: sheet.pixelsPerMillimeter) != nil }),
                let side = PinPivot.contact(toolShapes[i], pin: pins[p], pixelsPerMillimeter: sheet.pixelsPerMillimeter) {
                 pivots[kind] = (p, side)
@@ -547,8 +550,12 @@ final class CanvasView: UIView {
                 case 1: pose = RigidMotion.slide(pose, from: held[0].point, to: now[0])
                 default: pose = RigidMotion.slideAndTurn(pose, from: (held[0].point, held[1].point), to: (now[0], now[1]))
                 }
+                // The parallel rule only travels up and down the board.
+                if kind == .parallelRule {
+                    pose = ParallelRule.constrain(pose, boardCentreX: Double(paperRect.midX))
+                }
                 // Pushed against a pin with one finger, a straight edge comes to rest on it.
-                if held.count == 1, ToolContact.collides(kind) {
+                if held.count == 1, ToolContact.collides(kind), kind != .parallelRule {
                     let before = toolShapes[i], after = shapeAt(pose)
                     for (p, pin) in pins.enumerated() {
                         guard let side = PinPivot.contact(after, pin: pin, before: before, pixelsPerMillimeter: ppmm) else { continue }
@@ -560,7 +567,7 @@ final class CanvasView: UIView {
                 }
             }
             // Butt against the other tools instead of passing through them.
-            if ToolContact.collides(kind), !onPin {
+            if ToolContact.collides(kind), !onPin, kind != .parallelRule {
                 let moving = ToolContact.polygon(DeskTool(kind: kind, pose: pose).shape(pixelsPerMillimeter: sheet.pixelsPerMillimeter))
                 let free = stacked[kind] ?? []
                 let obstacles = tools.indices

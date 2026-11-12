@@ -10,7 +10,7 @@ enum ToolContact {
     /// stay free: their outlines are not simple convex plates.
     static func collides(_ kind: ToolKind) -> Bool {
         switch kind {
-        case .ruler, .setSquare45, .setSquare60, .protractor,
+        case .ruler, .parallelRule, .setSquare45, .setSquare60, .protractor,
              .circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate: true
         case .frenchCurveA, .frenchCurveB, .frenchCurveC, .hipCurve: false
         }

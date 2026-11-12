@@ -436,3 +436,19 @@ struct PerspectivePinTests {
         #expect(far == nil, "slid off its end")
     }
 }
+
+struct ParallelRuleTests {
+    @Test func theRuleOnlyTravelsUpAndDownLevel() {
+        let dragged = ToolPose(center: CGPoint(x: 1234, y: 800), angle: 0.3)
+        let kept = ParallelRule.constrain(dragged, boardCentreX: 1000)
+        #expect(kept.center.x == 1000 && kept.center.y == 800 && kept.angle == 0)
+    }
+
+    @Test func aSetSquareSlidesAlongTheRulesEdge() {
+        let rule = DeskTool(kind: .parallelRule, pose: ToolPose(center: CGPoint(x: 1000, y: 1000), angle: 0)).shape(pixelsPerMillimeter: ppmm)
+        // A set square pushed down into the rule from above stops on its top edge.
+        let square = DeskTool(kind: .setSquare45, pose: ToolPose(center: CGPoint(x: 900, y: 650), angle: 0)).shape(pixelsPerMillimeter: ppmm)
+        let push = ToolContact.resolve(ToolContact.polygon(square), against: [ToolContact.polygon(rule)])
+        #expect(push.dy < 0 && abs(push.dx) < 1e-6, "pushed straight back up, free to slide sideways")
+    }
+}

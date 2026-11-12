@@ -95,6 +95,7 @@ private struct DeskToolsGroup: View {
 
     var body: some View {
         ControlGroup {
+            tool(.parallelRule)
             tool(.ruler)
             tool(.setSquare45)
             tool(.setSquare60)
@@ -440,6 +441,10 @@ struct ToolGlyph: View {
                 path = Self.fitted(Protractor.outlineMM, in: size)
             case .ruler:
                 break
+            case .parallelRule:
+                path.addRect(CGRect(x: 0.5, y: h * 0.38, width: w - 1, height: h * 0.24))
+                path.addRect(CGRect(x: 0.5, y: h * 0.38, width: 3, height: h * 0.24))
+                path.addRect(CGRect(x: w - 3.5, y: h * 0.38, width: 3, height: h * 0.24))
             }
             context.stroke(path, with: .foreground, style: StrokeStyle(lineWidth: 1.8, lineJoin: .round))
         }
@@ -467,6 +472,7 @@ extension ToolKind {
     var name: String {
         switch self {
         case .ruler: "자"
+        case .parallelRule: "평행자"
         case .setSquare45: "45° 삼각자"
         case .setSquare60: "30°·60° 삼각자"
         case .circleTemplate: "원 형판"

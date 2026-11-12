@@ -442,3 +442,51 @@ final class ShapeTemplateView: OutlineToolView {
                    withAttributes: titleAttributes)
     }
 }
+
+/// The parallel rule: a pale body on cables, its drawing edge a clear strip
+/// along the top, a pulley housing at each end.
+final class ParallelRuleView: OutlineToolView {
+    override var outlineMM: [CGPoint] {
+        let l = ParallelRule.lengthMM / 2, w = ParallelRule.widthMM / 2
+        return [CGPoint(x: -l, y: -w), CGPoint(x: l, y: -w), CGPoint(x: l, y: w), CGPoint(x: -l, y: w)]
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let ctx = UIGraphicsGetCurrentContext() else { return }
+        let l = ParallelRule.lengthMM / 2, w = ParallelRule.widthMM / 2
+        let body = bodyPath()
+        UIColor(red: 0.86, green: 0.86, blue: 0.84, alpha: 0.62).setFill()
+        body.fill()
+        // The clear drawing edges, top and bottom.
+        for (top, bottom) in [(-w, -w + 9), (w - 6, w)] {
+            let strip = UIBezierPath(rect: CGRect(origin: pt(CGPoint(x: -l, y: top)),
+                                                  size: CGSize(width: 2 * l * pointsPerMM, height: (bottom - top) * pointsPerMM)))
+            UIColor(red: 0.80, green: 0.80, blue: 0.79, alpha: 0.22).setFill()
+            ctx.setBlendMode(.copy)
+            strip.fill()
+            ctx.setBlendMode(.normal)
+        }
+        // Pulley housings.
+        for x in [-l, l - 28] {
+            let cap = UIBezierPath(roundedRect: CGRect(origin: pt(CGPoint(x: x, y: -w + 9)),
+                                                       size: CGSize(width: 28 * pointsPerMM, height: (2 * w - 15) * pointsPerMM)),
+                                   cornerRadius: 2 * pointsPerMM)
+            UIColor(white: 0.42, alpha: 0.55).setFill()
+            cap.fill()
+        }
+        // The cable, along the body.
+        ctx.setStrokeColor(UIColor(white: 0.30, alpha: 0.35).cgColor)
+        ctx.setLineWidth(0.6)
+        ctx.move(to: pt(CGPoint(x: -l + 28, y: 2)))
+        ctx.addLine(to: pt(CGPoint(x: l - 28, y: 2)))
+        ctx.strokePath()
+        Self.rim.setStroke()
+        body.lineWidth = 0.6
+        body.stroke()
+        // The edges you draw along, a touch darker.
+        ctx.setStrokeColor(Self.ink.withAlphaComponent(0.5).cgColor)
+        ctx.setLineWidth(0.8)
+        ctx.move(to: pt(CGPoint(x: -l, y: -w))); ctx.addLine(to: pt(CGPoint(x: l, y: -w)))
+        ctx.strokePath()
+    }
+}

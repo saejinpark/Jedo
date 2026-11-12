@@ -3,9 +3,9 @@ import Testing
 
 struct PencilGradeTests {
     @Test func offersSevenGradesFromHBTo6B() {
-        #expect(PencilGrade.allCases.map(\.label) == ["HB", "B", "2B", "3B", "4B", "5B", "6B"])
+        #expect(PencilGrade.allCases.map(\.label) == ["4H", "2H", "H", "F", "HB", "B", "2B", "3B", "4B", "5B", "6B"])
         #expect(PencilGrade.allCases.sorted() == PencilGrade.allCases)
-        #expect(PencilGrade.hb.softness == 0)
+        #expect(PencilGrade.h4.softness == 0)
         #expect(PencilGrade.b6.softness == 1)
     }
 

@@ -9,6 +9,9 @@ enum ToolKind: String, CaseIterable, Hashable, Sendable {
     static let frenchCurves: [ToolKind] = [.frenchCurveA, .frenchCurveB, .frenchCurveC]
 
     case ruler
+    /// The parallel rule: a long straightedge strung across the board on
+    /// cables, so it only travels up and down, always level.
+    case parallelRule
     /// 45° set square.
     case setSquare45
     /// 30°/60° set square.
@@ -32,6 +35,11 @@ struct DeskTool: Equatable, Sendable {
         switch kind {
         case .ruler:
             return Ruler(pose: pose, pixelsPerMillimeter: ppmm).shape
+        case .parallelRule:
+            let l = ParallelRule.lengthMM / 2 * ppmm, w = ParallelRule.widthMM / 2 * ppmm
+            return ToolShape(pose: pose,
+                             outline: [CGPoint(x: -l, y: -w), CGPoint(x: l, y: -w), CGPoint(x: l, y: w), CGPoint(x: -l, y: w)],
+                             guidingSides: [true, false, true, false])
         case .setSquare45, .setSquare60:
             return ToolShape(pose: pose, outline: SetSquare.cornersMM(kind).map { $0.scaled(ppmm) })
         case .circleTemplate:
@@ -140,4 +148,18 @@ enum Protractor {
 
 extension CGPoint {
     func scaled(_ factor: Double) -> CGPoint { CGPoint(x: Double(x) * factor, y: Double(y) * factor) }
+}
+
+/// The parallel rule (평행자) across the drafting board. Strung on cables
+/// from the board's edges, it slides up and down and never turns, so every
+/// line along it is parallel to the last; set squares ride on its edge.
+enum ParallelRule {
+    /// Long enough to cross an A1 sheet lying sideways.
+    static let lengthMM = 900.0
+    static let widthMM = 40.0
+
+    /// Where the rule can be: level, centred across the board, at any height.
+    static func constrain(_ pose: ToolPose, boardCentreX: Double) -> ToolPose {
+        ToolPose(center: CGPoint(x: boardCentreX, y: Double(pose.center.y)), angle: 0)
+    }
 }

@@ -1,13 +1,20 @@
 import Foundation
 
-/// The seven leads the app offers. Hardest first, so `rawValue` grows with softness.
+/// The leads the app offers, as a drafting desk keeps them: hard leads
+/// (4H–F) for light construction lines that are left on the sheet, HB and
+/// F for finished lines, soft leads for rendering. Hardest first, so
+/// `rawValue` grows with softness.
 enum PencilGrade: Int, CaseIterable, Identifiable, Comparable, Sendable {
-    case hb, b, b2, b3, b4, b5, b6
+    case h4, h2, h, f, hb, b, b2, b3, b4, b5, b6
 
     var id: Int { rawValue }
 
     var label: String {
         switch self {
+        case .h4: "4H"
+        case .h2: "2H"
+        case .h: "H"
+        case .f: "F"
         case .hb: "HB"
         case .b: "B"
         case .b2: "2B"
@@ -18,7 +25,7 @@ enum PencilGrade: Int, CaseIterable, Identifiable, Comparable, Sendable {
         }
     }
 
-    /// 0 for HB, 1 for 6B.
+    /// 0 for 4H, 1 for 6B.
     var softness: Double { Double(rawValue) / Double(Self.allCases.count - 1) }
 
     var parameters: GradeParameters { GradeParameters.table[rawValue] }
@@ -47,6 +54,12 @@ struct GradeParameters: Equatable, Sendable {
 
     static let table: [GradeParameters] = [
         //                lineWidthMM  passOpacity  maxDensity  grainThreshold  edgeSoftness
+        // Hard leads hold a fine point and ride the tooth: thin, grey lines that
+        // stop well short of black however hard they are pressed.
+        GradeParameters(lineWidthMM: 0.18, passOpacity: 0.17, maxDensity: 0.34, grainThreshold: 0.36, edgeSoftness: 0.24), // 4H
+        GradeParameters(lineWidthMM: 0.21, passOpacity: 0.23, maxDensity: 0.45, grainThreshold: 0.33, edgeSoftness: 0.26), // 2H
+        GradeParameters(lineWidthMM: 0.24, passOpacity: 0.29, maxDensity: 0.55, grainThreshold: 0.30, edgeSoftness: 0.27), // H
+        GradeParameters(lineWidthMM: 0.27, passOpacity: 0.35, maxDensity: 0.63, grainThreshold: 0.28, edgeSoftness: 0.28), // F
         GradeParameters(lineWidthMM: 0.30, passOpacity: 0.40, maxDensity: 0.70, grainThreshold: 0.26, edgeSoftness: 0.30), // HB
         GradeParameters(lineWidthMM: 0.34, passOpacity: 0.47, maxDensity: 0.76, grainThreshold: 0.23, edgeSoftness: 0.32), // B
         GradeParameters(lineWidthMM: 0.38, passOpacity: 0.54, maxDensity: 0.82, grainThreshold: 0.20, edgeSoftness: 0.34), // 2B
