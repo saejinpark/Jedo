@@ -101,6 +101,8 @@ final class CanvasView: UIView {
     var onLeadChange: ((PencilGrade, Double) -> Void)?
     /// The stroke in progress, pencil and line, for the stroke log.
     private var recorder: StrokeRecorder?
+    /// The pencil's own samples for what `lay` is about to draw, for the log.
+    private var pendingRaw: [StrokeSample]?
     private var recordStarted: (date: Date, time: CFTimeInterval) = (.now, 0)
     /// Strokes, rubs, cuts and peels, newest last.
     private var undoStack: [UndoStep] = []
@@ -1134,6 +1136,8 @@ final class CanvasView: UIView {
         }
         var samples = samples, predicted = predicted
         if !markingErases { wear(&samples, predicted: &predicted) }
+        if let raw = pendingRaw, raw.count == samples.count { recorder?.add(pencil: raw, line: samples) }
+        pendingRaw = nil
         // A sheet held while drawing moves its edge under the pencil.
         let masks = layerHolders.isEmpty ? nil : Dictionary(layerStack().targets(erasing: markingErases).map { ($0.surface, $0.mask) },
                                                             uniquingKeysWith: { a, _ in a })
@@ -1371,7 +1375,7 @@ final class CanvasView: UIView {
         if var guide {
             final = guide.guide(released, tools: toolShapes)
             self.guide = guide
-            recorder?.add(pencil: released, line: final)
+            pendingRaw = released
             var lookahead = guide
             ahead = lookahead.guide(ahead, tools: toolShapes)
             if let angle = lookahead.arc?.angle, var compass {

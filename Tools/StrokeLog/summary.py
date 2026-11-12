@@ -20,11 +20,13 @@ def length(r):
     return sum(math.dist(a, b) for a, b in zip(p, p[1:]))
 
 print(f"{len(rows)} strokes, showing the last {min(last, len(rows))}")
-print(f"{'#':>3} {'guide':6} {'grade':5} {'mm':>6} {'s':>5} {'pull max':>8} {'mean':>6} {'moved':>6}  tools")
+print(f"{'#':>3} {'guide':6} {'grade':5} {'mm':>6} {'s':>5} {'pull max':>8} {'mean':>6} {'moved':>6} {'blunt':>9}  tools")
 for i, r in enumerate(rows[-last:], start=max(len(rows) - last, 0) + 1):
     mx, mean, share = pull(r)
     flag = "  <- pulled" if mx > 1.0 else ""
-    print(f"{i:>3} {r['guide']:6} {r['grade']:5} {length(r):6.1f} {r['seconds']:5.2f} {mx:8.2f} {mean:6.2f} {share:6.0%}  {','.join(r['tools'])}{flag}")
+    b = r.get("bluntness") or []
+    blunt = f"{b[0]:.2f}>{b[-1]:.2f}" if b else "-"
+    print(f"{i:>3} {r['guide']:6} {r['grade']:5} {length(r):6.1f} {r['seconds']:5.2f} {mx:8.2f} {mean:6.2f} {share:6.0%} {blunt:>9}  {','.join(r['tools'])}{flag}")
 edge = [r for r in rows if r["guide"] == "edge" and r["tools"]]
 if edge:
     pulls = sorted(pull(r)[0] for r in edge)

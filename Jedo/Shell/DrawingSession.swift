@@ -103,6 +103,8 @@ final class DrawingSession {
         case knife
         /// The pencil's point has gone blunt.
         case blunt
+        /// A pencil was just sharpened.
+        case sharpened
 
         var text: String {
             switch self {
@@ -111,6 +113,7 @@ final class DrawingSession {
             case .eraser: "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
             case .knife: "펜슬로 그으면 톤에 칼선이 납니다. 잘린 조각을 손가락으로 톡 치면 떼어집니다."
             case .blunt: "심이 뭉툭해졌습니다. 펜슬을 두 번 톡 쳐서 돌려 잡거나, 고른 연필을 한 번 더 눌러 깎으세요."
+            case .sharpened: "연필을 깎았습니다."
             }
         }
 
@@ -121,6 +124,7 @@ final class DrawingSession {
             case .eraser: "eraser"
             case .knife: "scissors"
             case .blunt: "pencil.tip"
+            case .sharpened: "pencil.tip"
             }
         }
     }
@@ -235,7 +239,21 @@ final class DrawingSession {
     }
 
     /// Sharpens a pencil back to a fine point.
-    func sharpen(_ grade: PencilGrade) { canvas?.sharpen(grade) }
+    func sharpen(_ grade: PencilGrade) {
+        canvas?.sharpen(grade)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        sharpened = grade
+        hintTask?.cancel()
+        hint = .sharpened
+        hintTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            self?.hint = nil
+        }
+    }
+
+    /// The pencil last sharpened, for the hint.
+    @ObservationIgnored private(set) var sharpened: PencilGrade = .hb
 
     private func show(_ hint: Hint) {
         guard self.hint == nil, hintsShown[hint, default: 0] < Self.maxHintsPerLaunch else { return }

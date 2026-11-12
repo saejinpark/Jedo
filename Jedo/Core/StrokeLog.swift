@@ -16,6 +16,8 @@ struct StrokeRecord: Codable, Equatable, Sendable {
     var pencil: [[Double]]
     var line: [[Double]]
     var pressure: [Double]
+    /// How blunt the point was, every sample (0 sharp ... 1 flat). Missing in older logs.
+    var bluntness: [Double]? = nil
 
     /// How far the line was moved off the pencil, in millimetres.
     var pull: (max: Double, mean: Double, movedShare: Double) {
@@ -37,6 +39,7 @@ struct StrokeRecorder: Sendable {
     private(set) var pencil: [[Double]] = []
     private(set) var line: [[Double]] = []
     private(set) var pressure: [Double] = []
+    private(set) var bluntness: [Double] = []
 
     init(pixelsPerMillimeter: Double) {
         self.pixelsPerMillimeter = pixelsPerMillimeter
@@ -47,6 +50,7 @@ struct StrokeRecorder: Sendable {
             pencil.append([Double(r.location.x) / pixelsPerMillimeter, Double(r.location.y) / pixelsPerMillimeter])
             line.append([Double(d.location.x) / pixelsPerMillimeter, Double(d.location.y) / pixelsPerMillimeter])
             pressure.append(r.pressure)
+            bluntness.append(d.bluntness)
         }
     }
 
@@ -54,6 +58,7 @@ struct StrokeRecorder: Sendable {
         // Two decimals is a hundredth of a millimetre: plenty.
         let round = { (v: [[Double]]) in v.map { $0.map { ($0 * 100).rounded() / 100 } } }
         return StrokeRecord(guide: guide, grade: grade, tools: tools, startedAt: startedAt, seconds: seconds,
-                            pencil: round(pencil), line: round(line), pressure: pressure.map { ($0 * 100).rounded() / 100 })
+                            pencil: round(pencil), line: round(line), pressure: pressure.map { ($0 * 100).rounded() / 100 },
+                            bluntness: bluntness.map { ($0 * 100).rounded() / 100 })
     }
 }

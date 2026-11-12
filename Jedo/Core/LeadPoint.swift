@@ -17,21 +17,23 @@ struct LeadPoint: Equatable, Sendable {
     /// How far the pencil is turned in the hand, in sixths, for pencils that can't sense it.
     private(set) var turned = 0
 
-    /// Millimetres of line at medium pressure that wear one side flat.
-    /// Hard leads hold a point far longer than soft ones.
+    /// Millimetres of line at medium pressure that wear one side about
+    /// halfway: the line has visibly thickened. Hard leads hold a point
+    /// far longer than soft ones. (A first draft wore out three times faster
+    /// and went flat within one long stroke, so no change could be seen.)
     static func lifeMM(_ grade: PencilGrade) -> Double {
         switch grade {
-        case .h4: 1500
-        case .h2: 1100
-        case .h: 850
-        case .f: 650
-        case .hb: 500
-        case .b: 400
-        case .b2: 320
-        case .b3: 260
-        case .b4: 210
-        case .b5: 170
-        case .b6: 140
+        case .h4: 4500
+        case .h2: 3300
+        case .h: 2500
+        case .f: 1900
+        case .hb: 1500
+        case .b: 1200
+        case .b2: 950
+        case .b3: 780
+        case .b4: 630
+        case .b5: 510
+        case .b6: 420
         }
     }
 
@@ -63,7 +65,7 @@ struct LeadPoint: Equatable, Sendable {
         for (offset, share) in [(0, 0.7), (1, 0.15), (n - 1, 0.15)] {
             let i = (c + offset) % n
             // Each side wears more slowly as it flattens: there is more of it to wear.
-            wear[i] = min(wear[i] + amount * share * (1 - 0.5 * wear[i]), 1)
+            wear[i] = min(wear[i] + amount * share * (1 - 0.8 * wear[i]), 1)
         }
     }
 

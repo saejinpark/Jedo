@@ -25,10 +25,8 @@ struct PencilGrades: View {
                             .frame(width: 12, height: 12)
                         Text(grade.label)
                             .font(.system(size: 13, weight: selected ? .bold : .medium, design: .rounded))
-                        // The point: a hairline when sharp, thickening as it wears.
-                        Capsule()
-                            .frame(width: 16, height: 0.8 + 3.2 * (wear[grade] ?? 0))
-                            .opacity(0.35 + 0.5 * (wear[grade] ?? 0))
+                        LeadTip(wear: wear[grade] ?? 0)
+                            .frame(width: 18, height: 5)
                     }
                     .frame(width: 38, height: Metric.cell)
                     .foregroundStyle(selected ? Color.white : Palette.ink.opacity(0.8))
@@ -42,6 +40,21 @@ struct PencilGrades: View {
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
+    }
+}
+
+/// The line the pencil draws now: a hairline when freshly sharpened,
+/// widening as the point wears, drawn to the same proportion as on paper.
+struct LeadTip: View {
+    var wear: Double
+
+    var body: some View {
+        let w = min(max(wear, 0), 1)
+        Capsule()
+            .frame(height: 1 + PencilDynamics.bluntWidening * 1.3 * w)
+            .frame(maxHeight: .infinity)
+            .opacity(0.5 + 0.4 * w)
+            .accessibilityHidden(true)
     }
 }
 

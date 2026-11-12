@@ -50,9 +50,9 @@ struct PencilDynamics: Sendable {
     /// Pressing harder squashes the point a little wider.
     static let pressureWidening = 0.5
     /// A lead worn flat lays a line this much wider than a sharp one…
-    static let bluntWidening = 1.4
+    static let bluntWidening = 2.2
     /// …and spreads the same graphite thinner.
-    static let bluntOpacityDrop = 0.2
+    static let bluntOpacityDrop = 0.25
     /// Never thinner than this, so the lightest touch still shows.
     static let minimumRadiusPixels = 0.6
 

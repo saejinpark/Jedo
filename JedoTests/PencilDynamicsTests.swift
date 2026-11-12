@@ -96,32 +96,45 @@ struct LeadPointTests {
     @Test func drawingWearsThePointAndSharpeningRestoresIt() {
         var lead = LeadPoint()
         #expect(lead.bluntness() == 0)
-        lead.draw(250, pressure: 0.5, grade: .hb)
-        #expect(lead.bluntness() > 0.2, "a quarter-metre of HB line already widens it by a third")
+        // A few A3-wide lines of HB, without turning the pencil.
+        for _ in 0..<5 { lead.draw(300, pressure: 0.5, grade: .hb) }
+        #expect(lead.bluntness() > 0.3, "the line has visibly thickened (about 1.9x)")
+        #expect(lead.bluntness() < 0.9, "but is not yet worn flat")
         lead.sharpen()
         #expect(lead.bluntness() == 0)
     }
 
     @Test func softLeadsWearFasterThanHardOnes() {
         var soft = LeadPoint(), hard = LeadPoint()
-        soft.draw(200, pressure: 0.5, grade: .b4)
-        hard.draw(200, pressure: 0.5, grade: .h2)
+        soft.draw(600, pressure: 0.5, grade: .b4)
+        hard.draw(600, pressure: 0.5, grade: .h2)
         #expect(soft.bluntness() > hard.bluntness() * 3)
     }
 
     @Test func turningThePencilKeepsTheLineFine() {
         var still = LeadPoint(), turning = LeadPoint()
         for _ in 0..<12 {
-            still.draw(50, pressure: 0.5, grade: .hb)
-            turning.draw(50, pressure: 0.5, grade: .hb)
+            still.draw(150, pressure: 0.5, grade: .hb)
+            turning.draw(150, pressure: 0.5, grade: .hb)
             turning.turn()
         }
         #expect(turning.bluntness() < still.bluntness() * 0.5, "the wear spread round the cone")
     }
 
+    @Test func oneLongShadingStrokeDoesNotWearItFlat() {
+        // What happened on the iPad: a 1.5 m scribble of 4B.
+        var lead = LeadPoint()
+        for _ in 0..<150 { lead.draw(10, pressure: 0.6, grade: .b4) }
+        #expect(lead.bluntness() < 0.95)
+        // And the change along the way is gradual, not all at the start.
+        var early = LeadPoint()
+        for _ in 0..<10 { early.draw(10, pressure: 0.6, grade: .b4) }
+        #expect(early.bluntness() < 0.25)
+    }
+
     @Test func barrelRollPicksTheSide() {
         var lead = LeadPoint()
-        lead.draw(300, pressure: 0.5, grade: .hb, roll: 0.1)
+        lead.draw(1200, pressure: 0.5, grade: .hb, roll: 0.1)
         #expect(lead.bluntness(roll: 0.1) > 0.25)
         #expect(lead.bluntness(roll: .pi) < 0.01, "the far side is still sharp")
         #expect(lead.side(roll: -0.1) == LeadPoint.sides - 1)
@@ -131,7 +144,7 @@ struct LeadPointTests {
         let dynamics = PencilDynamics(grade: .hb, pixelsPerMillimeter: 10)
         let sharp = dynamics.shape(for: StrokeSample(location: .zero))
         let blunt = dynamics.shape(for: StrokeSample(location: .zero, bluntness: 1))
-        #expect(blunt.radiusAcross > sharp.radiusAcross * 2)
+        #expect(blunt.radiusAcross > sharp.radiusAcross * 3)
         #expect(blunt.opacity < sharp.opacity)
     }
 }
