@@ -72,6 +72,17 @@ struct Ruler: Equatable, Sendable {
 
     /// The side of the ruler's centre line that `v` is on.
     static func side(ofV v: Double) -> Edge { v < 0 ? .upper : .lower }
+
+    /// The ruler as a solid body. Its long sides guide the pencil; its ends don't.
+    var shape: ToolShape {
+        let l = length / 2, w = width / 2
+        return ToolShape(pose: pose,
+                         outline: [CGPoint(x: -l, y: -w), CGPoint(x: l, y: -w), CGPoint(x: l, y: w), CGPoint(x: -l, y: w)],
+                         guidingSides: [true, false, true, false])
+    }
+
+    /// The edge of the shape that is `edge` of the ruler.
+    static func shapeEdge(_ edge: Edge) -> ToolShape.Edge { edge == .upper ? .side(0) : .side(2) }
 }
 
 /// How fingers move a rigid object: no stretching, only sliding and turning.

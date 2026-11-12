@@ -6,9 +6,18 @@ import SwiftUI
 @Observable
 final class DrawingSession {
     var grade: PencilGrade = .hb
-    /// Whether the ruler is lying on the paper.
-    var rulerOnDesk = false {
-        didSet { canvas?.setRuler(onDesk: rulerOnDesk) }
+    /// Tools lying on the paper.
+    private(set) var toolsOnDesk: Set<ToolKind> = []
+    /// Whether the hand holds the eraser.
+    var eraserInHand = false {
+        didSet {
+            canvas?.eraserInHand = eraserInHand
+            if eraserInHand { show(.eraser(eraserHand)) }
+        }
+    }
+    /// Which hand rubs with the eraser: a draft being tried.
+    var eraserHand: EraserHand = .finger {
+        didSet { canvas?.eraserHand = eraserHand }
     }
     /// Whether the compass is out, so a finger held still plants its needle.
     var compassOnDesk = false {
@@ -26,16 +35,20 @@ final class DrawingSession {
     /// A short line of help, shown for a moment.
     private(set) var hint: Hint?
 
-    enum Hint: Equatable {
+    enum Hint: Hashable {
         /// A finger tried to draw.
         case pencil
         /// The compass just came out.
         case compass
+        /// The eraser was picked up.
+        case eraser(EraserHand)
 
         var text: String {
             switch self {
             case .pencil: "선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡고 컴퍼스 바늘을 꽂습니다."
             case .compass: "손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다."
+            case .eraser(.finger): "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
+            case .eraser(.pencil): "펜슬로 문지르면 지워집니다. 다시 그으려면 지우개를 내려놓으세요."
             }
         }
 
@@ -43,6 +56,7 @@ final class DrawingSession {
             switch self {
             case .pencil: "applepencil.tip"
             case .compass: "compass.drawing"
+            case .eraser: "eraser"
             }
         }
     }
@@ -52,6 +66,22 @@ final class DrawingSession {
     @ObservationIgnored private var hintsShown: [Hint: Int] = [:]
     /// Enough to learn the rule without nagging.
     static let maxHintsPerLaunch = 3
+
+    func toggle(_ kind: ToolKind) {
+        let onDesk = !toolsOnDesk.contains(kind)
+        if onDesk { toolsOnDesk.insert(kind) } else { toolsOnDesk.remove(kind) }
+        canvas?.setTool(kind, onDesk: onDesk)
+    }
+
+    /// Apple Pencil's own tap switches to the eraser and back, if the pencil is
+    /// what rubs and the person set the tap to do that.
+    func pencilTapped() {
+        guard eraserHand == .pencil else { return }
+        switch UIPencilInteraction.preferredTapAction {
+        case .switchEraser, .switchPrevious: eraserInHand.toggle()
+        default: break
+        }
+    }
 
     func undo() { canvas?.undo() }
     func redo() { canvas?.redo() }

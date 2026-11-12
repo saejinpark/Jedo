@@ -17,15 +17,15 @@ struct ContentView: View {
                 HStack(alignment: .bottom) {
                     PencilTray(selection: $session.grade)
                     Spacer(minLength: 0)
-                    HistoryControls(session: session)
+                    ToolControls(session: session)
                 }
             }
             .padding(20)
             .animation(.spring(duration: 0.35), value: session.hint)
 
             #if DEBUG
-            if session.compassOnDesk {
-                CompassDraftPicker(session: session)
+            if session.compassOnDesk || session.eraserInHand {
+                DraftPicker(session: session)
                     .padding(20)
                     .padding(.top, 60) // below the hint
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -39,26 +39,33 @@ struct ContentView: View {
     }
 }
 
-/// The ruler and the compass, then undo and redo (also on ⌘Z and ⇧⌘Z).
-private struct HistoryControls: View {
+/// The tools, then undo and redo (also on ⌘Z and ⇧⌘Z).
+private struct ToolControls: View {
     @Bindable var session: DrawingSession
 
     var body: some View {
-        HStack(spacing: 10) {
-            RoundToolButton(symbol: "ruler", label: session.rulerOnDesk ? "자 치우기" : "자 꺼내기",
-                            enabled: true, selected: session.rulerOnDesk) {
-                session.rulerOnDesk.toggle()
+        HStack(spacing: 8) {
+            ForEach(ToolKind.allCases, id: \.self) { kind in
+                let onDesk = session.toolsOnDesk.contains(kind)
+                RoundToolButton(icon: ToolIcon(kind), label: onDesk ? "\(kind.name) 치우기" : "\(kind.name) 꺼내기",
+                                enabled: true, selected: onDesk) {
+                    session.toggle(kind)
+                }
             }
-            RoundToolButton(symbol: "compass.drawing", label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
+            RoundToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
                             enabled: true, selected: session.compassOnDesk) {
                 session.compassOnDesk.toggle()
             }
+            RoundToolButton(icon: .symbol("eraser"), label: session.eraserInHand ? "지우개 내려놓기" : "지우개 들기",
+                            enabled: true, selected: session.eraserInHand) {
+                session.eraserInHand.toggle()
+            }
             .padding(.trailing, 8)
-            RoundToolButton(symbol: "arrow.uturn.backward", label: "실행 취소", enabled: session.canUndo) {
+            RoundToolButton(icon: .symbol("arrow.uturn.backward"), label: "실행 취소", enabled: session.canUndo) {
                 session.undo()
             }
             .keyboardShortcut("z", modifiers: .command)
-            RoundToolButton(symbol: "arrow.uturn.forward", label: "다시 실행", enabled: session.canRedo) {
+            RoundToolButton(icon: .symbol("arrow.uturn.forward"), label: "다시 실행", enabled: session.canRedo) {
                 session.redo()
             }
             .keyboardShortcut("z", modifiers: [.command, .shift])
@@ -66,8 +73,18 @@ private struct HistoryControls: View {
     }
 }
 
+/// What a round tool button shows.
+private enum ToolIcon {
+    case symbol(String)
+    case shape(ToolKind)
+
+    init(_ kind: ToolKind) {
+        self = kind == .ruler ? .symbol("ruler") : .shape(kind)
+    }
+}
+
 private struct RoundToolButton: View {
-    let symbol: String
+    let icon: ToolIcon
     let label: String
     let enabled: Bool
     var selected = false
@@ -75,10 +92,16 @@ private struct RoundToolButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 19, weight: .semibold))
-                .frame(width: 52, height: 52)
-                .contentShape(Circle())
+            Group {
+                switch icon {
+                case .symbol(let name):
+                    Image(systemName: name).font(.system(size: 18, weight: .semibold))
+                case .shape(let kind):
+                    ToolGlyph(kind: kind).frame(width: 24, height: 24)
+                }
+            }
+            .frame(width: 48, height: 48)
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(selected ? Color.white : Palette.ink.opacity(enabled ? 0.85 : 0.25))
@@ -88,6 +111,49 @@ private struct RoundToolButton: View {
         .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
         .disabled(!enabled)
         .accessibilityLabel(label)
+    }
+}
+
+/// Small line drawings of the tools that have no system symbol.
+private struct ToolGlyph: View {
+    let kind: ToolKind
+
+    var body: some View {
+        Canvas { context, size in
+            let w = size.width, h = size.height
+            var path = Path()
+            switch kind {
+            case .setSquare45:
+                path.move(to: CGPoint(x: 2, y: h - 2))
+                path.addLine(to: CGPoint(x: w - 2, y: h - 2))
+                path.addLine(to: CGPoint(x: 2, y: 2))
+                path.closeSubpath()
+            case .setSquare60:
+                path.move(to: CGPoint(x: 1, y: h - 4))
+                path.addLine(to: CGPoint(x: w - 1, y: h - 4))
+                path.addLine(to: CGPoint(x: 1, y: h - 4 - (w - 2) / 3.0.squareRoot()))
+                path.closeSubpath()
+            case .circleTemplate:
+                path.addRoundedRect(in: CGRect(x: 1, y: 5, width: w - 2, height: h - 10), cornerSize: CGSize(width: 2, height: 2))
+                path.addEllipse(in: CGRect(x: 4, y: 9, width: 4, height: 4))
+                path.addEllipse(in: CGRect(x: 10, y: 8.5, width: 5, height: 5))
+                path.addEllipse(in: CGRect(x: 16.5, y: 8, width: 6, height: 6).insetBy(dx: 0.5, dy: 0.5))
+            case .ruler:
+                break
+            }
+            context.stroke(path, with: .foreground, style: StrokeStyle(lineWidth: 1.8, lineJoin: .round))
+        }
+    }
+}
+
+extension ToolKind {
+    var name: String {
+        switch self {
+        case .ruler: "자"
+        case .setSquare45: "45° 삼각자"
+        case .setSquare60: "30°·60° 삼각자"
+        case .circleTemplate: "원형자"
+        }
     }
 }
 
@@ -106,12 +172,13 @@ private struct HintBubble: View {
 }
 
 #if DEBUG
-/// Compares compass handling drafts on the iPad. Goes once one is chosen.
-private struct CompassDraftPicker: View {
+/// Compares hand-feel drafts on the iPad. Each row goes once its draft is chosen.
+private struct DraftPicker: View {
     @Bindable var session: DrawingSession
 
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
+            if session.compassOnDesk {
             GridRow {
                 Text("컴퍼스 시안").font(.caption.weight(.semibold)).gridCellColumns(2)
             }
@@ -130,6 +197,20 @@ private struct CompassDraftPicker: View {
                     Text("꽂아 둠").tag(CompassStyle.Needle.planted)
                 }
                 .pickerStyle(.segmented)
+            }
+            }
+            if session.eraserInHand {
+                GridRow {
+                    Text("지우개 시안").font(.caption.weight(.semibold)).gridCellColumns(2)
+                }
+                GridRow {
+                    Text("손").font(.caption)
+                    Picker("손", selection: $session.eraserHand) {
+                        Text("손가락으로 문지름").tag(EraserHand.finger)
+                        Text("펜슬이 지우개").tag(EraserHand.pencil)
+                    }
+                    .pickerStyle(.segmented)
+                }
             }
         }
         .foregroundStyle(Palette.ink)

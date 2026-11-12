@@ -175,7 +175,7 @@ struct EdgeGuideTests {
         var lookahead = g
         _ = lookahead.guide(StrokeSample(location: CGPoint(x: 700, y: 500)), ruler: ruler)
         #expect(lookahead.attached == nil)
-        #expect(g.attached == .upper)
+        #expect(g.attached?.edge == Ruler.shapeEdge(.upper))
     }
 
     @Test func followsATurnedRuler() {

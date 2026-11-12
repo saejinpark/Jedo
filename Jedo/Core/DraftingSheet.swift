@@ -21,14 +21,24 @@ final class DraftingSheet {
         }
     }
 
+    /// What the hand is moving over the paper.
+    private enum Lead {
+        case pencil(PencilDynamics)
+        case eraser(EraserDynamics)
+    }
+
     private struct ActiveStroke {
-        var dynamics: PencilDynamics
+        var lead: Lead
         var spacer = DabSpacer()
         var buffer: GraphiteRaster
         var seed: UInt32
         var maxDensity: Float
         /// Tiles as they were before the stroke, kept once an earlier pass has been laid down.
         var before: [TileCoord: [Float]?] = [:]
+
+        var erases: Bool {
+            if case .eraser = lead { true } else { false }
+        }
     }
 
     let width: Int
@@ -72,10 +82,23 @@ final class DraftingSheet {
         if stroke != nil { cancelStroke() }
         strokeCounter &+= 1
         stroke = ActiveStroke(
-            dynamics: PencilDynamics(grade: grade, pixelsPerMillimeter: pixelsPerMillimeter, style: grainStyle),
+            lead: .pencil(PencilDynamics(grade: grade, pixelsPerMillimeter: pixelsPerMillimeter, style: grainStyle)),
             buffer: GraphiteRaster(width: width, height: height),
             seed: strokeCounter &* 0x9E37_79B9,
             maxDensity: Float(grade.parameters.maxDensity)
+        )
+    }
+
+    /// Starts rubbing with the eraser. Samples arrive through `extendStroke`;
+    /// each pass lifts a share of the graphite under it.
+    func beginErasing() {
+        if stroke != nil { cancelStroke() }
+        strokeCounter &+= 1
+        stroke = ActiveStroke(
+            lead: .eraser(EraserDynamics(pixelsPerMillimeter: pixelsPerMillimeter)),
+            buffer: GraphiteRaster(width: width, height: height),
+            seed: strokeCounter &* 0x9E37_79B9,
+            maxDensity: 1
         )
     }
 
@@ -89,26 +112,33 @@ final class DraftingSheet {
     /// replacing whatever was predicted last time.
     func extendStroke(with samples: [StrokeSample], predicted: [StrokeSample]) {
         guard var active = stroke else { return }
-        let dynamics = active.dynamics
         for sample in samples {
             if sample.beginsPass { layPass(&active) }
-            for dab in active.spacer.append(sample, spacing: { dynamics.spacing(for: dynamics.shape(for: $0)) }) {
-                let rect = DabRasterizer.stamp(center: dab.location, shape: dynamics.shape(for: dab),
-                                               into: &active.buffer, paper: paper, seed: active.seed)
-                markDirty(rect)
-            }
+            stamp(sample, spacer: &active.spacer, lead: active.lead, into: &active.buffer, seed: active.seed)
         }
 
         clearPrediction()
         var lookahead = active.spacer
         for sample in predicted {
-            for dab in lookahead.append(sample, spacing: { dynamics.spacing(for: dynamics.shape(for: $0)) }) {
-                let rect = DabRasterizer.stamp(center: dab.location, shape: dynamics.shape(for: dab),
-                                               into: &prediction, paper: paper, seed: active.seed)
-                markDirty(rect)
-            }
+            stamp(sample, spacer: &lookahead, lead: active.lead, into: &prediction, seed: active.seed)
         }
         stroke = active
+    }
+
+    private func stamp(_ sample: StrokeSample, spacer: inout DabSpacer, lead: Lead,
+                       into raster: inout GraphiteRaster, seed: UInt32) {
+        switch lead {
+        case .pencil(let dynamics):
+            for dab in spacer.append(sample, spacing: { dynamics.spacing(for: dynamics.shape(for: $0)) }) {
+                markDirty(DabRasterizer.stamp(center: dab.location, shape: dynamics.shape(for: dab),
+                                              into: &raster, paper: paper, seed: seed))
+            }
+        case .eraser(let eraser):
+            for dab in spacer.append(sample, spacing: { _ in eraser.spacing }) {
+                markDirty(EraserRasterizer.stamp(center: dab.location, radius: eraser.radius,
+                                                 strength: eraser.strength(for: dab), into: &raster, paper: paper))
+            }
+        }
     }
 
     /// Lays the stroke onto the sheet as one undoable step, every pass of it.
@@ -147,10 +177,12 @@ final class DraftingSheet {
                 active.before[coord] = .some(graphite.tile(coord))
             }
             let maxDensity = active.maxDensity
+            let erases = active.erases
             graphite.withMutableTile(coord) { base in
                 strokeTile.withUnsafeBufferPointer { s in
                     for i in 0..<GraphiteRaster.tileArea where s[i] > 0 {
-                        base[i] = GraphiteMath.composite(base: base[i], stroke: s[i], maxDensity: maxDensity)
+                        base[i] = erases ? GraphiteMath.erase(base: base[i], lift: s[i])
+                            : GraphiteMath.composite(base: base[i], stroke: s[i], maxDensity: maxDensity)
                     }
                 }
             }
@@ -199,7 +231,8 @@ final class DraftingSheet {
         let base = graphite.value(x: x, y: y)
         guard let active = stroke else { return base }
         let s = max(active.buffer.value(x: x, y: y), prediction.value(x: x, y: y))
-        return GraphiteMath.composite(base: base, stroke: s, maxDensity: active.maxDensity)
+        return active.erases ? GraphiteMath.erase(base: base, lift: s)
+            : GraphiteMath.composite(base: base, stroke: s, maxDensity: active.maxDensity)
     }
 
     /// Writes premultiplied graphite pixels (to lay over the paper) for `rect`
@@ -214,6 +247,7 @@ final class DraftingSheet {
         let strokeTile = stroke?.buffer.tile(coord)
         let predictedTile = stroke == nil ? nil : prediction.tile(coord)
         let maxDensity = stroke?.maxDensity ?? 0
+        let erases = stroke?.erases ?? false
         let lut = GraphiteShading.lookup
 
         for py in area.minY..<area.maxY {
@@ -222,7 +256,9 @@ final class DraftingSheet {
                 let i = row + px
                 var d = base?[i] ?? 0
                 let s = max(strokeTile?[i] ?? 0, predictedTile?[i] ?? 0)
-                if s > 0 { d = GraphiteMath.composite(base: d, stroke: s, maxDensity: maxDensity) }
+                if s > 0 {
+                    d = erases ? GraphiteMath.erase(base: d, lift: s) : GraphiteMath.composite(base: d, stroke: s, maxDensity: maxDensity)
+                }
                 pixels[i] = lut[min(Int(d * Float(GraphiteShading.levels - 1) + 0.5), GraphiteShading.levels - 1)]
             }
         }

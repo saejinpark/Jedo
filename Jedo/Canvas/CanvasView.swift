@@ -24,11 +24,19 @@ final class CanvasView: UIView {
         }
     }
 
-    /// The ruler, if it is on the paper. Canvas pixels.
-    private(set) var ruler: Ruler?
-    private let rulerView = RulerView()
-    /// Fingers holding the ruler, oldest first, with where each was last (canvas pixels).
-    private var holders: [(touch: UITouch, point: CGPoint)] = []
+    /// Called when Apple Pencil is tapped (double-tap or squeeze-tap on the pencil itself).
+    var onPencilTap: (() -> Void)?
+    /// Whether the hand holds the eraser, and which hand rubs with it.
+    var eraserInHand = false
+    var eraserHand: EraserHand = .finger
+
+    /// Tools lying on the paper, bottom first. Canvas pixels.
+    private(set) var tools: [DeskTool] = []
+    /// Their bodies, in the same order, for guiding the pencil.
+    private var toolShapes: [ToolShape] = []
+    private var toolViews: [ToolKind: any ToolDisplay] = [:]
+    /// Fingers holding each tool, oldest first, with where each was last (canvas pixels).
+    private var holders: [ToolKind: [(touch: UITouch, point: CGPoint)]] = [:]
     /// Whether the compass is out, so a finger held still plants its needle.
     private(set) var compassOnDesk = false
     /// The compass while it is out, resting on the paper or with its needle in. Canvas pixels.
@@ -77,8 +85,8 @@ final class CanvasView: UIView {
         // Graphite tiles live in their own layer, between the paper and the tools.
         inkLayer.actions = Self.noAnimations
         layer.addSublayer(inkLayer)
-        addSubview(rulerView)
         addSubview(compassView)
+        addInteraction(UIPencilInteraction(delegate: self))
         memoryWarningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -165,64 +173,112 @@ final class CanvasView: UIView {
         notifyHistory()
     }
 
-    // MARK: Ruler
+    // MARK: Tools
 
-    /// Puts the ruler on the paper in the middle of the screen, lying level with
-    /// the screen as it is now, or takes it away.
-    func setRuler(onDesk: Bool) {
+    /// Puts a tool on the paper, lying level with the screen as it is now, or takes it away.
+    func setTool(_ kind: ToolKind, onDesk: Bool) {
         guard let sheet else { return }
         guard onDesk else {
-            ruler = nil
-            holders.removeAll()
-            rulerView.isHidden = true
+            tools.removeAll { $0.kind == kind }
+            holders[kind] = nil
+            toolViews[kind]?.isHidden = true
+            toolsChanged()
             return
         }
-        guard ruler == nil, let window else { return }
-        let middle = CGPoint(x: window.bounds.midX, y: window.bounds.midY)
-        let here = convert(middle, from: window)
-        let right = convert(CGPoint(x: middle.x + 100, y: middle.y), from: window)
-        let pose = RulerPose(center: CGPoint(x: here.x * scale, y: here.y * scale),
-                             angle: atan2(Double(right.y - here.y), Double(right.x - here.x)))
-        ruler = Ruler(pose: pose, pixelsPerMillimeter: sheet.pixelsPerMillimeter)
-        showRuler()
+        guard !tools.contains(where: { $0.kind == kind }), let window else { return }
+        let spot = Self.restingSpot(kind)
+        let onScreen = CGPoint(x: window.bounds.width * spot.x, y: window.bounds.height * spot.y)
+        let here = convert(onScreen, from: window)
+        let right = convert(CGPoint(x: onScreen.x + 100, y: onScreen.y), from: window)
+        let pose = ToolPose(center: CGPoint(x: here.x * scale, y: here.y * scale),
+                            angle: atan2(Double(right.y - here.y), Double(right.x - here.x)))
+        tools.append(DeskTool(kind: kind, pose: pose))
+        showTool(tools[tools.count - 1], sheet: sheet)
+        raise(kind)
     }
 
-    private func showRuler() {
-        guard let ruler, let sheet else { return }
+    /// Where on the screen each tool is first laid, as fractions of its size.
+    private static func restingSpot(_ kind: ToolKind) -> CGPoint {
+        switch kind {
+        case .ruler: CGPoint(x: 0.5, y: 0.5)
+        case .setSquare45: CGPoint(x: 0.3, y: 0.38)
+        case .setSquare60: CGPoint(x: 0.66, y: 0.38)
+        case .circleTemplate: CGPoint(x: 0.5, y: 0.7)
+        }
+    }
+
+    private func toolView(_ kind: ToolKind) -> any ToolDisplay {
+        if let view = toolViews[kind] { return view }
+        let view: any ToolDisplay = switch kind {
+        case .ruler: RulerView()
+        case .setSquare45, .setSquare60: SetSquareView(kind: kind)
+        case .circleTemplate: CircleTemplateView()
+        }
+        insertSubview(view, belowSubview: compassView)
+        toolViews[kind] = view
+        return view
+    }
+
+    private func showTool(_ tool: DeskTool, sheet: DraftingSheet) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        rulerView.show(ruler, scale: scale, pixelsPerMillimeter: sheet.pixelsPerMillimeter)
+        toolView(tool.kind).show(tool, scale: scale, pixelsPerMillimeter: sheet.pixelsPerMillimeter)
         CATransaction.commit()
     }
 
-    /// A fingertip landing on (or just beside) the ruler takes hold of it.
-    private func grabRuler(_ touch: UITouch) -> Bool {
-        guard let ruler, let sheet, holders.count < 2, touch.majorRadius < Self.fingertipRadius else { return false }
+    private func toolsChanged() {
+        guard let sheet else { return }
+        toolShapes = tools.map { $0.shape(pixelsPerMillimeter: sheet.pixelsPerMillimeter) }
+    }
+
+    /// Lays a tool on top of the others. Not while a line is being drawn,
+    /// since the pencil's guide counts the tools by their order.
+    private func raise(_ kind: ToolKind) {
+        if activeTouch == nil, let i = tools.firstIndex(where: { $0.kind == kind }) {
+            tools.append(tools.remove(at: i))
+            if let view = toolViews[kind] { insertSubview(view, belowSubview: compassView) }
+        }
+        toolsChanged()
+    }
+
+    /// A fingertip landing on (or just beside) a tool takes hold of the topmost one there.
+    private func grabTool(_ touch: UITouch) -> Bool {
+        guard let sheet, touch.majorRadius < Self.fingertipRadius else { return false }
         let point = pixelLocation(touch)
-        guard ruler.contains(point, margin: Self.gripMarginMM * sheet.pixelsPerMillimeter) else { return false }
-        holders.append((touch, point))
+        let margin = Self.gripMarginMM * sheet.pixelsPerMillimeter
+        guard let i = tools.indices.last(where: {
+            toolShapes[$0].outlineContains(point, margin: margin) && holders[tools[$0].kind, default: []].count < 2
+        }) else { return false }
+        let kind = tools[i].kind
+        holders[kind, default: []].append((touch, point))
+        raise(kind)
         return true
     }
 
-    private func moveRuler() {
-        guard var ruler, !holders.isEmpty else { return }
-        let now = holders.map { pixelLocation($0.touch) }
-        switch holders.count {
-        case 1:
-            ruler.pose = RigidMotion.slide(ruler.pose, from: holders[0].point, to: now[0])
-        default:
-            ruler.pose = RigidMotion.slideAndTurn(ruler.pose, from: (holders[0].point, holders[1].point), to: (now[0], now[1]))
+    private func moveTools(_ touches: Set<UITouch>) {
+        guard let sheet else { return }
+        var moved = false
+        for (kind, held) in holders where held.contains(where: { touches.contains($0.touch) }) {
+            guard let i = tools.firstIndex(where: { $0.kind == kind }) else { continue }
+            let now = held.map { pixelLocation($0.touch) }
+            var pose = tools[i].pose
+            switch held.count {
+            case 1: pose = RigidMotion.slide(pose, from: held[0].point, to: now[0])
+            default: pose = RigidMotion.slideAndTurn(pose, from: (held[0].point, held[1].point), to: (now[0], now[1]))
+            }
+            tools[i].pose = pose
+            holders[kind] = zip(held, now).map { ($0.touch, $1) }
+            showTool(tools[i], sheet: sheet)
+            moved = true
         }
-        for i in holders.indices { holders[i].point = now[i] }
-        self.ruler = ruler
-        showRuler()
+        if moved { toolsChanged() }
     }
 
-    private func releaseRuler(_ touches: Set<UITouch>) {
-        holders.removeAll { touches.contains($0.touch) }
+    private func releaseTools(_ touches: Set<UITouch>) {
+        for kind in holders.keys { holders[kind]?.removeAll { touches.contains($0.touch) } }
     }
 
-    /// How far outside the ruler a fingertip still catches it.
+    /// How far outside a tool a fingertip still catches it.
     private static let gripMarginMM = 4.0
 
     // MARK: Compass
@@ -342,19 +398,39 @@ final class CanvasView: UIView {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         let now = CACurrentMediaTime()
+        let fingerErases = eraserInHand && eraserHand == .finger
+        var rubbingFinger: UITouch?
         for touch in touches where isFinger(touch, event) {
-            if grabRuler(touch) { continue }
+            if grabTool(touch) { continue }
             guard touch.majorRadius < Self.fingertipRadius else { continue }
+            if fingerErases, activeTouch == nil, rubbingFinger == nil {
+                rubbingFinger = touch
+                continue
+            }
             presses.begin(touch, at: pixelLocation(touch), time: now)
             scheduleLongPressCheck()
         }
-        guard activeTouch == nil, let sheet, let touch = touches.first(where: { draws($0, event) }) else { return }
+        guard activeTouch == nil else { return }
+        if let finger = rubbingFinger {
+            startStroke(finger, erasing: true, event: event)
+        } else if let touch = touches.first(where: { draws($0, event) }) {
+            startStroke(touch, erasing: eraserInHand && eraserHand == .pencil, event: event)
+        }
+    }
+
+    private func startStroke(_ touch: UITouch, erasing: Bool, event: UIEvent?) {
+        guard let sheet else { return }
         activeTouch = touch
         pending = PendingSampleQueue()
         lastPredicted = []
-        let grade = currentGrade()
-        guide = makeGuide(startingAt: sample(touch).location, grade: grade, sheet: sheet)
-        sheet.beginStroke(grade: grade)
+        if erasing {
+            guide = .rub(RubTracker(pixelsPerMillimeter: sheet.pixelsPerMillimeter))
+            sheet.beginErasing()
+        } else {
+            let grade = currentGrade()
+            guide = makeGuide(startingAt: sample(touch).location, grade: grade, sheet: sheet)
+            sheet.beginStroke(grade: grade)
+        }
         feed(touch, event: event)
     }
 
@@ -374,7 +450,7 @@ final class CanvasView: UIView {
 
     /// Fingers that end or are taken away: the ruler lets go, the needle may come out.
     private func fingersLifted(_ touches: Set<UITouch>, cancelled: Bool) {
-        releaseRuler(touches)
+        releaseTools(touches)
         let now = CACurrentMediaTime()
         for touch in touches where touch.type == .direct {
             if let held = needleFinger, held.touch == touch {
@@ -410,7 +486,7 @@ final class CanvasView: UIView {
     private static let fingertipRadius: CGFloat = 45
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if holders.contains(where: { touches.contains($0.touch) }) { moveRuler() }
+        moveTools(touches)
         for touch in touches where touch.type == .direct && touch != activeTouch {
             if let held = needleFinger, held.touch == touch {
                 moveNeedle(with: touch)
@@ -488,10 +564,10 @@ final class CanvasView: UIView {
         var final = released
         var ahead = pending.provisional + lastPredicted
         if var guide {
-            final = guide.guide(released, ruler: ruler)
+            final = guide.guide(released, tools: toolShapes)
             self.guide = guide
             var lookahead = guide
-            ahead = lookahead.guide(ahead, ruler: ruler)
+            ahead = lookahead.guide(ahead, tools: toolShapes)
             if let angle = lookahead.arc?.angle, var compass {
                 compass.leadAngle = angle
                 self.compass = compass
@@ -575,4 +651,10 @@ private final class GraphiteTile {
     let layer: CALayer
     var pixels = [UInt32](repeating: 0, count: GraphiteRaster.tileArea)
     init(layer: CALayer) { self.layer = layer }
+}
+
+extension CanvasView: UIPencilInteractionDelegate {
+    func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
+        onPencilTap?()
+    }
 }

@@ -165,14 +165,14 @@ struct ArcGuideTests {
 struct StrokeGuideTests {
     @Test func theEdgeGivesOneSampleForOne() {
         var guide = StrokeGuide.edge(EdgeGuide(style: .standard, pixelsPerMillimeter: ppmm, contactOffset: 0))
-        let out = guide.guide(StrokeSample(location: CGPoint(x: 10, y: 10)), ruler: nil)
+        let out = guide.guide(StrokeSample(location: CGPoint(x: 10, y: 10)), tools: [])
         #expect(out == [StrokeSample(location: CGPoint(x: 10, y: 10))])
     }
 
     @Test func theArcKeepsItsStateInsideTheEnum() {
         var guide = StrokeGuide.arc(ArcGuide(center: .zero, radius: 100, pixelsPerMillimeter: ppmm))
-        _ = guide.guide(StrokeSample(location: CGPoint(x: 100, y: 0)), ruler: nil)
-        let out = guide.guide(StrokeSample(location: CGPoint(x: 0, y: 300)), ruler: nil)
+        _ = guide.guide(StrokeSample(location: CGPoint(x: 100, y: 0)), tools: [])
+        let out = guide.guide(StrokeSample(location: CGPoint(x: 0, y: 300)), tools: [])
         #expect(out.count > 1)
         #expect(distance(out.last!.location, CGPoint(x: 0, y: 100)) < 1e-9)
         #expect(guide.arc?.lead != nil)
