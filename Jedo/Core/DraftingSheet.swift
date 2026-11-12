@@ -228,6 +228,69 @@ final class DraftingSheet {
         active.buffer.removeAll()
     }
 
+    // MARK: Stamping
+
+    /// Presses another surface's graphite onto this sheet, as one undoable step:
+    /// a grid sheet's drawing printed onto the paper under it. `sourcePoint`
+    /// takes a point of this sheet to the same place on the source. The
+    /// source is left as it was. Returns whether anything was laid.
+    @discardableResult
+    func imprint(_ source: GraphiteRaster, over area: PixelRect, mask: StrokeMask = .everywhere,
+                 sourcePoint: (CGPoint) -> CGPoint) -> Bool {
+        guard stroke == nil, !source.isEmpty else { return false }
+        let ts = GraphiteRaster.tileSize
+        var changes: [TileCoord: TileChange] = [:]
+        for coord in graphite.tileCoords(overlapping: area) {
+            let rect = graphite.rect(of: coord).intersection(area)
+            let coverage = mask.coverage(rect)
+            guard coverage != .none else { continue }
+            // Skip tiles whose footprint on the source has no graphite.
+            let corners = [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+                           CGPoint(x: rect.minX, y: rect.maxY), CGPoint(x: rect.maxX, y: rect.maxY)].map(sourcePoint)
+            let reach = PixelRect(minX: Int(corners.map { Double($0.x) }.min()!.rounded(.down)) - 1,
+                                  minY: Int(corners.map { Double($0.y) }.min()!.rounded(.down)) - 1,
+                                  maxX: Int(corners.map { Double($0.x) }.max()!.rounded(.up)) + 2,
+                                  maxY: Int(corners.map { Double($0.y) }.max()!.rounded(.up)) + 2)
+            guard source.tileCoords(overlapping: reach).contains(where: { source.tile($0) != nil }) else { continue }
+
+            let before = graphite.tile(coord)
+            var laid = false
+            graphite.withMutableTile(coord) { base in
+                for y in rect.minY..<rect.maxY {
+                    for x in rect.minX..<rect.maxX {
+                        let p = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
+                        if coverage == .part, !mask.contains(p) { continue }
+                        let v = Self.sample(source, at: sourcePoint(p))
+                        guard v > 0.002 else { continue }
+                        let i = (y - coord.y * ts) * ts + (x - coord.x * ts)
+                        base[i] = GraphiteMath.composite(base: base[i], stroke: v, maxDensity: 1)
+                        laid = true
+                    }
+                }
+            }
+            if laid {
+                changes[coord] = TileChange(before: before, after: graphite.tile(coord))
+                markDirty(graphite.rect(of: coord))
+            } else {
+                graphite.setTile(coord, before)
+            }
+        }
+        guard !changes.isEmpty else { return false }
+        let edit = TileEdit(changes: changes)
+        history.record(edit, cost: edit.cost)
+        return true
+    }
+
+    /// Graphite at a point between pixel centres, blended from the four around it.
+    private static func sample(_ raster: GraphiteRaster, at p: CGPoint) -> Float {
+        let fx = Double(p.x) - 0.5, fy = Double(p.y) - 0.5
+        let x0 = Int(fx.rounded(.down)), y0 = Int(fy.rounded(.down))
+        let tx = Float(fx - Double(x0)), ty = Float(fy - Double(y0))
+        let a = raster.value(x: x0, y: y0), b = raster.value(x: x0 + 1, y: y0)
+        let c = raster.value(x: x0, y: y0 + 1), d = raster.value(x: x0 + 1, y: y0 + 1)
+        return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty
+    }
+
     // MARK: Undo
 
     @discardableResult

@@ -25,6 +25,8 @@ final class DrawingSession {
         let id: Int
         let name: String
         let isCarbon: Bool
+        /// Whether it can be pressed onto the paper (grid sheets).
+        let canStamp: Bool
         /// The sheet's symbol in the panel.
         let symbol: String
         let hidden: Bool
@@ -163,6 +165,9 @@ final class DrawingSession {
         gridSheets.removeAll { $0.id == id }
     }
 
+    /// Prints a grid sheet's drawing onto the paper where it lies.
+    func stampLayer(_ id: Int) { canvas?.stampLayer(id) }
+
     func setLayer(_ id: Int, hidden: Bool) { canvas?.setLayer(id, hidden: hidden) }
     func shiftLayer(_ id: Int, up: Bool) { canvas?.shiftLayer(id, up: up) }
 
@@ -174,6 +179,7 @@ final class DrawingSession {
     func layersChanged(_ layers: [PaperLayer], hidden: Set<Int>) {
         layerRows = layers.enumerated().reversed().map { i, layer in
             LayerRow(id: layer.id, name: Self.name(of: layer, among: layers), isCarbon: layer.kind == .carbon,
+                     canStamp: { if case .grid = layer.kind { true } else { false } }(),
                      symbol: layer.kind == .carbon ? "square.fill" : layer.kind.isTone ? "circle.grid.3x3.fill" : "squareshape.split.3x3",
                      hidden: hidden.contains(layer.id), canRaise: i < layers.count - 1, canLower: i > 0)
         }

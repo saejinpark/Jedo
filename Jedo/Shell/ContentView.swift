@@ -319,6 +319,9 @@ private struct LayersPanel: View {
                         .foregroundStyle(row.isCarbon ? Palette.ink : Color(PaperLayerView.rulingColour))
                     Text(row.name).opacity(row.hidden ? 0.4 : 1)
                     Spacer(minLength: 12)
+                    if row.canStamp {
+                        iconButton("arrow.down.to.line.compact", label: "종이에 찍기") { session.stampLayer(row.id) }
+                    }
                     iconButton(row.hidden ? "eye.slash" : "eye", label: row.hidden ? "보이기" : "숨기기") {
                         session.setLayer(row.id, hidden: !row.hidden)
                     }
@@ -338,7 +341,7 @@ private struct LayersPanel: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 16).padding(.vertical, 10)
         }
-        .frame(width: 340)
+        .frame(width: 380)
     }
 
     private func iconButton(_ symbol: String, label: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {

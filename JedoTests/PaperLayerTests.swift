@@ -309,3 +309,31 @@ struct ToneCutTests {
         #expect(abs(Double.pi * r * r / (TonePattern.pitchMM * TonePattern.pitchMM) - 0.5) < 1e-9)
     }
 }
+
+struct StampTests {
+    @Test func aSheetsDrawingPrintsOntoThePaperWhereItLies() {
+        let sheet = DraftingSheet(width: 200, height: 200, pixelsPerMillimeter: ppmm)
+        sheet.beginStroke(grade: .b4)
+        sheet.extendStroke(with: (0...20).map { StrokeSample(location: CGPoint(x: 20 + Double($0) * 5, y: 50), pressure: 0.8) },
+                           predicted: [])
+        sheet.endStroke()
+        let paper = DraftingSheet(width: 600, height: 600, pixelsPerMillimeter: ppmm)
+        // The sheet lies 300 px right and 200 px down on the paper.
+        let laid = paper.imprint(sheet.graphite, over: PixelRect(minX: 300, minY: 200, maxX: 500, maxY: 400)) {
+            CGPoint(x: Double($0.x) - 300, y: Double($0.y) - 200)
+        }
+        #expect(laid)
+        #expect(paper.graphite.value(x: 370, y: 250) > 0.1)
+        #expect(paper.graphite.value(x: 70, y: 50) == 0, "nothing where the sheet isn't")
+        #expect(sheet.graphite.value(x: 70, y: 50) > 0.1, "the sheet keeps its drawing")
+        #expect(paper.undo())
+        #expect(paper.graphite.value(x: 370, y: 250) == 0)
+    }
+
+    @Test func nothingDrawnNothingStamped() {
+        let paper = DraftingSheet(width: 300, height: 300, pixelsPerMillimeter: ppmm)
+        let empty = GraphiteRaster(width: 100, height: 100)
+        #expect(!paper.imprint(empty, over: paper.graphite.bounds) { $0 })
+        #expect(!paper.canUndo)
+    }
+}

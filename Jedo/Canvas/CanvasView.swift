@@ -637,6 +637,29 @@ final class CanvasView: UIView {
         return false
     }
 
+    /// Presses a grid sheet onto the paper: what is drawn on it is printed
+    /// where it lies now, as one step to undo. The sheet keeps its drawing.
+    @discardableResult
+    func stampLayer(_ id: Int) -> Bool {
+        guard activeTouch == nil, let sheet, let source = layerSurfaces[id]?.sheet,
+              let layer = layers.first(where: { $0.id == id }), !layer.kind.isTone, layer.kind != .carbon else { return false }
+        let outline = layer.outline(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
+        let xs = outline.map { Double($0.x) }, ys = outline.map { Double($0.y) }
+        let area = PixelRect(minX: Int(xs.min()!.rounded(.down)), minY: Int(ys.min()!.rounded(.down)),
+                             maxX: Int(xs.max()!.rounded(.up)), maxY: Int(ys.max()!.rounded(.up)))
+        let ppmm = sheet.pixelsPerMillimeter
+        // Only the paper takes the print, and only under the sheet.
+        let laid = sheet.imprint(source.graphite, over: area, mask: StrokeMask(inside: [outline, paperOutline], outside: [])) {
+            layer.surfacePoint($0, pixelsPerMillimeter: ppmm)
+        }
+        guard laid else { return false }
+        undoStack.append(.marks([.paper]))
+        redoStack.removeAll()
+        refresh()
+        notifyHistory()
+        return true
+    }
+
     /// Takes a grid sheet off the paper, with what was drawn on it.
     func removeGridLayer(_ id: Int) {
         guard activeTouch == nil || !marking.contains(.sheet(id)) else { return }
