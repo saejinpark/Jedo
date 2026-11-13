@@ -5,6 +5,9 @@ struct ContentView: View {
     /// The arrangement of the control groups, kept between launches.
     @AppStorage("shellLayout") private var savedLayout = ""
     @State private var arranging = false
+    /// Whether the guide has been through once.
+    @AppStorage("guideSeen") private var guideSeen = false
+    @State private var showingGuide = false
     @State private var dragging: ShellLayout.Group?
     @State private var dragOffset = CGSize.zero
     @State private var dragTarget: ShellLayout.Slot?
@@ -52,6 +55,19 @@ struct ContentView: View {
                 .animation(.snappy(duration: 0.25), value: savedLayout)
             }
         }
+        .overlay {
+            if showingGuide || !guideSeen {
+                GuideCards(leftHanded: layout.leftHanded,
+                           chooseHand: { setLayout(.standard(leftHanded: $0)) },
+                           done: {
+                               guideSeen = true
+                               showingGuide = false
+                           })
+                .transition(.opacity)
+            }
+        }
+        .animation(.snappy(duration: 0.25), value: showingGuide)
+        .animation(.snappy(duration: 0.25), value: guideSeen)
         .onAppear { session.mapOnTrailing = layout.mapOnTrailing }
         .preferredColorScheme(.light)
         .statusBarHidden()
@@ -124,7 +140,8 @@ struct ContentView: View {
                           session.mapOnTrailing = layout.mapOnTrailing
                       },
                       hand: { setLayout(.standard(leftHanded: $0)) },
-                      arrange: { arranging = true })
+                      arrange: { arranging = true },
+                      guide: { showingGuide = true })
         }
     }
 
@@ -389,6 +406,7 @@ private struct ViewGroup: View {
     /// Lay the groups out for the right hand (false) or the left (true).
     let hand: (Bool) -> Void
     let arrange: () -> Void
+    let guide: () -> Void
     @State private var confirmingNewPaper = false
 
     var body: some View {
@@ -415,6 +433,8 @@ private struct ViewGroup: View {
                 }
                 Divider()
                 Button { arrange() } label: { Label("직접 옮기기…", systemImage: "hand.draw") }
+                Divider()
+                Button { guide() } label: { Label("사용법", systemImage: "questionmark.circle") }
             } label: {
                 ToolFace(icon: .symbol("rectangle.3.group"))
             }
