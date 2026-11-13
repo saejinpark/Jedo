@@ -143,6 +143,7 @@ final class CanvasView: UIView {
     private var lastPredicted: [StrokeSample] = []
     private var lastPencilActivity: CFTimeInterval = 0
     private var memoryWarningObserver: NSObjectProtocol?
+    private var backgroundObserver: NSObjectProtocol?
 
     /// Simulator touches come from the mouse, so let them stand in for the pencil there.
     private static let mouseDraws: Bool = {
@@ -171,12 +172,18 @@ final class CanvasView: UIView {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.trimHistoryForMemoryWarning() }
         }
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.saveNow() }
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     isolated deinit {
         if let memoryWarningObserver { NotificationCenter.default.removeObserver(memoryWarningObserver) }
+        if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
     }
 
     // MARK: Setup
@@ -201,7 +208,7 @@ final class CanvasView: UIView {
         // it back when the interface turns.
         let longSide = Double(max(screen.nativeBounds.width, screen.nativeBounds.height))
         let ppmm = DisplayDensity.pixelsPerMillimeter(nativeLongSidePixels: longSide)
-        if paper.fitsScreen, let window {
+        if paper.fitsScreen, restoring == nil, let window {
             // The screen as it is held now, to the pixel.
             paper.screenWidthMM = (Double(window.bounds.width * scale) / ppmm)
             paper.screenHeightMM = (Double(window.bounds.height * scale) / ppmm)
@@ -222,7 +229,116 @@ final class CanvasView: UIView {
         presses = LongPress(slop: Self.pressSlopMM * ppmm)
         layPaper(for: sheet)
         superview?.setNeedsLayout()
+        if let saved = restoring {
+            restoring = nil
+            pickUp(saved, sheet: sheet)
+        }
+        saving = true
         notifyHistory()
+    }
+
+    // MARK: Keeping the drawing
+
+    /// A drawing saved earlier, waiting for the desk to be laid.
+    private var restoring: DrawingState?
+    /// Whether changes are written down. Off until the paper is laid, and once it is thrown away.
+    private var saving = false
+    private var saveTask: Task<Void, Never>?
+    private var unsaved = false
+    private static let saveQueue = DispatchQueue(label: "Jedo.drawingStore", qos: .utility)
+
+    /// Lays the paper of a drawing saved earlier, with everything that was on it.
+    func resume(_ saved: DrawingState) {
+        guard paperSize == nil else { return }
+        restoring = saved
+        start(on: saved.paper)
+    }
+
+    private func pickUp(_ saved: DrawingState, sheet: DraftingSheet) {
+        // Saved on another screen: the pixels would not line up. Start clean on the same paper.
+        guard abs(saved.pixelsPerMillimeter - sheet.pixelsPerMillimeter) < 1e-9, saved.deskSide == sheet.width else { return }
+        sheet.load(saved.paperGraphite)
+        copySurface?.sheet.load(saved.carbonCopy)
+        for kept in saved.sheets {
+            let layer = kept.layer
+            switch layer.kind {
+            case .carbon:
+                layers.append(layer)
+                showLayer(layer, surfaces: [], sheet: sheet)
+            case .grid:
+                layGrid(layer, sheet: sheet)
+                if let g = kept.graphite { layerSurfaces[layer.id]?.sheet.load(g) }
+                if let c = kept.copies { layerCopies[layer.id]?.sheet.load(c) }
+            case .tone:
+                let (w, h) = layer.kind.sizeMM
+                layers.append(layer)
+                showLayer(layer, surfaces: [], sheet: sheet)
+                setTone(layer.id, kept.tone ?? ToneCut(widthMM: w, heightMM: h))
+            }
+            if kept.hidden {
+                hiddenLayers.insert(layer.id)
+                layerViews[layer.id]?.isHidden = true
+            }
+        }
+        nextLayerID = max(saved.nextLayerID, (layers.map(\.id).max() ?? 0) + 1)
+        pins = Array(saved.pins.prefix(Self.maxPins))
+        refresh()
+        layersChanged()
+        pinsChanged()
+    }
+
+    /// The drawing as it is now. Cheap: the rasters are shared until drawn on again.
+    private func snapshot() -> DrawingState? {
+        guard let sheet, let paperSize, let copySurface else { return nil }
+        return DrawingState(
+            paper: paperSize, pixelsPerMillimeter: sheet.pixelsPerMillimeter, deskSide: sheet.width,
+            paperGraphite: sheet.graphite, carbonCopy: copySurface.sheet.graphite,
+            sheets: layers.map { layer in
+                DrawingState.Sheet(layer: layer, hidden: hiddenLayers.contains(layer.id),
+                                   graphite: layerSurfaces[layer.id]?.sheet.graphite,
+                                   copies: layerCopies[layer.id]?.sheet.graphite, tone: toneCuts[layer.id])
+            },
+            nextLayerID: nextLayerID, pins: pins)
+    }
+
+    /// Writes the drawing down a moment after it last changed.
+    private func scheduleSave() {
+        guard saving else { return }
+        unsaved = true
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.saveDelay))
+            guard !Task.isCancelled else { return }
+            self?.saveNow()
+        }
+    }
+
+    private static let saveDelay = 2.0
+
+    /// Writes the drawing down now, unless a line is being drawn (then a moment later).
+    func saveNow() {
+        guard saving, unsaved else { return }
+        guard activeTouch == nil, let state = snapshot() else { return scheduleSave() }
+        saveTask?.cancel()
+        unsaved = false
+        // Finish writing even if the app is just being put away.
+        let task = UIApplication.shared.beginBackgroundTask(withName: "Save drawing", expirationHandler: nil)
+        Task {
+            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                Self.saveQueue.async {
+                    try? DrawingStore.save(state)
+                    done.resume()
+                }
+            }
+            UIApplication.shared.endBackgroundTask(task)
+        }
+    }
+
+    /// Throws the drawing away for good, before a fresh sheet of paper.
+    func discardDrawing() {
+        saving = false
+        saveTask?.cancel()
+        Self.saveQueue.async { DrawingStore.remove() }
     }
 
     override func layoutSubviews() {
@@ -367,6 +483,7 @@ final class CanvasView: UIView {
     private func notifyHistory() {
         onHistoryChange?(!undoStack.isEmpty && activeTouch == nil, !redoStack.isEmpty && activeTouch == nil)
         onOverviewChange?()
+        scheduleSave()
     }
 
 
@@ -639,6 +756,7 @@ final class CanvasView: UIView {
                       headRadius: CGFloat(PinsView.headMM * (sheet?.pixelsPerMillimeter ?? 10)) / scale)
         onPinsChange?(pins.count)
         onOverviewChange?()
+        scheduleSave()
     }
 
     private func movePin(_ touches: Set<UITouch>) {
@@ -664,6 +782,13 @@ final class CanvasView: UIView {
         pose.center.y += step
         let layer = PaperLayer(id: nextLayerID, kind: .grid(pattern), pose: pose)
         nextLayerID += 1
+        layGrid(layer, sheet: sheet)
+        layersChanged()
+        return layer.id
+    }
+
+    /// Lays a grid sheet with its two surfaces: what is drawn on it, and what the carbon copies onto it.
+    private func layGrid(_ layer: PaperLayer, sheet: DraftingSheet) {
         let size = layer.rasterSize(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
         let make = { (shading: [UInt32]) in
             GraphiteSurface(sheet: DraftingSheet(width: size.width, height: size.height,
@@ -676,8 +801,6 @@ final class CanvasView: UIView {
         layerCopies[layer.id] = copies
         layers.append(layer)
         showLayer(layer, surfaces: [copies, surface], sheet: sheet)
-        layersChanged()
-        return layer.id
     }
 
     /// Lays a new sheet of tone on the paper. Returns its id.
@@ -856,6 +979,7 @@ final class CanvasView: UIView {
         for layer in layers { if let view = layerViews[layer.id] { sheetsView.bringSubviewToFront(view) } }
         onLayersChange?(layers, hiddenLayers)
         onOverviewChange?()
+        scheduleSave()
     }
 
     /// Sets a sheet aside without taking it off, or brings it back.
@@ -942,7 +1066,10 @@ final class CanvasView: UIView {
             layerViews[id]?.place(layers[i], scale: scale)
             moved = true
         }
-        if moved { onOverviewChange?() }
+        if moved {
+            onOverviewChange?()
+            scheduleSave()
+        }
     }
 
     /// The sheets as the pencil meets them.

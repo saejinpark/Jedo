@@ -12,14 +12,6 @@ final class DrawingSession {
     private(set) var paper: PaperSize?
     /// Tools lying on the paper.
     private(set) var toolsOnDesk: Set<ToolKind> = []
-    /// Transparent grid sheets lying on the paper, bottom first.
-    private(set) var gridSheets: [GridSheet] = []
-
-    struct GridSheet: Identifiable {
-        let id: Int
-        let pattern: GridPattern
-    }
-
     /// The sheets on the paper as the layers panel shows them, top first.
     private(set) var layerRows: [LayerRow] = []
 
@@ -141,6 +133,18 @@ final class DrawingSession {
         canvas?.start(on: paper)
     }
 
+    /// Picks up the drawing left on the desk last time, if there is one.
+    func resumeSaved() {
+        guard paper == nil, let saved = DrawingStore.load() else { return }
+        paper = saved.paper
+        canvas?.resume(saved)
+    }
+
+    /// Throws the drawing away for good, so a fresh sheet can be laid.
+    func throwAwayPaper() {
+        canvas?.discardDrawing()
+    }
+
     /// Saves the paper as a PNG and offers it to share or save: the paper
     /// alone, or with the sheets lying on it.
     func export(includeSheets: Bool) {
@@ -164,8 +168,7 @@ final class DrawingSession {
 
     /// Lays a new grid sheet on the paper.
     func addSheet(_ pattern: GridPattern) {
-        guard let id = canvas?.addGridLayer(pattern) else { return }
-        gridSheets.append(GridSheet(id: id, pattern: pattern))
+        _ = canvas?.addGridLayer(pattern)
     }
 
     /// Lays a new sheet of tone on the paper.
@@ -176,7 +179,6 @@ final class DrawingSession {
     /// Takes a grid sheet away, with what was drawn on it.
     func removeSheet(_ id: Int) {
         canvas?.removeGridLayer(id)
-        gridSheets.removeAll { $0.id == id }
     }
 
     /// Empties a grid sheet, or the paper with `nil`, for a fresh try.
@@ -198,6 +200,8 @@ final class DrawingSession {
 
     func layersChanged(_ layers: [PaperLayer], hidden: Set<Int>) {
         defer { if !hasTone, knifeInHand { knifeInHand = false } }
+        let carbon = layers.contains { $0.kind == .carbon }
+        if carbonOnDesk != carbon { carbonOnDesk = carbon }
         layerRows = layers.enumerated().reversed().map { i, layer in
             LayerRow(id: layer.id, name: Self.name(of: layer, among: layers), isCarbon: layer.kind == .carbon,
                      isTone: layer.kind.isTone,

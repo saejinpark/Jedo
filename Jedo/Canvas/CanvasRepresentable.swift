@@ -18,6 +18,7 @@ struct CanvasRepresentable: UIViewControllerRepresentable {
         view.onPinsChange = { [weak session] count in session?.pinsChanged(count) }
         session.canvas = view
         session.desk = controller.desk
+        session.resumeSaved()
         return controller
     }
 

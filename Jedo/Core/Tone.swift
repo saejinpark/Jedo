@@ -68,6 +68,15 @@ struct ToneCut: Equatable, Sendable {
         ink = Array(repeating: 1, count: columns * rows)
     }
 
+    /// A sheet as it was saved. Nil when the parts don't fit together.
+    init?(columns: Int, rows: Int, cells: [Cell], ink: [Float]) {
+        guard columns > 0, rows > 0, cells.count == columns * rows, ink.count == cells.count else { return nil }
+        self.columns = columns
+        self.rows = rows
+        self.cells = cells
+        self.ink = ink
+    }
+
     /// Whether the print shows at cell `i`: the film is there, and enough ink
     /// is left there. Scraped ink comes off dot by dot, not as a fading wash:
     /// each cell gives way at its own point, so a dot breaks up as it thins.

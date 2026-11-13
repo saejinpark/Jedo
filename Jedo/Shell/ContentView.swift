@@ -6,6 +6,7 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             CanvasRepresentable(session: session)
+                .id(ObjectIdentifier(session))
                 .ignoresSafeArea()
 
             if session.paper == nil {
@@ -34,7 +35,10 @@ struct ContentView: View {
             .padding(Metric.margin)
             .animation(.spring(duration: 0.35), value: session.hint)
 
-            ViewGroup(session: session)
+            ViewGroup(session: session) {
+                session.throwAwayPaper()
+                session = DrawingSession()
+            }
                 .padding(.top, 34)
                 .padding(.trailing, Metric.margin)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -206,6 +210,8 @@ private struct HistoryGroup: View {
 /// How the desk is shown, and taking the drawing away.
 private struct ViewGroup: View {
     @Bindable var session: DrawingSession
+    let newPaper: () -> Void
+    @State private var confirmingNewPaper = false
 
     var body: some View {
         ControlGroup {
@@ -222,6 +228,14 @@ private struct ViewGroup: View {
             .menuStyle(.button)
             .buttonStyle(.plain)
             .accessibilityLabel("내보내기")
+            ToolButton(icon: .symbol("doc.badge.plus"), label: "새 종이") {
+                confirmingNewPaper = true
+            }
+            .confirmationDialog("지금 종이를 치우고 새 종이를 깔까요?", isPresented: $confirmingNewPaper, titleVisibility: .visible) {
+                Button("치우고 새 종이 깔기", role: .destructive, action: newPaper)
+            } message: {
+                Text("그린 것과 얹힌 시트가 모두 사라지고 되돌릴 수 없습니다. 남기려면 먼저 내보내기를 하세요.")
+            }
         }
     }
 }

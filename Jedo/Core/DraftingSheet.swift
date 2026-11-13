@@ -247,6 +247,16 @@ final class DraftingSheet {
         return true
     }
 
+    // MARK: Picking up again
+
+    /// Lays back graphite saved earlier, with nothing to undo before it.
+    func load(_ saved: GraphiteRaster) {
+        guard stroke == nil, saved.width == width, saved.height == height else { return }
+        for coord in graphite.tiles.keys { markDirty(graphite.rect(of: coord)) }
+        graphite = saved
+        for coord in graphite.tiles.keys { markDirty(graphite.rect(of: coord)) }
+    }
+
     // MARK: Stamping
 
     /// Presses another surface's graphite onto this sheet, as one undoable step:
