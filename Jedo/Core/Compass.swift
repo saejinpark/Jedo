@@ -17,6 +17,9 @@ struct CompassStyle: Equatable, Sendable {
         case whileHeld
         /// It stays planted until a finger taps it away.
         case planted
+        /// Both, by what the hand does: let go before drawing and it stays
+        /// planted; hold it through a circle and it comes out with the finger.
+        case byHand
     }
 
     var spread: Spread
@@ -24,6 +27,19 @@ struct CompassStyle: Equatable, Sendable {
 
     /// The brief's first draft.
     static let firstDraft = CompassStyle(spread: .eachTouch, needle: .whileHeld)
+    /// What the app uses (2026-11-13): the legs keep their spread, as a real
+    /// compass's joint does, and the needle stays or goes by how it was held.
+    static let standard = CompassStyle(spread: .kept, needle: .byHand)
+
+    /// Whether lifting the finger that planted the needle pulls it out,
+    /// given whether the compass has drawn since.
+    func pullsNeedleOnLift(afterDrawing drew: Bool) -> Bool {
+        switch needle {
+        case .whileHeld: true
+        case .planted: false
+        case .byHand: drew
+        }
+    }
 }
 
 /// A drafting compass on the paper: the needle's point and how far the legs

@@ -20,7 +20,7 @@ final class CanvasView: UIView {
     /// Called when a finger taps or rubs the paper away from any tool, as if trying to draw.
     var onFingerTouch: (() -> Void)?
     /// How the compass is handled; changing it pulls the needle out.
-    var compassStyle: CompassStyle = .firstDraft {
+    var compassStyle: CompassStyle = .standard {
         didSet {
             guard compassStyle != oldValue else { return }
             keptSpread = nil
@@ -1392,7 +1392,7 @@ final class CanvasView: UIView {
         for touch in touches where touch.type == .direct {
             if let held = needleFinger, held.touch == touch {
                 needleFinger = nil
-                if compassStyle.needle == .whileHeld { pullNeedle() }
+                if compassStyle.pullsNeedleOnLift(afterDrawing: needleSettled) { pullNeedle() }
                 presses.cancel(touch)
                 continue
             }

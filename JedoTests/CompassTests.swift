@@ -302,3 +302,17 @@ struct LongPressStillTests {
         #expect(still.first?.point == .zero)
     }
 }
+
+struct CompassStyleTests {
+    @Test func theNeedleStaysWhenLetGoBeforeDrawingAndGoesWhenHeldThroughACircle() {
+        let style = CompassStyle.standard
+        #expect(!style.pullsNeedleOnLift(afterDrawing: false))
+        #expect(style.pullsNeedleOnLift(afterDrawing: true))
+        #expect(style.spread == .kept)
+    }
+
+    @Test func theDraftsKeepTheirOwnRules() {
+        #expect(CompassStyle(spread: .eachTouch, needle: .whileHeld).pullsNeedleOnLift(afterDrawing: false))
+        #expect(!CompassStyle(spread: .eachTouch, needle: .planted).pullsNeedleOnLift(afterDrawing: true))
+    }
+}

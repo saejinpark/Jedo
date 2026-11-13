@@ -75,10 +75,6 @@ final class DrawingSession {
             if compassOnDesk { show(.compass) }
         }
     }
-    /// The compass handling draft being tried.
-    var compassStyle: CompassStyle = .firstDraft {
-        didSet { canvas?.compassStyle = compassStyle }
-    }
     private(set) var canUndo = false
     private(set) var canRedo = false
     /// A short line of help, shown for a moment.

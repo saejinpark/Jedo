@@ -44,14 +44,6 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
 
-            #if DEBUG
-            if session.compassOnDesk {
-                DraftPicker(session: session)
-                    .padding(20)
-                    .padding(.top, 96) // below the hint and the export button
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            }
-            #endif
         }
         .preferredColorScheme(.light)
         .statusBarHidden()
@@ -547,43 +539,6 @@ private struct HintBubble: View {
     }
 }
 
-#if DEBUG
-/// Compares hand-feel drafts on the iPad. Each row goes once its draft is chosen.
-private struct DraftPicker: View {
-    @Bindable var session: DrawingSession
-
-    var body: some View {
-        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
-            if session.compassOnDesk {
-            GridRow {
-                Text("컴퍼스 시안").font(.caption.weight(.semibold)).gridCellColumns(2)
-            }
-            GridRow {
-                Text("다리").font(.caption)
-                Picker("다리", selection: $session.compassStyle.spread) {
-                    Text("닿을 때마다 벌림").tag(CompassStyle.Spread.eachTouch)
-                    Text("벌린 폭 유지").tag(CompassStyle.Spread.kept)
-                }
-                .pickerStyle(.segmented)
-            }
-            GridRow {
-                Text("바늘").font(.caption)
-                Picker("바늘", selection: $session.compassStyle.needle) {
-                    Text("누르는 동안").tag(CompassStyle.Needle.whileHeld)
-                    Text("꽂아 둠").tag(CompassStyle.Needle.planted)
-                }
-                .pickerStyle(.segmented)
-            }
-            }
-        }
-        .foregroundStyle(Palette.ink)
-        .frame(width: 300)
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
-    }
-}
-#endif
 
 #Preview {
     ContentView()

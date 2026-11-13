@@ -13,7 +13,6 @@ struct CanvasRepresentable: UIViewControllerRepresentable {
         }
         view.onFingerTouch = { [weak session] in session?.fingerTouchedPaper() }
         view.onLayersChange = { [weak session] layers, hidden in session?.layersChanged(layers, hidden: hidden) }
-        view.compassStyle = session.compassStyle
         view.eraserKind = session.eraserKind
         view.onPinsChange = { [weak session] count in session?.pinsChanged(count) }
         session.canvas = view
