@@ -24,6 +24,7 @@ final class DraftingSheet {
     /// What the hand is moving over the paper.
     private enum Lead {
         case pencil(PencilDynamics)
+        case ink(InkDynamics)
         case eraser(EraserDynamics)
     }
 
@@ -40,6 +41,18 @@ final class DraftingSheet {
 
         var erases: Bool {
             if case .eraser = lead { true } else { false }
+        }
+
+        /// What `stroke` of this lead makes of `base`.
+        @inline(__always)
+        func laid(_ base: Float, _ stroke: Float) -> Float {
+            switch lead {
+            case .pencil:
+                // Graphite takes no hold on ink.
+                base > 1 ? base : GraphiteMath.composite(base: base, stroke: stroke, maxDensity: maxDensity)
+            case .ink: GraphiteMath.ink(base: base, coverage: stroke)
+            case .eraser(let eraser): GraphiteMath.erase(base: base, lift: stroke, inkLift: eraser.kind.inkLift)
+            }
         }
     }
 
@@ -83,6 +96,12 @@ final class DraftingSheet {
     func beginStroke(grade: PencilGrade, instrument: Instrument = .wood, mask: StrokeMask = .everywhere) {
         if stroke != nil { cancelStroke() }
         strokeCounter &+= 1
+        if let pen = instrument.inkPen {
+            stroke = ActiveStroke(lead: .ink(InkDynamics(pen: pen, pixelsPerMillimeter: pixelsPerMillimeter)),
+                                  buffer: GraphiteRaster(width: width, height: height),
+                                  seed: strokeCounter &* 0x9E37_79B9, maxDensity: 1, mask: mask)
+            return
+        }
         stroke = ActiveStroke(
             lead: .pencil(PencilDynamics(grade: grade, pixelsPerMillimeter: pixelsPerMillimeter, instrument: instrument, style: grainStyle)),
             buffer: GraphiteRaster(width: width, height: height),
@@ -143,6 +162,15 @@ final class DraftingSheet {
                 let coverage = mask.coverage(DabRasterizer.bounds(center: dab.location, shape: shape))
                 guard coverage != .none else { continue }
                 let rect = DabRasterizer.stamp(center: dab.location, shape: shape, into: &raster, paper: paper, seed: seed)
+                if coverage == .part { Self.clip(&raster, rect, to: mask) }
+                markDirty(rect)
+            }
+        case .ink(let ink):
+            for dab in spacer.append(sample, spacing: { ink.spacing(for: $0) }) {
+                let radius = ink.radius(for: dab)
+                let coverage = mask.coverage(InkRasterizer.bounds(center: dab.location, radius: radius))
+                guard coverage != .none else { continue }
+                let rect = InkRasterizer.stamp(center: dab.location, radius: radius, into: &raster)
                 if coverage == .part { Self.clip(&raster, rect, to: mask) }
                 markDirty(rect)
             }
@@ -214,13 +242,11 @@ final class DraftingSheet {
             if active.before.index(forKey: coord) == nil {
                 active.before[coord] = .some(graphite.tile(coord))
             }
-            let maxDensity = active.maxDensity
-            let erases = active.erases
+            let current = active
             graphite.withMutableTile(coord) { base in
                 strokeTile.withUnsafeBufferPointer { s in
                     for i in 0..<GraphiteRaster.tileArea where s[i] > 0 {
-                        base[i] = erases ? GraphiteMath.erase(base: base[i], lift: s[i])
-                            : GraphiteMath.composite(base: base[i], stroke: s[i], maxDensity: maxDensity)
+                        base[i] = current.laid(base[i], s[i])
                     }
                 }
             }
@@ -292,7 +318,8 @@ final class DraftingSheet {
                         let v = Self.sample(source, at: sourcePoint(p))
                         guard v > 0.002 else { continue }
                         let i = (y - coord.y * ts) * ts + (x - coord.x * ts)
-                        base[i] = GraphiteMath.composite(base: base[i], stroke: v, maxDensity: 1)
+                        base[i] = v > 1 ? GraphiteMath.ink(base: base[i], coverage: GraphiteMath.inkCoverage(v))
+                            : GraphiteMath.composite(base: base[i], stroke: v, maxDensity: 1)
                         laid = true
                     }
                 }
@@ -363,7 +390,7 @@ final class DraftingSheet {
                 for y in stride(from: 0, to: ts, by: 2) where oy + y < height {
                     let row = min(Int(Double(oy + y) / cellHeight), size - 1) * size
                     for x in stride(from: 0, to: ts, by: 2) where ox + x < width {
-                        let v = b[y * ts + x]
+                        let v = min(b[y * ts + x], 1)
                         guard v > 0 else { continue }
                         let i = row + min(Int(Double(ox + x) / cellWidth), size - 1)
                         if v > out[i] { out[i] = v }
@@ -385,14 +412,15 @@ final class DraftingSheet {
         let base = graphite.value(x: x, y: y)
         guard let active = stroke else { return base }
         let s = max(active.buffer.value(x: x, y: y), prediction.value(x: x, y: y))
-        return active.erases ? GraphiteMath.erase(base: base, lift: s)
-            : GraphiteMath.composite(base: base, stroke: s, maxDensity: active.maxDensity)
+        return s > 0 ? active.laid(base, s) : base
     }
 
     /// Writes premultiplied graphite pixels (to lay over the paper) for `rect`
     /// of a tile. `pixels` is one tile, row-major, `GraphiteRaster.tileSize` wide.
+    /// Ink shows as ink with `inkShading`, or, with nil, as the fullest step of `lut`
+    /// (a carbon copy of an inked line is carbon all the same).
     func renderGraphite(tile coord: TileCoord, rect: PixelRect, into pixels: UnsafeMutableBufferPointer<UInt32>,
-                        shading lut: [UInt32] = GraphiteShading.lookup) {
+                        shading lut: [UInt32] = GraphiteShading.lookup, inkShading: [UInt32]? = GraphiteShading.inkLookup) {
         let size = GraphiteRaster.tileSize
         let area = rect.intersection(graphite.rect(of: coord))
         guard !area.isEmpty, pixels.count >= GraphiteRaster.tileArea else { return }
@@ -401,8 +429,8 @@ final class DraftingSheet {
         let base = graphite.tile(coord)
         let strokeTile = stroke?.buffer.tile(coord)
         let predictedTile = stroke == nil ? nil : prediction.tile(coord)
-        let maxDensity = stroke?.maxDensity ?? 0
-        let erases = stroke?.erases ?? false
+        let active = stroke
+        let top = GraphiteShading.levels - 1
 
         for py in area.minY..<area.maxY {
             let row = (py - originY) * size - originX
@@ -410,10 +438,12 @@ final class DraftingSheet {
                 let i = row + px
                 var d = base?[i] ?? 0
                 let s = max(strokeTile?[i] ?? 0, predictedTile?[i] ?? 0)
-                if s > 0 {
-                    d = erases ? GraphiteMath.erase(base: d, lift: s) : GraphiteMath.composite(base: d, stroke: s, maxDensity: maxDensity)
+                if s > 0, let active { d = active.laid(d, s) }
+                if d > 1, let inkShading {
+                    pixels[i] = inkShading[min(Int((d - 1) * Float(top) + 0.5), top)]
+                } else {
+                    pixels[i] = lut[min(Int(min(d, 1) * Float(top) + 0.5), top)]
                 }
-                pixels[i] = lut[min(Int(d * Float(GraphiteShading.levels - 1) + 0.5), GraphiteShading.levels - 1)]
             }
         }
     }

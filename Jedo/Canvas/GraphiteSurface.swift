@@ -10,12 +10,15 @@ final class GraphiteSurface {
     let layer = CALayer()
     private let scale: CGFloat
     private let shading: [UInt32]
+    private let inkShading: [UInt32]?
     private var tiles: [TileCoord: GraphiteTile] = [:]
 
+    /// Carbon copies (`shading` of carbon) show inked lines as carbon too.
     init(sheet: DraftingSheet, scale: CGFloat, shading: [UInt32] = GraphiteShading.lookup) {
         self.sheet = sheet
         self.scale = scale
         self.shading = shading
+        inkShading = shading == GraphiteShading.carbonLookup ? nil : GraphiteShading.inkLookup
         layer.actions = CanvasView.noAnimations
         layer.frame = CGRect(x: 0, y: 0, width: CGFloat(sheet.width) / scale, height: CGFloat(sheet.height) / scale)
     }
@@ -29,7 +32,7 @@ final class GraphiteSurface {
         for (coord, rect) in regions {
             let tile = tiles[coord] ?? makeTile(coord)
             tile.pixels.withUnsafeMutableBufferPointer {
-                sheet.renderGraphite(tile: coord, rect: rect, into: $0, shading: shading)
+                sheet.renderGraphite(tile: coord, rect: rect, into: $0, shading: shading, inkShading: inkShading)
             }
             tile.layer.contents = CanvasView.makeImage(pixels: tile.pixels, width: GraphiteRaster.tileSize,
                                                        height: GraphiteRaster.tileSize)

@@ -56,13 +56,30 @@ enum Instrument: Hashable, Sendable {
     /// A drafting mechanical pencil: the lead's diameter sets the line, and
     /// its sleeve keeps it from being laid flat.
     case mechanical(LeadSize)
+    /// A technical pen: india ink at one width whatever the pressure.
+    case technicalPen(PenWidth)
+    /// A dip pen: india ink, the line swelling with pressure.
+    case dipPen(Nib)
 
     var name: String {
         switch self {
         case .wood: "연필"
         case .mechanical(let size): "제도 샤프 \(size.label)mm"
+        case .technicalPen(let width): "제도펜 \(width.label)mm"
+        case .dipPen(let nib): nib.name
         }
     }
+
+    /// The pen, if it draws in ink.
+    var inkPen: InkDynamics.Pen? {
+        switch self {
+        case .technicalPen(let width): .technical(width)
+        case .dipPen(let nib): .dip(nib)
+        case .wood, .mechanical: nil
+        }
+    }
+
+    var isInk: Bool { inkPen != nil }
 }
 
 /// How pressure and tilt change the mark of one lead.
@@ -105,6 +122,8 @@ struct PencilDynamics: Sendable {
         switch instrument {
         case .wood: grade.parameters.lineWidthMM
         case .mechanical(let size): size.diameterMM * (1 + mechanicalSoftSpread * grade.softness)
+        case .technicalPen(let width): width.mm
+        case .dipPen(let nib): InkDynamics.widthMM(.dip(nib), pressure: 0.5)
         }
     }
 

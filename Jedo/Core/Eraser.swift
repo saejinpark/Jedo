@@ -39,6 +39,16 @@ enum EraserKind: CaseIterable, Hashable, Sendable {
         }
     }
 
+    /// How readily it takes ink, against graphite. India ink sits in the paper:
+    /// rubber barely moves it; the electric eraser's abrasive strip grinds it off.
+    var inkLift: Float {
+        switch self {
+        case .rubber: 0.04
+        case .kneaded: 0
+        case .electric: 0.55
+        }
+    }
+
     /// Width of the part that touches the paper.
     var widthMM: Double {
         switch self {

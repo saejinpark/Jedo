@@ -126,20 +126,32 @@ struct ToolButton: View {
 struct TextCell: View {
     let title: String
     var selected = false
+    var width: CGFloat = 38
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(.system(size: 13, weight: selected ? .bold : .medium, design: .rounded))
-                .frame(width: 38, height: Metric.cell)
-                .foregroundStyle(selected ? Color.white : Palette.ink.opacity(0.8))
-                .background(selected ? AnyShapeStyle(Palette.ink.opacity(0.75)) : AnyShapeStyle(Color.clear),
-                            in: RoundedRectangle(cornerRadius: Metric.cellRadius))
-                .contentShape(RoundedRectangle(cornerRadius: Metric.cellRadius))
+            TextFace(title: title, selected: selected, width: width)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The face of a text cell, for menus that look like one.
+struct TextFace: View {
+    let title: String
+    var selected = false
+    var width: CGFloat = 38
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 13, weight: selected ? .bold : .medium, design: .rounded))
+            .frame(width: width, height: Metric.cell)
+            .foregroundStyle(selected ? Color.white : Palette.ink.opacity(0.8))
+            .background(selected ? AnyShapeStyle(Palette.ink.opacity(0.75)) : AnyShapeStyle(Color.clear),
+                        in: RoundedRectangle(cornerRadius: Metric.cellRadius))
+            .contentShape(RoundedRectangle(cornerRadius: Metric.cellRadius))
     }
 }
 

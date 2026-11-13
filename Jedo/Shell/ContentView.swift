@@ -206,7 +206,9 @@ private struct PencilGroup: View {
     var body: some View {
         VStack(alignment: slot.horizontalAlignment, spacing: Metric.groupGap) {
             InstrumentGroup(session: session)
+            // Ink has no grade: the grades rest while a pen is in hand.
             ControlGroup { PencilGrades(selection: $session.grade) }
+                .opacity(session.instrument.isInk ? 0.4 : 1)
         }
     }
 }
@@ -228,7 +230,38 @@ private struct InstrumentGroup: View {
             ToolButton(icon: .symbol("pencil"), label: Instrument.wood.name, selected: session.instrument == .wood) {
                 session.instrument = .wood
             }
+            GroupDivider()
+            TechnicalPenMenu(session: session)
+            ForEach(Nib.allCases, id: \.self) { nib in
+                TextCell(title: nib.label, selected: session.instrument == .dipPen(nib), width: 44) {
+                    session.instrument = .dipPen(nib)
+                }
+                .accessibilityLabel(nib.name)
+            }
         }
+    }
+}
+
+/// The technical pen, by line width: the face shows the width in hand.
+private struct TechnicalPenMenu: View {
+    @Bindable var session: DrawingSession
+
+    var body: some View {
+        let current: PenWidth? = if case .technicalPen(let w) = session.instrument { w } else { nil }
+        Menu {
+            ForEach(PenWidth.allCases, id: \.self) { width in
+                Button {
+                    session.instrument = .technicalPen(width)
+                } label: {
+                    Label("\(width.label)mm", systemImage: current == width ? "checkmark" : "")
+                }
+            }
+        } label: {
+            TextFace(title: current.map { "펜 \($0.label)" } ?? "제도펜", selected: current != nil, width: 62)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel(current.map { "제도펜 \($0.label)mm" } ?? "제도펜")
     }
 }
 
