@@ -104,6 +104,10 @@ final class CanvasView: UIView {
         case marks([SurfaceID])
         /// A cut or peel, with each sheet of tone before and after.
         case tones([Int: (before: ToneCut, after: ToneCut)])
+        /// Sheets the knife parted, each into two pieces.
+        case pieces([PieceCut])
+        /// Several at once, as one knife stroke cutting tone and paper.
+        case group([UndoStep])
 
         func without(_ id: Int) -> UndoStep? {
             switch self {
@@ -113,9 +117,28 @@ final class CanvasView: UIView {
             case .tones(let changes):
                 let left = changes.filter { $0.key != id }
                 return left.isEmpty ? nil : .tones(left)
+            case .pieces(let cuts):
+                let left = cuts.filter { $0.before.id != id && $0.piece.id != id }
+                return left.isEmpty ? nil : .pieces(left)
+            case .group(let steps):
+                let left = steps.compactMap { $0.without(id) }
+                return left.isEmpty ? nil : .group(left)
             }
         }
     }
+
+    /// A sheet cut in two: the sheet as it was and as it is left, and the new
+    /// piece with its own surfaces (kept here so its history survives undo).
+    private struct PieceCut {
+        let before: PaperLayer
+        let after: PaperLayer
+        let piece: PaperLayer
+        let surface: GraphiteSurface
+        let copies: GraphiteSurface
+    }
+
+    /// Where the knife has been this stroke, in paper pixels.
+    private var knifePath: [CGPoint] = []
 
     /// Pins pushed in at vanishing points, in paper pixels.
     private(set) var pins: [CGPoint] = []
@@ -460,10 +483,7 @@ final class CanvasView: UIView {
 
     func undo() {
         guard activeTouch == nil, let step = undoStack.popLast() else { return }
-        switch step {
-        case .marks(let ids): for id in ids { _ = surface(id)?.sheet.undo() }
-        case .tones(let changes): for (id, change) in changes { setTone(id, change.before) }
-        }
+        revert(step)
         redoStack.append(step)
         refresh()
         notifyHistory()
@@ -471,13 +491,28 @@ final class CanvasView: UIView {
 
     func redo() {
         guard activeTouch == nil, let step = redoStack.popLast() else { return }
-        switch step {
-        case .marks(let ids): for id in ids { _ = surface(id)?.sheet.redo() }
-        case .tones(let changes): for (id, change) in changes { setTone(id, change.after) }
-        }
+        replay(step)
         undoStack.append(step)
         refresh()
         notifyHistory()
+    }
+
+    private func revert(_ step: UndoStep) {
+        switch step {
+        case .marks(let ids): for id in ids { _ = surface(id)?.sheet.undo() }
+        case .tones(let changes): for (id, change) in changes { setTone(id, change.before) }
+        case .pieces(let cuts): for cut in cuts.reversed() { join(cut) }
+        case .group(let steps): for step in steps.reversed() { revert(step) }
+        }
+    }
+
+    private func replay(_ step: UndoStep) {
+        switch step {
+        case .marks(let ids): for id in ids { _ = surface(id)?.sheet.redo() }
+        case .tones(let changes): for (id, change) in changes { setTone(id, change.after) }
+        case .pieces(let cuts): for cut in cuts { part(cut) }
+        case .group(let steps): for step in steps { replay(step) }
+        }
     }
 
     private func notifyHistory() {
@@ -810,6 +845,15 @@ final class CanvasView: UIView {
 
     /// Lays a grid sheet with its two surfaces: what is drawn on it, and what the carbon copies onto it.
     private func layGrid(_ layer: PaperLayer, sheet: DraftingSheet) {
+        let (surface, copies) = makeSurfaces(layer, sheet: sheet)
+        layerSurfaces[layer.id] = surface
+        layerCopies[layer.id] = copies
+        layers.append(layer)
+        showLayer(layer, surfaces: [copies, surface], sheet: sheet)
+    }
+
+    /// A grid sheet's two surfaces: what is drawn on it, and what the carbon copies onto it.
+    private func makeSurfaces(_ layer: PaperLayer, sheet: DraftingSheet) -> (GraphiteSurface, GraphiteSurface) {
         let size = layer.rasterSize(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
         let make = { (shading: [UInt32]) in
             GraphiteSurface(sheet: DraftingSheet(width: size.width, height: size.height,
@@ -817,11 +861,77 @@ final class CanvasView: UIView {
                                                  paper: sheet.paper, historyBudgetBytes: DraftingSheet.defaultHistoryBudget / 8),
                             scale: self.scale, shading: shading)
         }
-        let surface = make(GraphiteShading.lookup), copies = make(GraphiteShading.carbonLookup)
-        layerSurfaces[layer.id] = surface
-        layerCopies[layer.id] = copies
-        layers.append(layer)
-        showLayer(layer, surfaces: [copies, surface], sheet: sheet)
+        return (make(GraphiteShading.lookup), make(GraphiteShading.carbonLookup))
+    }
+
+    // MARK: Cutting paper
+
+    /// Parts every sheet of paper the knife has crossed from edge to edge.
+    /// Each becomes two pieces that move, draw and stamp on their own.
+    private func cutSheets(along path: [CGPoint]) -> [PieceCut] {
+        guard let sheet, path.count >= 2 else { return [] }
+        let ppmm = sheet.pixelsPerMillimeter
+        var cuts: [PieceCut] = []
+        for layer in layers where !hiddenLayers.contains(layer.id) {
+            guard case .grid = layer.kind, let surface = layerSurfaces[layer.id] else { continue }
+            let (w, h) = layer.kind.sizeMM
+            let local = path.map { p -> CGPoint in
+                let q = layer.surfacePoint(p, pixelsPerMillimeter: ppmm)
+                return CGPoint(x: Double(q.x) / ppmm - w / 2, y: Double(q.y) / ppmm - h / 2)
+            }
+            guard let (kept, cutOff) = Polygon.split(layer.outlineMM, along: local) else { continue }
+            var after = layer
+            after.pieceMM = kept
+            let piece = PaperLayer(id: nextLayerID, kind: layer.kind, pose: layer.pose, pieceMM: cutOff)
+            nextLayerID += 1
+            let (pieceSurface, pieceCopies) = makeSurfaces(piece, sheet: sheet)
+            pieceSurface.sheet.load(surface.sheet.graphite)
+            if let copies = layerCopies[layer.id] { pieceCopies.sheet.load(copies.sheet.graphite) }
+            cuts.append(PieceCut(before: layer, after: after, piece: piece, surface: pieceSurface, copies: pieceCopies))
+        }
+        for cut in cuts { part(cut) }
+        return cuts
+    }
+
+    /// Lays a cut down: the sheet trimmed to its piece, and the other piece just above it.
+    private func part(_ cut: PieceCut) {
+        guard let sheet, let i = layers.firstIndex(where: { $0.id == cut.before.id }) else { return }
+        layers[i] = cut.after
+        reshow(cut.after)
+        layerSurfaces[cut.piece.id] = cut.surface
+        layerCopies[cut.piece.id] = cut.copies
+        layers.insert(cut.piece, at: i + 1)
+        showLayer(cut.piece, surfaces: [cut.copies, cut.surface], sheet: sheet)
+        layersChanged()
+    }
+
+    /// Takes a cut back: the piece goes, the sheet is whole again.
+    private func join(_ cut: PieceCut) {
+        let id = cut.piece.id
+        layers.removeAll { $0.id == id }
+        layerViews.removeValue(forKey: id)?.removeFromSuperview()
+        layerSurfaces[id] = nil
+        layerCopies[id] = nil
+        layerHolders[id] = nil
+        hiddenLayers.remove(id)
+        if let i = layers.firstIndex(where: { $0.id == cut.before.id }) {
+            // Keep where it lies now; only its shape comes back.
+            var whole = layers[i]
+            whole.pieceMM = cut.before.pieceMM
+            layers[i] = whole
+            reshow(whole)
+        }
+        layersChanged()
+    }
+
+    /// Builds a sheet's view again, as when its shape changes.
+    private func reshow(_ layer: PaperLayer) {
+        guard let sheet else { return }
+        layerViews.removeValue(forKey: layer.id)?.removeFromSuperview()
+        let surfaces = [layerCopies[layer.id], layerSurfaces[layer.id]].compactMap { $0 }
+        showLayer(layer, surfaces: surfaces, sheet: sheet)
+        layerViews[layer.id]?.isHidden = hiddenLayers.contains(layer.id)
+        if let tone = toneCuts[layer.id] { layerViews[layer.id]?.showTone(tone) }
     }
 
     /// Lays a new sheet of tone on the paper. Returns its id.
@@ -864,6 +974,10 @@ final class CanvasView: UIView {
         guard cutting != nil else { return }
         var touched: Set<Int> = []
         for s in samples {
+            // A point every couple of pixels is plenty to cut along.
+            if knifePath.last.map({ hypot(Double(s.location.x - $0.x), Double(s.location.y - $0.y)) >= 2 }) ?? true {
+                knifePath.append(s.location)
+            }
             if cutStart == nil { cutStart = s.location }
             defer { lastCut = s.location }
             guard let from = lastCut else { continue }
@@ -1263,6 +1377,7 @@ final class CanvasView: UIView {
         if knifeInHand, !erasing {
             // The knife: follows the tools like the pencil, but cuts tone and leaves no line.
             cutting = [:]
+            knifePath = []
             lastCut = nil
             cutStart = nil
             scraping = Double(touch.altitudeAngle) < Self.scrapeBelowAltitude
@@ -1371,8 +1486,14 @@ final class CanvasView: UIView {
             }
             var changes: [Int: (before: ToneCut, after: ToneCut)] = [:]
             for (id, old) in before { if let now = toneCuts[id], now != old { changes[id] = (old, now) } }
-            if !changes.isEmpty {
-                undoStack.append(.tones(changes))
+            // Paper is parted only where the blade stood up and ran edge to edge.
+            let pieces = scraping ? [] : cutSheets(along: knifePath)
+            knifePath = []
+            var steps: [UndoStep] = []
+            if !changes.isEmpty { steps.append(.tones(changes)) }
+            if !pieces.isEmpty { steps.append(.pieces(pieces)) }
+            if !steps.isEmpty {
+                undoStack.append(steps.count == 1 ? steps[0] : .group(steps))
                 redoStack.removeAll()
             }
             return

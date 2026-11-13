@@ -552,3 +552,52 @@ struct StampTargetTests {
         #expect(abs(back.x - p.x) < 1e-6 && abs(back.y - p.y) < 1e-6)
     }
 }
+
+struct PaperPieceTests {
+    private let square = [CGPoint(x: -50, y: -50), CGPoint(x: 50, y: -50), CGPoint(x: 50, y: 50), CGPoint(x: -50, y: 50)]
+
+    @Test func aCutFromEdgeToEdgePartsTheSheetInTwo() throws {
+        let (a, b) = try #require(Polygon.split(square, along: [CGPoint(x: 0, y: -80), CGPoint(x: 0, y: 80)]))
+        let areas = [abs(Polygon.signedArea(a)), abs(Polygon.signedArea(b))].map { $0 / 2 }
+        #expect(abs(areas[0] - 5000) < 1e-6 && abs(areas[1] - 5000) < 1e-6)
+        #expect(Polygon.contains(CGPoint(x: -25, y: 0), a) != Polygon.contains(CGPoint(x: -25, y: 0), b))
+    }
+
+    @Test func aBentCutFollowsTheKnife() throws {
+        let path = [CGPoint(x: -80, y: 0), CGPoint(x: 0, y: 20), CGPoint(x: 80, y: 0)]
+        let (a, b) = try #require(Polygon.split(square, along: path))
+        let total = (abs(Polygon.signedArea(a)) + abs(Polygon.signedArea(b))) / 2
+        #expect(abs(total - 10000) < 1e-6)
+        #expect(a.contains(CGPoint(x: 0, y: 20)) && b.contains(CGPoint(x: 0, y: 20)))
+    }
+
+    @Test func aCutThatStopsShortOrMissesLeavesItWhole() {
+        #expect(Polygon.split(square, along: [CGPoint(x: 0, y: -80), CGPoint(x: 0, y: 10)]) == nil)
+        #expect(Polygon.split(square, along: [CGPoint(x: 80, y: -80), CGPoint(x: 90, y: 80)]) == nil)
+        #expect(Polygon.split(square, along: [CGPoint(x: -10, y: -10), CGPoint(x: 10, y: 10)]) == nil)
+    }
+
+    @Test func aPieceKeepsItsSurfaceAndOutlinesItsOwnShape() {
+        var layer = PaperLayer(id: 1, kind: .grid(.manuscript), pose: ToolPose(center: CGPoint(x: 1000, y: 1000), angle: 0))
+        let whole = layer.rasterSize(pixelsPerMillimeter: 10)
+        layer.pieceMM = [CGPoint(x: -10, y: -10), CGPoint(x: 10, y: -10), CGPoint(x: 0, y: 10)]
+        #expect(layer.rasterSize(pixelsPerMillimeter: 10) == whole)
+        #expect(layer.outline(pixelsPerMillimeter: 10).count == 3)
+        #expect(layer.outline(pixelsPerMillimeter: 10)[2] == CGPoint(x: 1000, y: 1100))
+    }
+
+    @Test func everyWritingPaperHasItsPrintOnTheSheet() {
+        for pattern in [GridPattern.manuscript, .genkou, .manga, .squareBook, .staff, .fourLine] {
+            let (w, h) = pattern.sizeMM
+            let lines = GridRulings.lines(pattern)
+            #expect(!lines.isEmpty, "\(pattern)")
+            for line in lines {
+                for p in [line.from, line.to] {
+                    #expect(p.x >= -0.01 && p.x <= w + 0.01 && p.y >= -0.01 && p.y <= h + 0.01, "\(pattern) \(p)")
+                }
+            }
+        }
+        #expect(GridRulings.lines(.fourLine).contains { $0.ink == .red })
+        #expect(GridRulings.lines(.manga).allSatisfy { $0.ink == .blue })
+    }
+}

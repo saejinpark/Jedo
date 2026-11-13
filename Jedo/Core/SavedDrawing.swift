@@ -87,6 +87,8 @@ enum DrawingStore {
             var graphite: Raster?
             var copies: Raster?
             var tone: Tone?
+            /// The piece left after cutting, as x, y pairs in millimetres.
+            var piece: [Double]?
         }
 
         init(_ s: DrawingState) {
@@ -103,7 +105,8 @@ enum DrawingStore {
                 return Sheet(id: sheet.layer.id, kind: sheet.layer.kind.code,
                              pose: [Double(pose.center.x), Double(pose.center.y), pose.angle], hidden: sheet.hidden,
                              graphite: sheet.graphite.map(Raster.init), copies: sheet.copies.map(Raster.init),
-                             tone: sheet.tone.map(Tone.init))
+                             tone: sheet.tone.map(Tone.init),
+                             piece: sheet.layer.pieceMM.map { $0.flatMap { [Double($0.x), Double($0.y)] } })
             }
             nextLayerID = s.nextLayerID
             pins = s.pins.flatMap { [Double($0.x), Double($0.y)] }
@@ -121,8 +124,13 @@ enum DrawingStore {
                 carbonCopy: carbonCopy.raster(width: size, height: size),
                 sheets: sheets.map { sheet in
                     guard let kind = SheetKind(code: sheet.kind), sheet.pose.count == 3 else { throw Unreadable() }
+                    let piece = sheet.piece.flatMap { p -> [CGPoint]? in
+                        guard p.count >= 6, p.count.isMultiple(of: 2) else { return nil }
+                        return stride(from: 0, to: p.count, by: 2).map { CGPoint(x: p[$0], y: p[$0 + 1]) }
+                    }
                     let layer = PaperLayer(id: sheet.id, kind: kind,
-                                           pose: ToolPose(center: CGPoint(x: sheet.pose[0], y: sheet.pose[1]), angle: sheet.pose[2]))
+                                           pose: ToolPose(center: CGPoint(x: sheet.pose[0], y: sheet.pose[1]), angle: sheet.pose[2]),
+                                           pieceMM: piece)
                     let r = layer.rasterSize(pixelsPerMillimeter: pixelsPerMillimeter)
                     return DrawingState.Sheet(layer: layer, hidden: sheet.hidden,
                                               graphite: try sheet.graphite?.raster(width: r.width, height: r.height),

@@ -106,7 +106,7 @@ final class DrawingSession {
             case .pencil: "선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡고 컴퍼스 바늘을 꽂습니다."
             case .compass: "손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다."
             case .eraser: "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
-            case .knife: "세워 그으면 톤이 잘리고, 눕혀 문지르면 망점이 긁혀 나갑니다. 잘린 조각은 손가락으로 톡 쳐서 뗍니다."
+            case .knife: "세워 그으면 톤이 잘리고, 종이를 끝에서 끝까지 가르면 두 조각이 됩니다. 눕혀 문지르면 망점이 긁혀 나갑니다."
             }
         }
 
@@ -202,11 +202,13 @@ final class DrawingSession {
         if id == CanvasView.carbonID { carbonOnDesk = false } else { removeSheet(id) }
     }
 
-    /// Whether any tone lies on the paper, so the knife has something to cut.
+    /// Whether any tone lies on the paper.
     var hasTone: Bool { layerRows.contains(where: \.isTone) }
+    /// Whether anything lies on the paper for the knife: tone, or a sheet of paper to cut in pieces.
+    var canCut: Bool { layerRows.contains { $0.isTone || $0.canStamp } }
 
     func layersChanged(_ layers: [PaperLayer], hidden: Set<Int>) {
-        defer { if !hasTone, knifeInHand { knifeInHand = false } }
+        defer { if !canCut, knifeInHand { knifeInHand = false } }
         let carbon = layers.contains { $0.kind == .carbon }
         if carbonOnDesk != carbon { carbonOnDesk = carbon }
         layerRows = layers.enumerated().reversed().map { i, layer in

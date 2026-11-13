@@ -87,8 +87,29 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
     case isometric
     /// A round sheet: rings every 5 mm and a ray every 15°.
     case polar
+    /// Korean manuscript paper (원고지), 200 squares: rows of 20 with a strip between rows.
+    case manuscript
+    /// Japanese manuscript paper (genkō yōshi), 400 squares written in columns,
+    /// with the fold strip down the middle.
+    case genkou
+    /// Comic manuscript paper, B4: the trim, bleed and inner frame printed in
+    /// non-photo blue, with crop marks.
+    case manga
+    /// The squared exercise book of Korean first graders (깍두기 공책): large
+    /// squares with a dotted cross for placing each letter.
+    case squareBook
+    /// Music staff paper (오선지).
+    case staff
+    /// English four-line paper: the third line, the base line, in red.
+    case fourLine
     var name: String {
         switch self {
+        case .manuscript: "원고지 200자"
+        case .genkou: "원고지 400자 (세로)"
+        case .manga: "만화 원고용지 B4"
+        case .squareBook: "깍두기 공책"
+        case .staff: "오선지"
+        case .fourLine: "영어 4선 공책"
         case .square1: "모눈 방안 1mm"
         case .square5: "모눈 방안 5mm"
         case .isometric: "모눈 등각 5mm"
@@ -107,8 +128,16 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
         case .polar: (120, 120)
         case .tracing: (210, 297)
         case .butter: (300, 300)
+        case .manuscript: (180, 127)
+        case .genkou: (226, 180)
+        case .manga: (257, 364)
+        case .squareBook: (160, 216)
+        case .staff, .fourLine: (210, 297)
         }
     }
+
+    /// Ruled tracing (모눈) as against the printed writing and manuscript papers.
+    var isGraph: Bool { [.square1, .square5, .isometric, .polar].contains(self) }
 
     var isRound: Bool { self == .polar }
 
@@ -173,6 +202,13 @@ struct PaperLayer: Identifiable, Equatable, Sendable {
     var kind: SheetKind
     /// Centre and turn, in paper pixels.
     var pose: ToolPose
+    /// What is left of the sheet after the knife, in millimetres about the
+    /// whole sheet's centre; nil while it is uncut. The surface stays the
+    /// whole sheet's size, so a piece keeps its drawing where it was.
+    var pieceMM: [CGPoint]? = nil
+
+    /// The sheet's outline in millimetres about its centre: the piece, or the whole sheet.
+    var outlineMM: [CGPoint] { pieceMM ?? kind.outlineMM }
 
     /// Pixels of the sheet's own drawing surface, which moves with it.
     func rasterSize(pixelsPerMillimeter ppmm: Double) -> (width: Int, height: Int) {
@@ -182,7 +218,7 @@ struct PaperLayer: Identifiable, Equatable, Sendable {
 
     /// The outline on the paper, in paper pixels.
     func outline(pixelsPerMillimeter ppmm: Double) -> [CGPoint] {
-        kind.outlineMM.map { world(CGPoint(x: Double($0.x) * ppmm, y: Double($0.y) * ppmm)) }
+        outlineMM.map { world(CGPoint(x: Double($0.x) * ppmm, y: Double($0.y) * ppmm)) }
     }
 
     /// A point on the paper in the sheet's own pixels, from its top-left corner.
@@ -383,6 +419,66 @@ struct StrokeMask: Sendable {
 
 /// Small geometry on plain point lists.
 enum Polygon {
+    /// Twice the signed area: positive when the points run clockwise on screen.
+    static func signedArea(_ polygon: [CGPoint]) -> Double {
+        polygon.indices.reduce(0) { sum, i in
+            let a = polygon[i], b = polygon[(i + 1) % polygon.count]
+            return sum + Double(a.x * b.y - b.x * a.y)
+        }
+    }
+
+    /// Cuts a polygon in two along a path that runs in from outside and out
+    /// again, crossing its rim exactly twice: a knife drawn across a sheet
+    /// from edge to edge. Nil when the path doesn't part it.
+    static func split(_ polygon: [CGPoint], along path: [CGPoint]) -> ([CGPoint], [CGPoint])? {
+        guard polygon.count >= 3, path.count >= 2 else { return nil }
+        // Every crossing: where along the path, which edge, how far along it.
+        var crossings: [(s: Double, edge: Int, t: Double, point: CGPoint)] = []
+        for j in 0..<(path.count - 1) {
+            let p = path[j], q = path[j + 1]
+            for i in polygon.indices {
+                let a = polygon[i], b = polygon[(i + 1) % polygon.count]
+                guard let (u, t) = intersect(p, q, a, b) else { continue }
+                crossings.append((Double(j) + u, i, t,
+                                  CGPoint(x: Double(p.x) + Double(q.x - p.x) * u, y: Double(p.y) + Double(q.y - p.y) * u)))
+            }
+        }
+        guard crossings.count == 2 else { return nil }
+        crossings.sort { $0.s < $1.s }
+        let (enter, exit) = (crossings[0], crossings[1])
+        // The knife's path inside the sheet, between the two crossings.
+        let inner = path.indices.filter { Double($0) > enter.s && Double($0) < exit.s }.map { path[$0] }
+        /// Rim corners met walking forward from one crossing to the other.
+        func rim(from: (edge: Int, t: Double), to: (edge: Int, t: Double)) -> [CGPoint] {
+            if from.edge == to.edge, to.t > from.t { return [] }
+            var out: [CGPoint] = []
+            var i = (from.edge + 1) % polygon.count
+            while true {
+                out.append(polygon[i])
+                if i == to.edge { break }
+                i = (i + 1) % polygon.count
+            }
+            return out
+        }
+        let first = [enter.point] + rim(from: (enter.edge, enter.t), to: (exit.edge, exit.t)) + [exit.point] + inner.reversed()
+        let second = [exit.point] + rim(from: (exit.edge, exit.t), to: (enter.edge, enter.t)) + [enter.point] + inner
+        // A sliver is not a piece.
+        guard abs(signedArea(first)) > 1, abs(signedArea(second)) > 1 else { return nil }
+        return (first, second)
+    }
+
+    /// Where segment pq meets segment ab, as fractions along each.
+    private static func intersect(_ p: CGPoint, _ q: CGPoint, _ a: CGPoint, _ b: CGPoint) -> (Double, Double)? {
+        let r = (x: Double(q.x - p.x), y: Double(q.y - p.y)), s = (x: Double(b.x - a.x), y: Double(b.y - a.y))
+        let denom = r.x * s.y - r.y * s.x
+        guard abs(denom) > 1e-12 else { return nil }
+        let ap = (x: Double(a.x - p.x), y: Double(a.y - p.y))
+        let u = (ap.x * s.y - ap.y * s.x) / denom
+        let t = (ap.x * r.y - ap.y * r.x) / denom
+        guard u >= 0, u < 1, t >= 0, t < 1 else { return nil }
+        return (u, t)
+    }
+
     enum Placement: Equatable { case inside, outside, part }
 
     /// Even–odd inside test.
@@ -445,10 +541,24 @@ enum Polygon {
 enum GridRulings {
     enum Weight: Int, CaseIterable, Sendable { case fine, medium, bold }
 
+    /// The colour a sheet is printed in.
+    enum Ink: Int, CaseIterable, Sendable {
+        /// Drafting-film green.
+        case green
+        /// Manuscript-paper red.
+        case red
+        /// Non-photo blue, invisible to a copier.
+        case blue
+        /// Staff lines.
+        case black
+    }
+
     struct Line: Equatable, Sendable {
         var from: CGPoint
         var to: CGPoint
         var weight: Weight
+        var ink: Ink = .green
+        var dashed = false
     }
 
     struct Ring: Equatable, Sendable {
@@ -467,6 +577,18 @@ enum GridRulings {
             return isometric(width: w, height: h, spacing: 5)
         case .tracing, .butter:
             return []
+        case .manuscript:
+            return manuscript(width: w)
+        case .genkou:
+            return genkou(width: w, height: h)
+        case .manga:
+            return manga(width: w, height: h)
+        case .squareBook:
+            return squareBook(width: w, height: h)
+        case .staff:
+            return staff(width: w, height: h)
+        case .fourLine:
+            return fourLine(width: w, height: h)
         case .polar:
             let r = w / 2
             return stride(from: 0, to: 360, by: 15).map { degrees in
@@ -496,6 +618,141 @@ enum GridRulings {
         for i in 0...Int((height / step).rounded(.down)) {
             let y = Double(i) * step
             out.append(Line(from: CGPoint(x: 0, y: y), to: CGPoint(x: width, y: y), weight: weight(i)))
+        }
+        return out
+    }
+
+    private static func box(_ x0: Double, _ y0: Double, _ x1: Double, _ y1: Double, _ weight: Weight, _ ink: Ink,
+                            dashed: Bool = false) -> [Line] {
+        let a = CGPoint(x: x0, y: y0), b = CGPoint(x: x1, y: y0), c = CGPoint(x: x1, y: y1), d = CGPoint(x: x0, y: y1)
+        return [(a, b), (b, c), (c, d), (d, a)].map { Line(from: $0.0, to: $0.1, weight: weight, ink: ink, dashed: dashed) }
+    }
+
+    /// 20 squares of 8 mm a row, ten rows, a 3 mm strip between rows, in a heavy frame.
+    private static func manuscript(width: Double) -> [Line] {
+        let cell = 8.0, gap = 3.0, margin = 10.0, columns = 20, rows = 10
+        let right = margin + Double(columns) * cell
+        var out: [Line] = []
+        for r in 0..<rows {
+            let top = margin + Double(r) * (cell + gap), bottom = top + cell
+            out.append(Line(from: CGPoint(x: margin, y: top), to: CGPoint(x: right, y: top), weight: .medium, ink: .red))
+            out.append(Line(from: CGPoint(x: margin, y: bottom), to: CGPoint(x: right, y: bottom), weight: .medium, ink: .red))
+            for c in 1..<columns {
+                let x = margin + Double(c) * cell
+                out.append(Line(from: CGPoint(x: x, y: top), to: CGPoint(x: x, y: bottom), weight: .fine, ink: .red))
+            }
+        }
+        let bottom = margin + Double(rows) * cell + Double(rows - 1) * gap
+        return out + box(margin, margin, right, bottom, .bold, .red)
+    }
+
+    /// Ten columns of 20 squares each side of the fold strip, a 2 mm gap between columns.
+    private static func genkou(width: Double, height: Double) -> [Line] {
+        let cell = 8.0, gap = 2.0, fold = 10.0, margin = 10.0, rows = 20
+        let top = margin, bottom = margin + Double(rows) * cell
+        var out: [Line] = []
+        var x = margin
+        for column in 0..<20 {
+            if column == 10 { x += fold - gap }
+            let left = x, right = x + cell
+            out.append(Line(from: CGPoint(x: left, y: top), to: CGPoint(x: left, y: bottom), weight: .medium, ink: .red))
+            out.append(Line(from: CGPoint(x: right, y: top), to: CGPoint(x: right, y: bottom), weight: .medium, ink: .red))
+            for r in 1..<rows {
+                let y = top + Double(r) * cell
+                out.append(Line(from: CGPoint(x: left, y: y), to: CGPoint(x: right, y: y), weight: .fine, ink: .red))
+            }
+            x = right + gap
+        }
+        // The fold strip's marks, top and bottom.
+        let mid = width / 2
+        for y in [top + 4, bottom - 4] {
+            out.append(Line(from: CGPoint(x: mid - 2.5, y: y), to: CGPoint(x: mid + 2.5, y: y), weight: .medium, ink: .red))
+        }
+        return out + box(margin - 2, top - 2, width - margin + 2, bottom + 2, .bold, .red)
+    }
+
+    /// B4 comic paper finished at B5: the trim (182×257), the bleed 3 mm past
+    /// it, the inner frame (150×220), and crop marks at the corners and middles.
+    private static func manga(width: Double, height: Double) -> [Line] {
+        let cx = width / 2, cy = height / 2
+        func centred(_ w: Double, _ h: Double, _ weight: Weight, dashed: Bool = false) -> [Line] {
+            box(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2, weight, .blue, dashed: dashed)
+        }
+        var out = centred(182, 257, .medium) + centred(188, 263, .fine) + centred(150, 220, .medium)
+        // Crop marks: two strokes at each corner of the trim, out beyond the bleed.
+        let (tx, ty) = (182.0 / 2, 257.0 / 2), reach = 12.0, off = 3.0
+        for (sx, sy) in [(-1.0, -1.0), (1, -1), (1, 1), (-1, 1)] {
+            for (dx, dy) in [(tx, ty), (tx + off, ty + off)] {
+                let corner = CGPoint(x: cx + sx * dx, y: cy + sy * dy)
+                out.append(Line(from: CGPoint(x: cx + sx * (tx + off), y: corner.y),
+                                to: CGPoint(x: cx + sx * (tx + off + reach), y: corner.y), weight: .fine, ink: .blue))
+                out.append(Line(from: CGPoint(x: corner.x, y: cy + sy * (ty + off)),
+                                to: CGPoint(x: corner.x, y: cy + sy * (ty + off + reach)), weight: .fine, ink: .blue))
+            }
+        }
+        // Centre marks on each side.
+        for s in [-1.0, 1.0] {
+            out.append(Line(from: CGPoint(x: cx, y: cy + s * (ty + off)), to: CGPoint(x: cx, y: cy + s * (ty + off + reach)), weight: .fine, ink: .blue))
+            out.append(Line(from: CGPoint(x: cx + s * (tx + off), y: cy), to: CGPoint(x: cx + s * (tx + off + reach), y: cy), weight: .fine, ink: .blue))
+            out.append(Line(from: CGPoint(x: cx - 5, y: cy + s * (ty + off + reach / 2)), to: CGPoint(x: cx + 5, y: cy + s * (ty + off + reach / 2)), weight: .fine, ink: .blue))
+            out.append(Line(from: CGPoint(x: cx + s * (tx + off + reach / 2), y: cy - 5), to: CGPoint(x: cx + s * (tx + off + reach / 2), y: cy + 5), weight: .fine, ink: .blue))
+        }
+        return out
+    }
+
+    /// 14 mm squares, each with a dotted cross through its middle.
+    private static func squareBook(width: Double, height: Double) -> [Line] {
+        let cell = 14.0, margin = 10.0
+        let columns = Int(((width - 2 * margin) / cell).rounded(.down)), rows = Int(((height - 2 * margin) / cell).rounded(.down))
+        let right = margin + Double(columns) * cell, bottom = margin + Double(rows) * cell
+        var out: [Line] = []
+        for c in 0...columns {
+            let x = margin + Double(c) * cell
+            out.append(Line(from: CGPoint(x: x, y: margin), to: CGPoint(x: x, y: bottom), weight: c == 0 || c == columns ? .bold : .medium, ink: .green))
+            if c < columns {
+                out.append(Line(from: CGPoint(x: x + cell / 2, y: margin), to: CGPoint(x: x + cell / 2, y: bottom), weight: .fine, ink: .green, dashed: true))
+            }
+        }
+        for r in 0...rows {
+            let y = margin + Double(r) * cell
+            out.append(Line(from: CGPoint(x: margin, y: y), to: CGPoint(x: right, y: y), weight: r == 0 || r == rows ? .bold : .medium, ink: .green))
+            if r < rows {
+                out.append(Line(from: CGPoint(x: margin, y: y + cell / 2), to: CGPoint(x: right, y: y + cell / 2), weight: .fine, ink: .green, dashed: true))
+            }
+        }
+        return out
+    }
+
+    /// Staves of five lines 2 mm apart, one every 16 mm down an A4 sheet.
+    private static func staff(width: Double, height: Double) -> [Line] {
+        let margin = 12.0, space = 2.0, pitch = 16.0
+        var out: [Line] = []
+        var top = 20.0
+        while top + 4 * space <= height - 14 {
+            for k in 0..<5 {
+                let y = top + Double(k) * space
+                out.append(Line(from: CGPoint(x: margin, y: y), to: CGPoint(x: width - margin, y: y), weight: .medium, ink: .black))
+            }
+            for x in [margin, width - margin] {
+                out.append(Line(from: CGPoint(x: x, y: top), to: CGPoint(x: x, y: top + 4 * space), weight: .medium, ink: .black))
+            }
+            top += pitch
+        }
+        return out
+    }
+
+    /// Sets of four lines 3 mm apart, 15 mm a set: blue, with the third (the base line) red.
+    private static func fourLine(width: Double, height: Double) -> [Line] {
+        let margin = 12.0, space = 3.0, pitch = 15.0
+        var out: [Line] = []
+        var top = 18.0
+        while top + 3 * space <= height - 12 {
+            for k in 0..<4 {
+                let y = top + Double(k) * space
+                out.append(Line(from: CGPoint(x: margin, y: y), to: CGPoint(x: width - margin, y: y),
+                                weight: k == 2 ? .medium : .fine, ink: k == 2 ? .red : .blue, dashed: k == 1))
+            }
+            top += pitch
         }
         return out
     }

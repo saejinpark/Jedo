@@ -10,6 +10,17 @@ final class PaperLayerView: UIView {
     /// Muted green rulings, as on drafting film.
     static let rulingColour = UIColor(red: 0.20, green: 0.50, blue: 0.40, alpha: 1)
 
+    static func colour(_ ink: GridRulings.Ink) -> UIColor {
+        switch ink {
+        case .green: rulingColour
+        // Vermilion, as manuscript paper is printed.
+        case .red: UIColor(red: 0.84, green: 0.27, blue: 0.16, alpha: 1)
+        // Non-photo blue.
+        case .blue: UIColor(red: 0.36, green: 0.66, blue: 0.90, alpha: 1)
+        case .black: UIColor(red: 0.18, green: 0.18, blue: 0.20, alpha: 1)
+        }
+    }
+
     /// `surfaces` are what is drawn on the sheet, bottom first.
     init(layer sheet: PaperLayer, surfaces: [GraphiteSurface], scale: CGFloat, pixelsPerMillimeter ppmm: Double) {
         sheetID = sheet.id
@@ -23,7 +34,7 @@ final class PaperLayerView: UIView {
         bounds = CGRect(x: 0, y: 0, width: CGFloat(w) * pt, height: CGFloat(h) * pt)
 
         let outline = CGMutablePath()
-        outline.addLines(between: sheet.kind.outlineMM.map { CGPoint(x: (CGFloat($0.x) + CGFloat(w) / 2) * pt,
+        outline.addLines(between: sheet.outlineMM.map { CGPoint(x: (CGFloat($0.x) + CGFloat(w) / 2) * pt,
                                                                     y: (CGFloat($0.y) + CGFloat(h) / 2) * pt) })
         outline.closeSubpath()
 
@@ -52,22 +63,31 @@ final class PaperLayerView: UIView {
         }
 
         if case .grid(let pattern) = sheet.kind {
-            for weight in GridRulings.Weight.allCases {
-                let path = CGMutablePath()
-                for line in GridRulings.lines(pattern) where line.weight == weight {
-                    path.move(to: CGPoint(x: line.from.x * pt, y: line.from.y * pt))
-                    path.addLine(to: CGPoint(x: line.to.x * pt, y: line.to.y * pt))
+            let rulings = GridRulings.lines(pattern)
+            for ink in GridRulings.Ink.allCases {
+                for dashed in [false, true] {
+                    for weight in GridRulings.Weight.allCases {
+                        let path = CGMutablePath()
+                        for line in rulings where line.weight == weight && line.ink == ink && line.dashed == dashed {
+                            path.move(to: CGPoint(x: line.from.x * pt, y: line.from.y * pt))
+                            path.addLine(to: CGPoint(x: line.to.x * pt, y: line.to.y * pt))
+                        }
+                        if ink == .green, !dashed {
+                            for ring in GridRulings.rings(pattern) where ring.weight == weight {
+                                let r = CGFloat(ring.radius) * pt
+                                path.addEllipse(in: CGRect(x: bounds.midX - r, y: bounds.midY - r, width: 2 * r, height: 2 * r))
+                            }
+                        }
+                        guard !path.isEmpty else { continue }
+                        let lines = CAShapeLayer()
+                        lines.path = path
+                        lines.fillColor = nil
+                        lines.strokeColor = Self.colour(ink).withAlphaComponent([0.30, 0.48, 0.66][weight.rawValue]).cgColor
+                        lines.lineWidth = [0.35, 0.55, 0.8][weight.rawValue]
+                        if dashed { lines.lineDashPattern = [NSNumber(value: Double(pt) * 0.8), NSNumber(value: Double(pt) * 0.8)] }
+                        layer.addSublayer(lines)
+                    }
                 }
-                for ring in GridRulings.rings(pattern) where ring.weight == weight {
-                    let r = CGFloat(ring.radius) * pt
-                    path.addEllipse(in: CGRect(x: bounds.midX - r, y: bounds.midY - r, width: 2 * r, height: 2 * r))
-                }
-                let lines = CAShapeLayer()
-                lines.path = path
-                lines.fillColor = nil
-                lines.strokeColor = Self.rulingColour.withAlphaComponent([0.30, 0.48, 0.66][weight.rawValue]).cgColor
-                lines.lineWidth = [0.35, 0.55, 0.8][weight.rawValue]
-                layer.addSublayer(lines)
             }
         }
         for surface in surfaces { layer.addSublayer(surface.layer) }
@@ -86,6 +106,13 @@ final class PaperLayerView: UIView {
             toneMask.magnificationFilter = .linear
             toneMask.actions = CanvasView.noAnimations
             layer.mask = toneMask
+        } else if sheet.pieceMM != nil {
+            // A piece cut from the sheet: its print and drawing end at the cut.
+            let clip = CAShapeLayer()
+            clip.path = outline
+            clip.frame = bounds
+            clip.actions = CanvasView.noAnimations
+            layer.mask = clip
         }
     }
 

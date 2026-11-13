@@ -41,7 +41,7 @@ struct ContentView: View {
                             HintBubble(hint: hint)
                                 .transition(.move(edge: .top).combined(with: .opacity))
                                 // Below whatever sits along the top edge.
-                                .padding(.top, [.topLeading, .top, .topTrailing].allSatisfy { layout.groups(in: $0).isEmpty } ? 34 : 150)
+                                .padding(.top, [.topLeading, .top, .topTrailing].allSatisfy { layout.groups(in: $0).isEmpty } ? 34 : 220)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                                 .allowsHitTesting(false)
                         }
@@ -180,7 +180,7 @@ private struct HandGroup: View {
             if !slot.isTop { tools }
         }
         .animation(.snappy(duration: 0.2), value: session.eraserInHand)
-        .animation(.snappy(duration: 0.2), value: session.hasTone)
+        .animation(.snappy(duration: 0.2), value: session.canCut)
     }
 
     private var tools: some View {
@@ -193,7 +193,7 @@ private struct HandGroup: View {
                        selected: session.compassOnDesk) {
                 session.compassOnDesk.toggle()
             }
-            if session.hasTone {
+            if session.canCut {
                 ToolButton(icon: .symbol("scissors"), label: session.knifeInHand ? "커터 내려놓기" : "커터 들기",
                            selected: session.knifeInHand) {
                     session.knifeInHand.toggle()
@@ -573,16 +573,20 @@ private struct SheetsPanel: View {
             }
             Divider()
             PanelSection(title: "트레이싱지 얹기") {
-                chips(GridPattern.allCases.map { p in (p.name, { session.addSheet(p) }) })
+                chips(GridPattern.allCases.filter { $0.isPlain || $0.isGraph }.map { p in (p.name, { session.addSheet(p) }) })
+            }
+            Divider()
+            PanelSection(title: "원고지·공책 얹기") {
+                chips(GridPattern.allCases.filter { !$0.isPlain && !$0.isGraph }.map { p in (p.name, { session.addSheet(p) }) },
+                      perRow: 2)
             }
         }
         .padding(.vertical, 4)
         .frame(width: 450)
     }
 
-    private func chips(_ items: [(String, () -> Void)]) -> some View {
-        // Two rows at most at this width.
-        let rows = stride(from: 0, to: items.count, by: 3).map { Array(items[$0..<min($0 + 3, items.count)]) }
+    private func chips(_ items: [(String, () -> Void)], perRow: Int = 3) -> some View {
+        let rows = stride(from: 0, to: items.count, by: perRow).map { Array(items[$0..<min($0 + perRow, items.count)]) }
         return VStack(alignment: .leading, spacing: 6) {
             ForEach(rows.indices, id: \.self) { r in
                 HStack(spacing: 6) {

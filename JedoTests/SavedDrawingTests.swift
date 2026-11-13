@@ -20,7 +20,8 @@ struct SavedDrawingTests {
         tone.cut(from: CGPoint(x: 1, y: 1), to: CGPoint(x: 9, y: 1))
         var pass = ToneCut.ScrapePass(tone)
         tone.scrape(from: CGPoint(x: 2, y: 4), to: CGPoint(x: 8, y: 4), pressure: 1, pass: &pass)
-        let grid = PaperLayer(id: 3, kind: .grid(.butter), pose: ToolPose(center: CGPoint(x: 400, y: 300), angle: 0.4))
+        let grid = PaperLayer(id: 3, kind: .grid(.butter), pose: ToolPose(center: CGPoint(x: 400, y: 300), angle: 0.4),
+                              pieceMM: [CGPoint(x: -150, y: -150), CGPoint(x: 0, y: -150), CGPoint(x: 0, y: 150), CGPoint(x: -150, y: 150)])
         let size = grid.rasterSize(pixelsPerMillimeter: 2)
         return DrawingState(
             paper: PaperSize(series: .screen, landscape: true, screenWidthMM: 260.5, screenHeightMM: 195.25),
