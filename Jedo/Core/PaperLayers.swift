@@ -271,6 +271,13 @@ enum SurfaceID: Hashable, Sendable {
     case sheet(Int)
     /// What carbon has copied onto a grid sheet lying under it.
     case sheetCopy(Int)
+
+    var isCarbonCopy: Bool {
+        switch self {
+        case .carbonCopy, .sheetCopy: true
+        case .paper, .sheet: false
+        }
+    }
 }
 
 /// The soft sheets on the paper, for routing a stroke. The paper is the

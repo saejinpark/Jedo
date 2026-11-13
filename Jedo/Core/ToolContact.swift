@@ -11,7 +11,8 @@ enum ToolContact {
     static func collides(_ kind: ToolKind) -> Bool {
         switch kind {
         case .ruler, .parallelRule, .setSquare45, .setSquare60, .protractor,
-             .circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide: true
+             .circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide,
+             .brailleSlate, .morsePlate: true
         case .scaleRule: true
         // A sheet of steel thinner than paper: it slips under and over the others.
         case .frenchCurveA, .frenchCurveB, .frenchCurveC, .hipCurve, .erasingShield: false

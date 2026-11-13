@@ -62,3 +62,26 @@ struct ScaleRuleTests {
         #expect(abs(Double(ys.max()! - ys.min()!) - ScaleRule.widthMM * 10) < 1e-6, "\(ys)")
     }
 }
+
+struct SlateAndMorseTests {
+    @Test func aBrailleCellHasSixHolesAtBrailleSpacing() {
+        let cuts = ShapeTemplate.cuts(.brailleSlate)
+        #expect(cuts.count == ShapeTemplate.brailleCells * ShapeTemplate.brailleLines * 6)
+        let first = cuts.prefix(6).map(\.center)
+        #expect(abs(Double(first[1].y - first[0].y) - ShapeTemplate.brailleDotMM) < 1e-9)
+        #expect(abs(Double(first[3].x - first[0].x) - ShapeTemplate.brailleDotMM) < 1e-9)
+        #expect(abs(Double(cuts[6].center.x - first[0].x) - ShapeTemplate.brailleCellMM) < 1e-9)
+    }
+
+    @Test func theMorseTableIsCompleteAndTheStencilFitsThePlate() {
+        let letters = Set(ShapeTemplate.morseTable.map(\.0))
+        #expect(letters.count == ShapeTemplate.morseTable.count)
+        #expect(letters.isSuperset(of: Set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".map(String.init))))
+        #expect(ShapeTemplate.morseTable.allSatisfy { $0.1.allSatisfy { "·−".contains($0) } })
+        let size = ShapeTemplate.size(.morsePlate)
+        for cut in ShapeTemplate.cuts(.morsePlate) {
+            for p in cut.outline { #expect(abs(p.x) < size.width / 2 && abs(p.y) < size.height / 2) }
+        }
+        #expect(ShapeTemplate.morseTableRect.maxY < (ShapeTemplate.cuts(.morsePlate).map(\.center.y).min() ?? 0) - 3)
+    }
+}

@@ -25,6 +25,7 @@ final class DraftingSheet {
     private enum Lead {
         case pencil(PencilDynamics)
         case ink(InkDynamics)
+        case stylus(StylusDynamics)
         case eraser(EraserDynamics)
     }
 
@@ -48,9 +49,10 @@ final class DraftingSheet {
         func laid(_ base: Float, _ stroke: Float) -> Float {
             switch lead {
             case .pencil:
-                // Graphite takes no hold on ink.
-                base > 1 ? base : GraphiteMath.composite(base: base, stroke: stroke, maxDensity: maxDensity)
+                // Graphite takes no hold on ink, and doesn't reach into a dent.
+                base > 1 || base < 0 ? base : GraphiteMath.composite(base: base, stroke: stroke, maxDensity: maxDensity)
             case .ink: GraphiteMath.ink(base: base, coverage: stroke)
+            case .stylus: GraphiteMath.dent(base: base, depth: stroke)
             case .eraser(let eraser): GraphiteMath.erase(base: base, lift: stroke, inkLift: eraser.kind.inkLift)
             }
         }
@@ -96,6 +98,12 @@ final class DraftingSheet {
     func beginStroke(grade: PencilGrade, instrument: Instrument = .wood, mask: StrokeMask = .everywhere) {
         if stroke != nil { cancelStroke() }
         strokeCounter &+= 1
+        if instrument == .stylus {
+            stroke = ActiveStroke(lead: .stylus(StylusDynamics(pixelsPerMillimeter: pixelsPerMillimeter)),
+                                  buffer: GraphiteRaster(width: width, height: height),
+                                  seed: strokeCounter &* 0x9E37_79B9, maxDensity: 1, mask: mask)
+            return
+        }
         if let pen = instrument.inkPen {
             stroke = ActiveStroke(lead: .ink(InkDynamics(pen: pen, pixelsPerMillimeter: pixelsPerMillimeter)),
                                   buffer: GraphiteRaster(width: width, height: height),
@@ -171,6 +179,15 @@ final class DraftingSheet {
                 let coverage = mask.coverage(InkRasterizer.bounds(center: dab.location, radius: radius))
                 guard coverage != .none else { continue }
                 let rect = InkRasterizer.stamp(center: dab.location, radius: radius, into: &raster)
+                if coverage == .part { Self.clip(&raster, rect, to: mask) }
+                markDirty(rect)
+            }
+        case .stylus(let stylus):
+            for dab in spacer.append(sample, spacing: { stylus.spacing(for: $0) }) {
+                let radius = stylus.radius(for: dab)
+                let coverage = mask.coverage(InkRasterizer.bounds(center: dab.location, radius: radius))
+                guard coverage != .none else { continue }
+                let rect = InkRasterizer.stamp(center: dab.location, radius: radius, into: &raster, strength: stylus.depth(for: dab))
                 if coverage == .part { Self.clip(&raster, rect, to: mask) }
                 markDirty(rect)
             }
@@ -318,6 +335,8 @@ final class DraftingSheet {
                         let v = Self.sample(source, at: sourcePoint(p))
                         guard v > 0.002 else { continue }
                         let i = (y - coord.y * ts) * ts + (x - coord.x * ts)
+                        // A dent keeps out what is pressed onto it, as it keeps out graphite.
+                        if base[i] < 0, v <= 1 { continue }
                         base[i] = v > 1 ? GraphiteMath.ink(base: base[i], coverage: GraphiteMath.inkCoverage(v))
                             : GraphiteMath.composite(base: base[i], stroke: v, maxDensity: 1)
                         laid = true
@@ -439,7 +458,9 @@ final class DraftingSheet {
                 var d = base?[i] ?? 0
                 let s = max(strokeTile?[i] ?? 0, predictedTile?[i] ?? 0)
                 if s > 0, let active { d = active.laid(d, s) }
-                if d > 1, let inkShading {
+                if d < 0 {
+                    pixels[i] = GraphiteShading.dentLookup[min(Int(-d * Float(top) + 0.5), top)]
+                } else if d > 1, let inkShading {
                     pixels[i] = inkShading[min(Int((d - 1) * Float(top) + 0.5), top)]
                 } else {
                     pixels[i] = lut[min(Int(min(d, 1) * Float(top) + 0.5), top)]

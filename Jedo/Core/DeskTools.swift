@@ -4,7 +4,8 @@ import Foundation
 /// The rigid tools that can lie on the paper.
 enum ToolKind: String, CaseIterable, Hashable, Sendable {
     /// The templates are taken out from one button.
-    static let templates: [ToolKind] = [.circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide]
+    static let templates: [ToolKind] = [.circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide,
+                                        .brailleSlate, .morsePlate]
     /// The French curves are taken out from one button.
     static let frenchCurves: [ToolKind] = [.frenchCurveA, .frenchCurveB, .frenchCurveC]
 
@@ -32,6 +33,10 @@ enum ToolKind: String, CaseIterable, Hashable, Sendable {
     /// A thin steel erasing shield (지움판): erase through its slots and holes
     /// without touching the lines beside them.
     case erasingShield
+    /// A braille slate (점판): rows of six-dot cells to press with the stylus.
+    case brailleSlate
+    /// A Morse plate: a dot hole and a dash slot to stencil with, and the code table engraved.
+    case morsePlate
 }
 
 /// The triangular scale: 30 cm of scale with a little spare at each end.
@@ -77,7 +82,7 @@ struct DeskTool: Equatable, Sendable {
                     ToolShape.Hole(center: $0.center.scaled(ppmm), radius: CircleTemplate.holeRadiusMM($0.diameter) * ppmm)
                 }
             )
-        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide, .erasingShield:
+        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide, .erasingShield, .brailleSlate, .morsePlate:
             let size = ShapeTemplate.size(kind)
             let w = Double(size.width) / 2 * ppmm, h = Double(size.height) / 2 * ppmm
             return ToolShape(

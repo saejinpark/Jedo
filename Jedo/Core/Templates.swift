@@ -47,6 +47,8 @@ enum ShapeTemplate {
         case .arcTemplate: "원주 1/4"
         case .letteringGuide: "레터링"
         case .erasingShield: "지움판"
+        case .brailleSlate: "점판"
+        case .morsePlate: "모스 부호판"
         default: "원"
         }
     }
@@ -129,6 +131,8 @@ enum ShapeTemplate {
         out[.arcTemplate] = arcLayout()
         out[.letteringGuide] = letteringLayout()
         out[.erasingShield] = shieldLayout()
+        out[.brailleSlate] = brailleLayout()
+        out[.morsePlate] = morseLayout()
         return out
     }()
 
@@ -291,6 +295,90 @@ enum ShapeTemplate {
         cuts.append(square(CGPoint(x: 21, y: 16), side: 5))
         cuts.append(slot(CGPoint(x: 30, y: 16), CGPoint(x: 42, y: 16), width: 6))
         return (shieldPlate, cuts)
+    }
+
+    // MARK: Braille slate (점판)
+
+    /// Braille's own measures: dots 2.5 mm apart in a cell, cells 6.2 mm, lines 10 mm.
+    static let brailleDotMM = 2.5
+    static let brailleCellMM = 6.2
+    static let brailleLineMM = 10.0
+    static let brailleCells = 18
+    static let brailleLines = 4
+
+    private static func round(_ c: CGPoint, diameter: Double, segments: Int = 12) -> TemplateCut {
+        let r = diameter / 2
+        let rim = (0..<segments).map { k -> CGPoint in
+            let t = Double(k) / Double(segments) * 2 * .pi
+            return CGPoint(x: Double(c.x) + cos(t) * r, y: Double(c.y) + sin(t) * r)
+        }
+        return TemplateCut(outline: rim, center: c, label: "", halfSize: CGSize(width: r, height: r), axisMarks: false)
+    }
+
+    /// Four lines of 18 cells, each cell six holes in two columns of three,
+    /// numbered 1–3 down the left and 4–6 down the right.
+    private static func brailleLayout() -> (size: CGSize, cuts: [TemplateCut]) {
+        let side = 9.0, top = 12.0, bottom = 7.0
+        let width = Double(brailleCells - 1) * brailleCellMM + brailleDotMM + 2 * side
+        let height = Double(brailleLines - 1) * brailleLineMM + 2 * brailleDotMM + top + bottom
+        var cuts: [TemplateCut] = []
+        for line in 0..<brailleLines {
+            for cell in 0..<brailleCells {
+                let x0 = -width / 2 + side + Double(cell) * brailleCellMM
+                let y0 = -height / 2 + top + Double(line) * brailleLineMM
+                for column in 0..<2 {
+                    for row in 0..<3 {
+                        cuts.append(round(CGPoint(x: x0 + Double(column) * brailleDotMM, y: y0 + Double(row) * brailleDotMM), diameter: 1.6))
+                    }
+                }
+            }
+        }
+        return (CGSize(width: width, height: height), cuts)
+    }
+
+    // MARK: Morse plate (모스 부호판)
+
+    static let morsePlate = CGSize(width: 172, height: 86)
+
+    /// International Morse, then Korean (the 1960s table still taught to radio amateurs).
+    static let morseTable: [(String, String)] = [
+        ("A", "·−"), ("B", "−···"), ("C", "−·−·"), ("D", "−··"), ("E", "·"), ("F", "··−·"), ("G", "−−·"), ("H", "····"),
+        ("I", "··"), ("J", "·−−−"), ("K", "−·−"), ("L", "·−··"), ("M", "−−"), ("N", "−·"), ("O", "−−−"), ("P", "·−−·"),
+        ("Q", "−−·−"), ("R", "·−·"), ("S", "···"), ("T", "−"), ("U", "··−"), ("V", "···−"), ("W", "·−−"), ("X", "−··−"),
+        ("Y", "−·−−"), ("Z", "−−··"), ("1", "·−−−−"), ("2", "··−−−"), ("3", "···−−"), ("4", "····−"), ("5", "·····"),
+        ("6", "−····"), ("7", "−−···"), ("8", "−−−··"), ("9", "−−−−·"), ("0", "−−−−−"),
+        ("ㄱ", "·−··"), ("ㄴ", "··−·"), ("ㄷ", "−···"), ("ㄹ", "···−"), ("ㅁ", "−−"), ("ㅂ", "·−−"), ("ㅅ", "−−·"),
+        ("ㅇ", "−·−"), ("ㅈ", "·−−·"), ("ㅊ", "−·−·"), ("ㅋ", "−··−"), ("ㅌ", "−−··"), ("ㅍ", "−−−"), ("ㅎ", "·−−−"),
+        ("ㅏ", "·"), ("ㅑ", "··"), ("ㅓ", "−"), ("ㅕ", "···"), ("ㅗ", "·−"), ("ㅛ", "−·"), ("ㅜ", "····"), ("ㅠ", "·−·"),
+        ("ㅡ", "−··"), ("ㅣ", "··−"), ("ㅐ", "−−·−"), ("ㅔ", "−·−−"),
+    ]
+
+    /// Where the engraved table sits on the plate, in millimetres about its centre.
+    static let morseTableRect = CGRect(x: -80, y: -38, width: 160, height: 50)
+
+    /// Two rows of stencil along the bottom: a dot hole, a dash slot, and so on.
+    private static func morseLayout() -> (size: CGSize, cuts: [TemplateCut]) {
+        let plate = morsePlate, dot = 2.4, dash = 7.0, gap = 3.2
+        var cuts: [TemplateCut] = []
+        for (r, y) in [22.0, 32.0].enumerated() {
+            var x = -plate.width / 2 + 12 + Double(r) * (dot + gap)
+            while x + dash < plate.width / 2 - 10 {
+                cuts.append(round(CGPoint(x: x + dot / 2, y: y), diameter: dot, segments: 16))
+                x += dot + gap
+                let a = CGPoint(x: x + dot / 2, y: y), b = CGPoint(x: x + dash - dot / 2, y: y)
+                var rim: [CGPoint] = []
+                for (end, start) in [(b, -Double.pi / 2), (a, Double.pi / 2)] {
+                    for k in 0...8 {
+                        let t = start + Double(k) / 8 * .pi
+                        rim.append(CGPoint(x: Double(end.x) + cos(t) * dot / 2, y: Double(end.y) + sin(t) * dot / 2))
+                    }
+                }
+                cuts.append(TemplateCut(outline: rim, center: CGPoint(x: x + dash / 2, y: y), label: "",
+                                        halfSize: CGSize(width: dash / 2, height: dot / 2), axisMarks: false))
+                x += dash + gap
+            }
+        }
+        return (plate, cuts)
     }
 
     static func size(_ kind: ToolKind) -> CGSize { layouts[kind]?.size ?? .zero }

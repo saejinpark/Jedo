@@ -374,6 +374,9 @@ final class ShapeTemplateView: OutlineToolView {
         case .letteringGuide: UIColor(red: 0.80, green: 0.80, blue: 0.79, alpha: 0.32)
         // Brushed steel: what lies under it shows only through the openings.
         case .erasingShield: UIColor(red: 0.74, green: 0.75, blue: 0.77, alpha: 0.9)
+        // A braille slate is aluminium; the Morse plate, smoky acrylic.
+        case .brailleSlate: UIColor(red: 0.80, green: 0.81, blue: 0.83, alpha: 0.85)
+        case .morsePlate: UIColor(red: 0.86, green: 0.84, blue: 0.80, alpha: 0.38)
         default: UIColor(red: 0.95, green: 0.72, blue: 0.80, alpha: 0.34)
         }
     }
@@ -389,6 +392,24 @@ final class ShapeTemplateView: OutlineToolView {
             path.append(rim.reversing())
         }
         return path
+    }
+
+    /// The code table engraved on the Morse plate: letter, then its dots and dashes.
+    private func drawMorseTable() {
+        let table = ShapeTemplate.morseTable, area = ShapeTemplate.morseTableRect
+        let columns = 7, rows = Int((Double(table.count) / Double(columns)).rounded(.up))
+        let cellW = Double(area.width) / Double(columns), cellH = Double(area.height) / Double(rows)
+        let letter: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 2.4 * pointsPerMM, weight: .bold),
+                                                     .foregroundColor: Self.ink]
+        let code: [NSAttributedString.Key: Any] = [.font: UIFont.monospacedSystemFont(ofSize: 2.4 * pointsPerMM, weight: .bold),
+                                                   .foregroundColor: Self.ink.withAlphaComponent(0.8)]
+        for (i, entry) in table.enumerated() {
+            // Down each column, so the alphabet reads in order.
+            let column = i / rows, row = i % rows
+            let x = Double(area.minX) + Double(column) * cellW, y = Double(area.minY) + Double(row) * cellH
+            (entry.0 as NSString).draw(at: pt(CGPoint(x: x + 1, y: y)), withAttributes: letter)
+            (entry.1 as NSString).draw(at: pt(CGPoint(x: x + 6, y: y)), withAttributes: code)
+        }
     }
 
     override func draw(_ rect: CGRect) {
@@ -435,6 +456,19 @@ final class ShapeTemplateView: OutlineToolView {
             ctx.move(to: pt(CGPoint(x: c.x, y: c.y - 4)))
             ctx.addLine(to: pt(CGPoint(x: c.x, y: c.y + 4)))
             ctx.strokePath()
+        }
+
+        if kind == .morsePlate { drawMorseTable() }
+        if kind == .brailleSlate {
+            // The dots' numbers beside the first cell, as engraved on a slate.
+            let small: [NSAttributedString.Key: Any] = [.font: UIFont.monospacedDigitSystemFont(ofSize: 1.6 * pointsPerMM, weight: .medium),
+                                                        .foregroundColor: Self.ink.withAlphaComponent(0.6)]
+            let cuts = ShapeTemplate.cuts(kind)
+            for (i, n) in ["1", "2", "3", "4", "5", "6"].enumerated() where i < cuts.count {
+                let c = cuts[i].center
+                let at = pt(CGPoint(x: Double(c.x) + (i < 3 ? -2.6 : 1.2), y: Double(c.y) - 1.0))
+                (n as NSString).draw(at: at, withAttributes: small)
+            }
         }
 
         let title = ShapeTemplate.name(kind) as NSString

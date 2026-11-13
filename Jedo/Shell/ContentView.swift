@@ -212,9 +212,9 @@ private struct PencilGroup: View {
     var body: some View {
         VStack(alignment: slot.horizontalAlignment, spacing: Metric.groupGap) {
             InstrumentGroup(session: session)
-            // Ink has no grade: the grades rest while a pen is in hand.
+            // Ink and the stylus have no grade: the grades rest while they are in hand.
             ControlGroup { PencilGrades(selection: $session.grade) }
-                .opacity(session.instrument.isInk ? 0.4 : 1)
+                .opacity(session.instrument.isInk || session.instrument == .stylus ? 0.4 : 1)
         }
     }
 }
@@ -236,6 +236,10 @@ private struct InstrumentGroup: View {
             ToolButton(icon: .symbol("pencil"), label: Instrument.wood.name, selected: session.instrument == .wood) {
                 session.instrument = .wood
             }
+            TextCell(title: "철필", selected: session.instrument == .stylus, width: 40) {
+                session.instrument = .stylus
+            }
+            .accessibilityLabel("누름 막대")
             GroupDivider()
             TechnicalPenMenu(session: session)
             ForEach(Nib.allCases, id: \.self) { nib in
@@ -657,6 +661,17 @@ struct ToolGlyph: View {
                 let outline = FrenchCurve.outline(kind)
                 path = Self.fitted(outline, in: size)
                 for slot in FrenchCurve.slots(kind) { path.addPath(Self.fitted(slot, in: size, like: outline)) }
+            case .brailleSlate:
+                path.addRoundedRect(in: CGRect(x: 1, y: 4, width: w - 2, height: h - 8), cornerSize: CGSize(width: 2, height: 2))
+                for cx in [6.0, 14.0] {
+                    for dx in [0.0, 3.0] {
+                        for dy in [0.0, 3.0, 6.0] { path.addEllipse(in: CGRect(x: cx + dx - 0.9, y: 8 + dy - 0.9, width: 1.8, height: 1.8)) }
+                    }
+                }
+            case .morsePlate:
+                path.addRoundedRect(in: CGRect(x: 1, y: 4, width: w - 2, height: h - 8), cornerSize: CGSize(width: 2, height: 2))
+                path.addEllipse(in: CGRect(x: 4, y: h / 2 - 1.5, width: 3, height: 3))
+                path.addRoundedRect(in: CGRect(x: 10, y: h / 2 - 1.5, width: 9, height: 3), cornerSize: CGSize(width: 1.5, height: 1.5))
             case .erasingShield:
                 path.addRoundedRect(in: CGRect(x: 1, y: 4, width: w - 2, height: h - 8), cornerSize: CGSize(width: 2, height: 2))
                 for y in [8.0, 11.0] {
@@ -737,6 +752,8 @@ extension ToolKind {
         case .letteringGuide: "레터링 가이드"
         case .scaleRule: "삼각 스케일"
         case .erasingShield: "지움판"
+        case .brailleSlate: "점판"
+        case .morsePlate: "모스 부호판"
         case .frenchCurveA, .frenchCurveB, .frenchCurveC:
             "운형자 \((ToolKind.frenchCurves.firstIndex(of: self) ?? 0) + 1) · \(FrenchCurve.form(self)?.name ?? "")"
         case .hipCurve: "대나무 곡자"

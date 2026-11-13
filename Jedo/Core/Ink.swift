@@ -110,7 +110,8 @@ enum InkRasterizer {
                          maxX: Int((Double(center.x) + r).rounded(.up)), maxY: Int((Double(center.y) + r).rounded(.up)))
     }
 
-    static func stamp(center: CGPoint, radius: Double, into raster: inout GraphiteRaster) -> PixelRect {
+    /// `strength` scales the dab: the depth of a stylus press.
+    static func stamp(center: CGPoint, radius: Double, into raster: inout GraphiteRaster, strength: Float = 1) -> PixelRect {
         let area = bounds(center: center, radius: radius).intersection(raster.bounds)
         guard !area.isEmpty else { return .empty }
         let cx = Float(center.x), cy = Float(center.y), r = Float(radius)
@@ -125,7 +126,7 @@ enum InkRasterizer {
                     for px in tileRect.minX..<tileRect.maxX {
                         let dx = Float(px) + 0.5 - cx
                         // A one-pixel ramp at the edge.
-                        let coverage = min(max(r + 0.5 - (dx * dx + dy * dy).squareRoot(), 0), 1)
+                        let coverage = min(max(r + 0.5 - (dx * dx + dy * dy).squareRoot(), 0), 1) * strength
                         let index = row + px
                         if coverage > buffer[index] { buffer[index] = coverage }
                     }
@@ -156,15 +157,57 @@ extension GraphiteMath {
 
     /// An eraser over graphite or ink: graphite gives up `lift` of itself;
     /// ink gives up only `inkLift` of that, since ink sits in the paper.
+    /// A dent stays a dent.
     @inline(__always)
     static func erase(base: Float, lift: Float, inkLift: Float) -> Float {
+        guard base >= 0 else { return base }
         guard base > 1 else { return erase(base: base, lift: lift) }
         let left = inkCoverage(base) * (1 - lift * inkLift)
         return left > 0.02 ? 1 + left : 0
     }
 }
 
+/// A dent pressed into the paper with the embossing stylus: the raster holds
+/// it below zero, as deep as it went. Graphite rubbed over the paper can't
+/// reach into it, so it stays white: the white-line technique. Ink runs into it.
+extension GraphiteMath {
+    @inline(__always)
+    static func dent(base: Float, depth: Float) -> Float {
+        // Pressed over a mark already made, the mark stays.
+        guard depth > 0, base <= 0.02 else { return base }
+        return min(base, -depth)
+    }
+}
+
+/// The embossing stylus (누름 막대): a smooth steel ball on a handle, no lead.
+struct StylusDynamics: Sendable {
+    let pixelsPerMillimeter: Double
+
+    /// The ball: a fine 0.8 mm tip.
+    static let ballMM = 0.8
+
+    func radius(for sample: StrokeSample) -> Double {
+        let p = min(max(sample.pressure.isFinite ? sample.pressure : 0, 0), 1)
+        return max(Self.ballMM / 2 * (0.7 + 0.5 * p) * pixelsPerMillimeter, 0.8)
+    }
+
+    /// How deep a press goes, 0...1.
+    func depth(for sample: StrokeSample) -> Float {
+        let p = min(max(sample.pressure.isFinite ? sample.pressure : 0, 0), 1)
+        return Float(min(0.25 + 0.9 * p, 1))
+    }
+
+    func spacing(for sample: StrokeSample) -> Double { max(radius(for: sample) * 0.3, 0.4) }
+}
+
 extension GraphiteShading {
+    /// A dent catches a little shadow on its far wall: faint, but there to see.
+    static let dentLookup: [UInt32] = (0..<levels).map { level in
+        let d = Double(level) / Double(levels - 1)
+        let a = 0.11 * d
+        return pack(r: 0.45 * a, g: 0.45 * a, b: 0.47 * a, a: a)
+    }
+
     /// India ink: dense and slightly warmer than graphite's sheen.
     static let ink: (r: Double, g: Double, b: Double) = (0.03, 0.03, 0.035)
 

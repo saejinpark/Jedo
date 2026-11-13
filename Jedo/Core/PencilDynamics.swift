@@ -60,6 +60,8 @@ enum Instrument: Hashable, Sendable {
     case technicalPen(PenWidth)
     /// A dip pen: india ink, the line swelling with pressure.
     case dipPen(Nib)
+    /// The embossing stylus: presses a groove and leaves nothing.
+    case stylus
 
     var name: String {
         switch self {
@@ -67,6 +69,7 @@ enum Instrument: Hashable, Sendable {
         case .mechanical(let size): "제도 샤프 \(size.label)mm"
         case .technicalPen(let width): "제도펜 \(width.label)mm"
         case .dipPen(let nib): nib.name
+        case .stylus: "누름 막대"
         }
     }
 
@@ -75,7 +78,7 @@ enum Instrument: Hashable, Sendable {
         switch self {
         case .technicalPen(let width): .technical(width)
         case .dipPen(let nib): .dip(nib)
-        case .wood, .mechanical: nil
+        case .wood, .mechanical, .stylus: nil
         }
     }
 
@@ -124,6 +127,7 @@ struct PencilDynamics: Sendable {
         case .mechanical(let size): size.diameterMM * (1 + mechanicalSoftSpread * grade.softness)
         case .technicalPen(let width): width.mm
         case .dipPen(let nib): InkDynamics.widthMM(.dip(nib), pressure: 0.5)
+        case .stylus: StylusDynamics.ballMM
         }
     }
 

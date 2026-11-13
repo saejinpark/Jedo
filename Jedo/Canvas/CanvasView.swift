@@ -613,6 +613,8 @@ final class CanvasView: UIView {
         case .letteringGuide: CGPoint(x: 0.5, y: 0.45)
         case .scaleRule: CGPoint(x: 0.5, y: 0.56)
         case .erasingShield: CGPoint(x: 0.5, y: 0.4)
+        case .brailleSlate: CGPoint(x: 0.5, y: 0.42)
+        case .morsePlate: CGPoint(x: 0.5, y: 0.46)
         case .frenchCurveA: CGPoint(x: 0.28, y: 0.48)
         case .frenchCurveB: CGPoint(x: 0.52, y: 0.5)
         case .frenchCurveC: CGPoint(x: 0.76, y: 0.42)
@@ -628,7 +630,8 @@ final class CanvasView: UIView {
         case .parallelRule: ParallelRuleView(kind: kind)
         case .setSquare45, .setSquare60: SetSquareView(kind: kind)
         case .circleTemplate: CircleTemplateView()
-        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide, .erasingShield: ShapeTemplateView(kind: kind)
+        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide, .erasingShield,
+             .brailleSlate, .morsePlate: ShapeTemplateView(kind: kind)
         case .scaleRule: ScaleRuleView()
         case .frenchCurveA, .frenchCurveB, .frenchCurveC: FrenchCurveView(kind: kind)
         case .hipCurve: HipCurveView()
@@ -1392,7 +1395,14 @@ final class CanvasView: UIView {
             var mask = sheetMask
             if erasing, let shield = erasingShield() { mask.shields.append(shield) }
             let local = mask.mapped(onSurface(id).0)
-            if erasing { target.beginErasing(mask: local, kind: eraserKind) } else { target.beginStroke(grade: grade, instrument: instrument, mask: local) }
+            if erasing {
+                target.beginErasing(mask: local, kind: eraserKind)
+            } else if instrument == .stylus, id.isCarbonCopy {
+                // Pressed through the carbon, the stylus leaves a carbon line like any point would.
+                target.beginStroke(grade: .hb, instrument: .mechanical(.mm05), mask: local)
+            } else {
+                target.beginStroke(grade: grade, instrument: instrument, mask: local)
+            }
             marking.append(id)
         }
         if erasing {
