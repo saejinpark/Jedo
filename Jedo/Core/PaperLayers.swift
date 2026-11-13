@@ -312,15 +312,34 @@ struct LayerStack: Sendable {
 struct StrokeMask: Sendable {
     var inside: [[CGPoint]]
     var outside: [[CGPoint]]
+    /// Plates lying over the surface with openings in them (the erasing
+    /// shield): under a plate, only its openings can be reached.
+    var shields: [Shield] = []
+
+    struct Shield: Sendable {
+        var outline: [CGPoint]
+        var openings: [[CGPoint]]
+
+        func allows(_ p: CGPoint) -> Bool {
+            !Polygon.contains(p, outline) || openings.contains { Polygon.contains(p, $0) }
+        }
+    }
+
+    init(inside: [[CGPoint]], outside: [[CGPoint]], shields: [Shield] = []) {
+        self.inside = inside
+        self.outside = outside
+        self.shields = shields
+    }
 
     static let everywhere = StrokeMask(inside: [], outside: [])
 
-    var isEverywhere: Bool { inside.isEmpty && outside.isEmpty }
+    var isEverywhere: Bool { inside.isEmpty && outside.isEmpty && shields.isEmpty }
 
     enum Coverage: Equatable { case none, all, part }
 
     func contains(_ p: CGPoint) -> Bool {
         inside.allSatisfy { Polygon.contains(p, $0) } && !outside.contains { Polygon.contains(p, $0) }
+            && shields.allSatisfy { $0.allows(p) }
     }
 
     /// How much of a pixel rectangle the stroke may mark.
@@ -341,12 +360,24 @@ struct StrokeMask: Sendable {
             case .outside: break
             }
         }
+        for shield in shields {
+            switch Polygon.classify(rect, shield.outline) {
+            case .outside: break
+            case .inside, .part:
+                let places = shield.openings.map { Polygon.classify(rect, $0) }
+                if places.contains(.inside) { break }
+                let covered = Polygon.classify(rect, shield.outline) == .inside
+                if covered, places.allSatisfy({ $0 == .outside }) { return .none }
+                all = false
+            }
+        }
         return all ? .all : .part
     }
 
     /// The mask in another frame, as when moving onto a sheet's own surface.
     func mapped(_ transform: (CGPoint) -> CGPoint) -> StrokeMask {
-        StrokeMask(inside: inside.map { $0.map(transform) }, outside: outside.map { $0.map(transform) })
+        StrokeMask(inside: inside.map { $0.map(transform) }, outside: outside.map { $0.map(transform) },
+                   shields: shields.map { Shield(outline: $0.outline.map(transform), openings: $0.openings.map { $0.map(transform) }) })
     }
 }
 

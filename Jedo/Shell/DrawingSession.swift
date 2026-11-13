@@ -33,6 +33,13 @@ final class DrawingSession {
     var carbonOnDesk = false {
         didSet { canvas?.setCarbon(onDesk: carbonOnDesk) }
     }
+    /// Which face of the triangular scale is up: 1:100·1:200, 1:300·1:400 or 1:500·1:600.
+    var scaleFace = 0 {
+        didSet {
+            canvas?.scaleFace = scaleFace
+            canvas?.setScaleFace(scaleFace)
+        }
+    }
     /// Whether the paper's map sits top right rather than top left.
     var mapOnTrailing = false {
         didSet { desk?.mapOnTrailing = mapOnTrailing }

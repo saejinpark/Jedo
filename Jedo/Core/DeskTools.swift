@@ -26,17 +26,41 @@ enum ToolKind: String, CaseIterable, Hashable, Sendable {
     case hipCurve
     /// A half-round protractor, turning about the centre of its base line.
     case protractor
+    /// The architect's triangular scale (삼각 스케일): six reduction scales, two
+    /// on each face, read along the edges. Turn it to bring another face up.
+    case scaleRule
+    /// A thin steel erasing shield (지움판): erase through its slots and holes
+    /// without touching the lines beside them.
+    case erasingShield
+}
+
+/// The triangular scale: 30 cm of scale with a little spare at each end.
+enum ScaleRule {
+    static let lengthMM = 310.0
+    /// The face that lies up, seen from above.
+    static let widthMM = 24.0
+    /// The two scales on each face, upper edge first.
+    static let faces: [(upper: Int, lower: Int)] = [(100, 200), (300, 400), (500, 600)]
+
+    static func faceName(_ face: Int) -> String {
+        let f = faces[min(max(face, 0), faces.count - 1)]
+        return "1:\(f.upper) · 1:\(f.lower)"
+    }
 }
 
 /// A tool lying on the paper.
 struct DeskTool: Equatable, Sendable {
     var kind: ToolKind
     var pose: ToolPose
+    /// For the triangular scale: which face is up.
+    var face = 0
 
     func shape(pixelsPerMillimeter ppmm: Double) -> ToolShape {
         switch kind {
         case .ruler:
             return Ruler(pose: pose, pixelsPerMillimeter: ppmm).shape
+        case .scaleRule:
+            return Ruler(pose: pose, length: ScaleRule.lengthMM * ppmm, width: ScaleRule.widthMM * ppmm).shape
         case .parallelRule:
             let l = ParallelRule.lengthMM / 2 * ppmm, w = ParallelRule.widthMM / 2 * ppmm
             return ToolShape(pose: pose,
@@ -53,7 +77,7 @@ struct DeskTool: Equatable, Sendable {
                     ToolShape.Hole(center: $0.center.scaled(ppmm), radius: CircleTemplate.holeRadiusMM($0.diameter) * ppmm)
                 }
             )
-        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide:
+        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide, .erasingShield:
             let size = ShapeTemplate.size(kind)
             let w = Double(size.width) / 2 * ppmm, h = Double(size.height) / 2 * ppmm
             return ToolShape(

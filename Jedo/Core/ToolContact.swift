@@ -12,7 +12,9 @@ enum ToolContact {
         switch kind {
         case .ruler, .parallelRule, .setSquare45, .setSquare60, .protractor,
              .circleTemplate, .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide: true
-        case .frenchCurveA, .frenchCurveB, .frenchCurveC, .hipCurve: false
+        case .scaleRule: true
+        // A sheet of steel thinner than paper: it slips under and over the others.
+        case .frenchCurveA, .frenchCurveB, .frenchCurveC, .hipCurve, .erasingShield: false
         }
     }
 

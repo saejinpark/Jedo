@@ -548,7 +548,7 @@ final class CanvasView: UIView {
         }
         guard !tools.contains(where: { $0.kind == kind }), var pose = screenPose(at: Self.restingSpot(kind)) else { return }
         if kind == .parallelRule { pose = ParallelRule.constrain(pose, boardCentreX: Double(paperRect.midX)) }
-        tools.append(DeskTool(kind: kind, pose: pose))
+        tools.append(DeskTool(kind: kind, pose: pose, face: kind == .scaleRule ? scaleFace : 0))
         showTool(tools[tools.count - 1], sheet: sheet)
         raise(kind)
     }
@@ -576,6 +576,8 @@ final class CanvasView: UIView {
         case .hexTemplate: CGPoint(x: 0.58, y: 0.6)
         case .arcTemplate: CGPoint(x: 0.5, y: 0.5)
         case .letteringGuide: CGPoint(x: 0.5, y: 0.45)
+        case .scaleRule: CGPoint(x: 0.5, y: 0.56)
+        case .erasingShield: CGPoint(x: 0.5, y: 0.4)
         case .frenchCurveA: CGPoint(x: 0.28, y: 0.48)
         case .frenchCurveB: CGPoint(x: 0.52, y: 0.5)
         case .frenchCurveC: CGPoint(x: 0.76, y: 0.42)
@@ -591,7 +593,8 @@ final class CanvasView: UIView {
         case .parallelRule: ParallelRuleView(kind: kind)
         case .setSquare45, .setSquare60: SetSquareView(kind: kind)
         case .circleTemplate: CircleTemplateView()
-        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide: ShapeTemplateView(kind: kind)
+        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate, .letteringGuide, .erasingShield: ShapeTemplateView(kind: kind)
+        case .scaleRule: ScaleRuleView()
         case .frenchCurveA, .frenchCurveB, .frenchCurveC: FrenchCurveView(kind: kind)
         case .hipCurve: HipCurveView()
         case .protractor: ProtractorView()
@@ -731,6 +734,24 @@ final class CanvasView: UIView {
 
     /// How far outside a tool a fingertip still catches it.
     private static let gripMarginMM = 4.0
+
+    /// The erasing shield where it lies, if it is out: the eraser reaches what
+    /// is under it only through its openings.
+    private func erasingShield() -> StrokeMask.Shield? {
+        guard let sheet, let tool = tools.first(where: { $0.kind == .erasingShield }) else { return nil }
+        let shape = tool.shape(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
+        return StrokeMask.Shield(outline: shape.outline.map(shape.world), openings: shape.cutouts.map { $0.map(shape.world) })
+    }
+
+    /// Turns the triangular scale to bring another face up, where it lies.
+    func setScaleFace(_ face: Int) {
+        guard let sheet, let i = tools.firstIndex(where: { $0.kind == .scaleRule }) else { return }
+        tools[i].face = face
+        showTool(tools[i], sheet: sheet)
+    }
+
+    /// Which face of the triangular scale is up when it is next taken out.
+    var scaleFace = 0
 
     // MARK: Perspective pins
 
@@ -1251,8 +1272,10 @@ final class CanvasView: UIView {
             feed(touch, event: event)
             return
         }
-        for (id, mask) in layerStack().targets(erasing: erasing) {
+        for (id, sheetMask) in layerStack().targets(erasing: erasing) {
             guard let target = surface(id)?.sheet else { continue }
+            var mask = sheetMask
+            if erasing, let shield = erasingShield() { mask.shields.append(shield) }
             let local = mask.mapped(onSurface(id).0)
             if erasing { target.beginErasing(mask: local, kind: eraserKind) } else { target.beginStroke(grade: grade, instrument: instrument, mask: local) }
             marking.append(id)
@@ -1280,7 +1303,10 @@ final class CanvasView: UIView {
         for id in marking {
             guard let target = surface(id)?.sheet else { continue }
             let (point, sample) = onSurface(id)
-            if let mask = masks?[id] { target.setStrokeMask(mask.mapped(point)) }
+            if var mask = masks?[id] {
+                if markingErases, let shield = erasingShield() { mask.shields.append(shield) }
+                target.setStrokeMask(mask.mapped(point))
+            }
             target.extendStroke(with: samples.map(sample), predicted: predicted.map(sample))
         }
         refresh()

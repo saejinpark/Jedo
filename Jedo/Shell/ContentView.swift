@@ -40,7 +40,8 @@ struct ContentView: View {
                         if let hint = session.hint {
                             HintBubble(hint: hint)
                                 .transition(.move(edge: .top).combined(with: .opacity))
-                                .padding(.top, layout.groups(in: .top).isEmpty ? 34 : 120)
+                                // Below whatever sits along the top edge.
+                                .padding(.top, [.topLeading, .top, .topTrailing].allSatisfy { layout.groups(in: $0).isEmpty } ? 34 : 150)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                                 .allowsHitTesting(false)
                         }
@@ -168,6 +169,11 @@ private struct HandGroup: View {
                         TextCell(title: kind.name, selected: session.eraserKind == kind) { session.eraserKind = kind }
                             .accessibilityLabel("\(kind.name)지우개")
                     }
+                    GroupDivider()
+                    let shieldOut = session.toolsOnDesk.contains(.erasingShield)
+                    ToolButton(icon: .shape(.erasingShield), label: shieldOut ? "지움판 치우기" : "지움판 꺼내기", selected: shieldOut) {
+                        session.toggle(.erasingShield)
+                    }
                 }
                 .transition(.move(edge: slot.isTop ? .top : .bottom).combined(with: .opacity))
             }
@@ -275,6 +281,7 @@ private struct DeskToolsGroup: View {
             tool(.ruler)
             tool(.setSquare45)
             tool(.setSquare60)
+            ScaleRuleMenu(session: session)
             tool(.protractor)
             PinMenu(session: session)
             GroupDivider()
@@ -289,6 +296,30 @@ private struct DeskToolsGroup: View {
         return ToolButton(icon: ToolIcon(kind), label: onDesk ? "\(kind.name) 치우기" : "\(kind.name) 꺼내기", selected: onDesk) {
             session.toggle(kind)
         }
+    }
+}
+
+/// The triangular scale: take it out or put it away, and turn it to the face with the scales wanted.
+private struct ScaleRuleMenu: View {
+    @Bindable var session: DrawingSession
+
+    var body: some View {
+        let onDesk = session.toolsOnDesk.contains(.scaleRule)
+        Menu {
+            Button(onDesk ? "삼각 스케일 치우기" : "삼각 스케일 꺼내기") { session.toggle(.scaleRule) }
+            Picker("면", selection: $session.scaleFace) {
+                ForEach(ScaleRule.faces.indices, id: \.self) { face in
+                    Text(ScaleRule.faceName(face)).tag(face)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            ToolFace(icon: .shape(.scaleRule), selected: onDesk)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuActionDismissBehavior(.disabled)
+        .accessibilityLabel("삼각 스케일")
     }
 }
 
@@ -622,6 +653,22 @@ struct ToolGlyph: View {
                 let outline = FrenchCurve.outline(kind)
                 path = Self.fitted(outline, in: size)
                 for slot in FrenchCurve.slots(kind) { path.addPath(Self.fitted(slot, in: size, like: outline)) }
+            case .erasingShield:
+                path.addRoundedRect(in: CGRect(x: 1, y: 4, width: w - 2, height: h - 8), cornerSize: CGSize(width: 2, height: 2))
+                for y in [8.0, 11.0] {
+                    path.move(to: CGPoint(x: 4, y: y))
+                    path.addLine(to: CGPoint(x: w - 10, y: y))
+                }
+                path.addEllipse(in: CGRect(x: w - 8, y: 7, width: 4, height: 4))
+                path.addRect(CGRect(x: 4, y: h - 9, width: 3, height: 3))
+            case .scaleRule:
+                path.addRect(CGRect(x: 0.5, y: h * 0.3, width: w - 1, height: h * 0.4))
+                path.move(to: CGPoint(x: 0.5, y: h * 0.5))
+                path.addLine(to: CGPoint(x: w - 0.5, y: h * 0.5))
+                for x in stride(from: 3.0, to: w - 1, by: 3) {
+                    path.move(to: CGPoint(x: x, y: h * 0.3))
+                    path.addLine(to: CGPoint(x: x, y: h * 0.38))
+                }
             case .letteringGuide:
                 path.addRoundedRect(in: CGRect(x: 1, y: 4, width: w - 2, height: h - 8), cornerSize: CGSize(width: 2, height: 2))
                 for y in [8.0, 10.5, 14.0, 17.0] {
@@ -684,6 +731,8 @@ extension ToolKind {
         case .circleTemplate: "원 형판"
         case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate: "\(ShapeTemplate.name(self)) 형판"
         case .letteringGuide: "레터링 가이드"
+        case .scaleRule: "삼각 스케일"
+        case .erasingShield: "지움판"
         case .frenchCurveA, .frenchCurveB, .frenchCurveC:
             "운형자 \((ToolKind.frenchCurves.firstIndex(of: self) ?? 0) + 1) · \(FrenchCurve.form(self)?.name ?? "")"
         case .hipCurve: "대나무 곡자"

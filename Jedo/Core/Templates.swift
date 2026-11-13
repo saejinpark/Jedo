@@ -46,6 +46,7 @@ enum ShapeTemplate {
         case .hexTemplate: "육각·팔각"
         case .arcTemplate: "원주 1/4"
         case .letteringGuide: "레터링"
+        case .erasingShield: "지움판"
         default: "원"
         }
     }
@@ -127,6 +128,7 @@ enum ShapeTemplate {
         }
         out[.arcTemplate] = arcLayout()
         out[.letteringGuide] = letteringLayout()
+        out[.erasingShield] = shieldLayout()
         return out
     }()
 
@@ -232,6 +234,63 @@ enum ShapeTemplate {
         cuts.append(slot(CGPoint(x: to + 24 - lean, y: span), CGPoint(x: to + 24 + lean, y: -span), label: "75°",
                          labelAt: CGPoint(x: to + 24 - lean, y: span + 4.5)))
         return (plate, cuts)
+    }
+
+    // MARK: Erasing shield (지움판)
+
+    static let shieldPlate = CGSize(width: 100, height: 62)
+
+    /// A stainless plate as sold for drafting: long slots of several widths
+    /// for lines, round holes and squares for points and corners. Erase
+    /// through an opening and only what shows through it goes.
+    private static func shieldLayout() -> (size: CGSize, cuts: [TemplateCut]) {
+        func slot(_ a: CGPoint, _ b: CGPoint, width: Double) -> TemplateCut {
+            let w = width / 2, dx = Double(b.x - a.x), dy = Double(b.y - a.y), angle = atan2(dy, dx)
+            var rim: [CGPoint] = []
+            for (end, start) in [(b, angle - .pi / 2), (a, angle + .pi / 2)] {
+                for k in 0...8 {
+                    let t = start + Double(k) / 8 * .pi
+                    rim.append(CGPoint(x: Double(end.x) + cos(t) * w, y: Double(end.y) + sin(t) * w))
+                }
+            }
+            return TemplateCut(outline: rim, center: CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2), label: "",
+                               halfSize: CGSize(width: abs(dx) / 2 + w, height: abs(dy) / 2 + w), axisMarks: false)
+        }
+        func hole(_ c: CGPoint, diameter: Double) -> TemplateCut {
+            let r = diameter / 2
+            let rim = (0..<24).map { k -> CGPoint in
+                let t = Double(k) / 24 * 2 * .pi
+                return CGPoint(x: Double(c.x) + cos(t) * r, y: Double(c.y) + sin(t) * r)
+            }
+            return TemplateCut(outline: rim, center: c, label: "", halfSize: CGSize(width: r, height: r), axisMarks: false)
+        }
+        func square(_ c: CGPoint, side: Double) -> TemplateCut {
+            let h = side / 2
+            return TemplateCut(outline: [CGPoint(x: c.x - h, y: c.y - h), CGPoint(x: c.x + h, y: c.y - h),
+                                         CGPoint(x: c.x + h, y: c.y + h), CGPoint(x: c.x - h, y: c.y + h)],
+                               center: c, label: "", halfSize: CGSize(width: h, height: h), axisMarks: false)
+        }
+        var cuts: [TemplateCut] = []
+        // Long slots, narrow to wide.
+        for (i, width) in [0.8, 1.2, 2.0, 3.0].enumerated() {
+            let y = -22.0 + Double(i) * 8
+            cuts.append(slot(CGPoint(x: -42, y: y), CGPoint(x: 2, y: y), width: width))
+        }
+        // Upright slots.
+        for (i, width) in [1.0, 2.0].enumerated() {
+            let x = 10.0 + Double(i) * 7
+            cuts.append(slot(CGPoint(x: x, y: -24), CGPoint(x: x, y: 4), width: width))
+        }
+        // A slanted one, for diagonals.
+        cuts.append(slot(CGPoint(x: 28, y: 4), CGPoint(x: 42, y: -24), width: 1.5))
+        // Round holes and squares along the bottom.
+        for (i, d) in [2.0, 3.0, 4.5, 6.0].enumerated() {
+            cuts.append(hole(CGPoint(x: -38 + Double(i) * 11, y: 16), diameter: d))
+        }
+        cuts.append(square(CGPoint(x: 10, y: 16), side: 3))
+        cuts.append(square(CGPoint(x: 21, y: 16), side: 5))
+        cuts.append(slot(CGPoint(x: 30, y: 16), CGPoint(x: 42, y: 16), width: 6))
+        return (shieldPlate, cuts)
     }
 
     static func size(_ kind: ToolKind) -> CGSize { layouts[kind]?.size ?? .zero }
