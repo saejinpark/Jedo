@@ -783,12 +783,25 @@ final class CanvasView: UIView {
         let area = PixelRect(minX: Int(xs.min()!.rounded(.down)), minY: Int(ys.min()!.rounded(.down)),
                              maxX: Int(xs.max()!.rounded(.up)), maxY: Int(ys.max()!.rounded(.up)))
         let ppmm = sheet.pixelsPerMillimeter
-        // Only the paper takes the print, and only under the sheet.
-        let laid = sheet.imprint(source.graphite, over: area, mask: StrokeMask(inside: [outline, paperOutline], outside: [])) {
-            layer.surfacePoint($0, pixelsPerMillimeter: ppmm)
+        // At each point, onto whatever lies just under the sheet: the next tracing sheet, or the paper.
+        var changed: [SurfaceID] = []
+        for (id, mask) in layerStack().stampTargets(from: id) {
+            guard let target = surface(id)?.sheet else { continue }
+            let toTarget = onSurface(id).0
+            let targetLayer: PaperLayer? = if case .sheet(let t) = id { layers.first { $0.id == t } } else { nil }
+            // The source's footprint, in the target's own pixels.
+            let corners = outline.map(toTarget)
+            let txs = corners.map { Double($0.x) }, tys = corners.map { Double($0.y) }
+            let footprint = PixelRect(minX: Int(txs.min()!.rounded(.down)) - 1, minY: Int(tys.min()!.rounded(.down)) - 1,
+                                      maxX: Int(txs.max()!.rounded(.up)) + 1, maxY: Int(tys.max()!.rounded(.up)) + 1)
+            let laid = target.imprint(source.graphite, over: id == .paper ? area : footprint, mask: mask.mapped(toTarget)) { q in
+                let onPaper = targetLayer?.paperPoint(fromSurface: q, pixelsPerMillimeter: ppmm) ?? q
+                return layer.surfacePoint(onPaper, pixelsPerMillimeter: ppmm)
+            }
+            if laid { changed.append(id) }
         }
-        guard laid else { return false }
-        undoStack.append(.marks([.paper]))
+        guard !changed.isEmpty else { return false }
+        undoStack.append(.marks(changed))
         redoStack.removeAll()
         refresh()
         notifyHistory()

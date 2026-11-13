@@ -188,6 +188,14 @@ struct PaperLayer: Identifiable, Equatable, Sendable {
         return CGPoint(x: dx * c + dy * s + w * ppmm / 2, y: -dx * s + dy * c + h * ppmm / 2)
     }
 
+    /// A point in the sheet's own pixels, back on the paper.
+    func paperPoint(fromSurface q: CGPoint, pixelsPerMillimeter ppmm: Double) -> CGPoint {
+        let (w, h) = kind.sizeMM
+        let u = Double(q.x) - w * ppmm / 2, v = Double(q.y) - h * ppmm / 2
+        let c = cos(pose.angle), s = sin(pose.angle)
+        return CGPoint(x: Double(pose.center.x) + u * c - v * s, y: Double(pose.center.y) + u * s + v * c)
+    }
+
     /// A pencil sample as it lands on the sheet's own surface.
     func surfaceSample(_ sample: StrokeSample, pixelsPerMillimeter ppmm: Double) -> StrokeSample {
         var s = sample
@@ -244,6 +252,25 @@ struct LayerStack: Sendable {
     init(sheets: [Sheet] = [], paper: [CGPoint]? = nil) {
         self.sheets = sheets
         self.paper = paper
+    }
+
+    /// Where a sheet's drawing is copied when it is stamped: at each point,
+    /// onto whatever lies just under it that takes pencil: the next tracing
+    /// sheet down, or where there is none, the paper. Carbon in between takes
+    /// no part (it is not drawn on). Masks are on the paper.
+    func stampTargets(from source: Int) -> [(surface: SurfaceID, mask: StrokeMask)] {
+        guard let i = sheets.firstIndex(where: { $0.id == source }) else { return [] }
+        let outline = sheets[i].outline
+        let below = sheets[..<i].enumerated().filter { !$0.element.isCarbon }
+        var out: [(SurfaceID, StrokeMask)] = []
+        for (j, sheet) in below {
+            // Under the source, on this sheet, and not under a sheet between them.
+            let between = below.filter { $0.offset > j }.map(\.element.outline)
+            out.append((.sheet(sheet.id), StrokeMask(inside: [outline, sheet.outline], outside: between)))
+        }
+        let onPaper = paper.map { [$0] } ?? []
+        out.append((.paper, StrokeMask(inside: [outline] + onPaper, outside: below.map(\.element.outline))))
+        return out
     }
 
     /// Every surface the stroke may mark, and where on the paper it may.

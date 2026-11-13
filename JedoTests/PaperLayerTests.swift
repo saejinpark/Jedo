@@ -513,3 +513,40 @@ struct ToneScrapeTests {
         #expect(a == b, "the same, however the stroke is sampled")
     }
 }
+
+struct StampTargetTests {
+    let paper = square(0, 0, 1000, 1000)
+    func grid(_ id: Int, _ o: [CGPoint]) -> LayerStack.Sheet { .init(id: id, outline: o, isCarbon: false) }
+
+    @Test func aSheetStampsOntoTheSheetJustBelowItAndThePaperElsewhere() {
+        // Bottom first: a big tracing sheet, carbon, then the butter paper stamped.
+        let lower = square(100, 100, 400, 400), carbon = LayerStack.Sheet(id: 0, outline: square(0, 0, 900, 900), isCarbon: true)
+        let top = square(300, 300, 600, 600)
+        let stack = LayerStack(sheets: [grid(1, lower), carbon, grid(2, top)], paper: paper)
+        let t = Dictionary(uniqueKeysWithValues: stack.stampTargets(from: 2).map { ($0.surface, $0.mask) })
+        #expect(t.count == 2, "the tracing sheet below and the paper; not the carbon")
+        let overBoth = CGPoint(x: 350, y: 350), overPaper = CGPoint(x: 500, y: 500)
+        #expect(t[.sheet(1)]!.contains(overBoth))
+        #expect(!t[.paper]!.contains(overBoth), "the sheet below takes it there")
+        #expect(t[.paper]!.contains(overPaper))
+        #expect(!t[.sheet(1)]!.contains(overPaper))
+        #expect(!t[.paper]!.contains(CGPoint(x: 700, y: 700)), "nothing outside the stamped sheet")
+    }
+
+    @Test func onlyTheNearestSheetBelowTakesIt() {
+        let a = square(0, 0, 500, 500), b = square(100, 100, 500, 500), top = square(200, 200, 400, 400)
+        let stack = LayerStack(sheets: [grid(1, a), grid(2, b), grid(3, top)], paper: paper)
+        let t = Dictionary(uniqueKeysWithValues: stack.stampTargets(from: 3).map { ($0.surface, $0.mask) })
+        let p = CGPoint(x: 300, y: 300)
+        #expect(t[.sheet(2)]!.contains(p))
+        #expect(!t[.sheet(1)]!.contains(p), "covered by sheet 2")
+        #expect(!t[.paper]!.contains(p))
+    }
+
+    @Test func sheetFramesRoundTrip() {
+        let layer = PaperLayer(id: 1, kind: .grid(.tracing), pose: ToolPose(center: CGPoint(x: 800, y: 600), angle: 0.7))
+        let p = CGPoint(x: 1234, y: 456)
+        let back = layer.paperPoint(fromSurface: layer.surfacePoint(p, pixelsPerMillimeter: 10), pixelsPerMillimeter: 10)
+        #expect(abs(back.x - p.x) < 1e-6 && abs(back.y - p.y) < 1e-6)
+    }
+}
