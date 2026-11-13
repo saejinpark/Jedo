@@ -33,6 +33,10 @@ final class DrawingSession {
     var carbonOnDesk = false {
         didSet { canvas?.setCarbon(onDesk: carbonOnDesk) }
     }
+    /// Whether the paper's map sits top right rather than top left.
+    var mapOnTrailing = false {
+        didSet { desk?.mapOnTrailing = mapOnTrailing }
+    }
     /// Millimetre scales of the paper along the screen's edges.
     var edgeRulers = true {
         didSet { desk?.showsRulers = edgeRulers }

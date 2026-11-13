@@ -17,6 +17,7 @@ struct CanvasRepresentable: UIViewControllerRepresentable {
         view.onPinsChange = { [weak session] count in session?.pinsChanged(count) }
         session.canvas = view
         session.desk = controller.desk
+        controller.desk.mapOnTrailing = session.mapOnTrailing
         session.resumeSaved()
         return controller
     }

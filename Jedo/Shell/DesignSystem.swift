@@ -2,13 +2,16 @@ import SwiftUI
 
 // The shell's design system: one way to draw a control, one way to group
 // them, one set of colours and sizes. Controls sit in groups by what the
-// hand does with them, the way a drafting desk is laid out:
+// hand does with them (`ShellLayout`). Right-handed, as standard:
 //
-//   손 (in hand)        pencil grades | eraser, compass       bottom left
-//   책상 위 도구         rulers, set squares, templates, curves bottom right
-//   종이·시트            sheets panel, knife (with tone)       under the tools
-//   기록                undo, redo                             beside sheets
-//   보기·파일            edge rulers, export                    top right
+//   필기구 (pencil hand)   lead holders, grades                    top right
+//   보기·파일              edge rulers, export, arrangement, new    top right corner
+//   기록 (off hand)        undo, redo                              bottom left corner
+//   손                     eraser, compass, knife (with tone)      bottom left
+//   종이·시트              sheets panel                            bottom left
+//   책상 위 도구           rulers, set squares, templates, curves  bottom left
+//
+// Left-handed is the mirror; any group can be dragged to any of six places.
 //
 // Every control is a cell inside a group: plain when idle, filled with ink
 // when it is in hand or on the desk.

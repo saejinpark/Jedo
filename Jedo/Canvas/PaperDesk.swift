@@ -45,6 +45,10 @@ final class PaperDeskView: UIView {
     var showsRulers = true {
         didSet { setNeedsLayout() }
     }
+    /// The map and stick sit in the top right instead of the top left (left-handed, or groups there).
+    var mapOnTrailing = false {
+        didSet { setNeedsLayout() }
+    }
     /// Where the sheet's centre sits from the screen's centre, in screen points.
     private var offset = CGPoint.zero
     /// Where the map asked the view to go; the view glides there.
@@ -90,7 +94,9 @@ final class PaperDeskView: UIView {
         leftRuler.frame = CGRect(x: 0, y: 0, width: t, height: bounds.height)
         let clear: CGFloat = ruled ? t : 0
         let inset = max(safeAreaInsets.top, 20) + clear
-        minimap.frame = CGRect(x: max(safeAreaInsets.left, 20) + clear, y: inset, width: Self.minimapSide, height: Self.minimapSide)
+        let mapX = mapOnTrailing ? bounds.width - max(safeAreaInsets.right, 20) - Self.minimapSide
+                                 : max(safeAreaInsets.left, 20) + clear
+        minimap.frame = CGRect(x: mapX, y: inset, width: Self.minimapSide, height: Self.minimapSide)
         stick.frame = CGRect(x: minimap.frame.midX - PanStick.side / 2, y: minimap.frame.maxY + 14,
                              width: PanStick.side, height: PanStick.side)
         // Nothing to map or move until the paper is laid.
