@@ -5,13 +5,13 @@ import Foundation
 /// desk, the background everything else is laid on.
 struct PaperSize: Hashable, Sendable {
     enum Series: CaseIterable, Hashable, Sendable {
-        case a4, a3, a2, a1
-        case b5, b4, b3, b2
+        case a4, a3, a2, a1, a0
+        case b5, b4, b3, b2, b1
         /// Exactly the screen: nothing to move about, so no map or stick.
         case screen
 
-        static let aSizes: [Series] = [.a4, .a3, .a2, .a1]
-        static let bSizes: [Series] = [.b5, .b4, .b3, .b2]
+        static let aSizes: [Series] = [.a4, .a3, .a2, .a1, .a0]
+        static let bSizes: [Series] = [.b5, .b4, .b3, .b2, .b1]
     }
 
     var series: Series
@@ -28,10 +28,12 @@ struct PaperSize: Hashable, Sendable {
         case .a3: "A3"
         case .a2: "A2"
         case .a1: "A1"
+        case .a0: "A0"
         case .b5: "B5"
         case .b4: "B4"
         case .b3: "B3"
         case .b2: "B2"
+        case .b1: "B1"
         case .screen: "화면 맞춤"
         }
     }
@@ -44,11 +46,14 @@ struct PaperSize: Hashable, Sendable {
         case .a3: (297, 420)
         case .a2: (420, 594)
         case .a1: (594, 841)
+        // The screen is only a window on it: the hand works an iPad's reach at a time, as on a big board.
+        case .a0: (841, 1189)
         // The B sizes used for Korean drafting paper (KS, as JIS).
         case .b5: (182, 257)
         case .b4: (257, 364)
         case .b3: (364, 515)
         case .b2: (515, 728)
+        case .b1: (728, 1030)
         case .screen: (screenWidthMM, screenHeightMM)
         }
         return landscape ? (long, short) : (short, long)

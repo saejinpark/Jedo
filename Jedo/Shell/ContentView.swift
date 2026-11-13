@@ -301,7 +301,7 @@ private struct PaperPicker: View {
     }
 
     private func row(_ series: [PaperSize.Series]) -> some View {
-        HStack(alignment: .bottom, spacing: 22) {
+        HStack(alignment: .bottom, spacing: 16) {
             ForEach(series, id: \.self) { series in
                 let paper = PaperSize(series: series, landscape: landscape)
                 Button { choose(paper) } label: {
@@ -309,12 +309,12 @@ private struct PaperPicker: View {
                         let (w, h) = paper.sizeMM
                         Rectangle()
                             .fill(Color(red: 0.965, green: 0.955, blue: 0.925))
-                            .frame(width: w / 841 * 110, height: h / 841 * 110)
+                            .frame(width: w / 1189 * 125, height: h / 1189 * 125)
                             .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
                         Text(paper.name).font(.headline)
-                        Text("\(Int(w))×\(Int(h))mm").font(.caption).foregroundStyle(.secondary)
+                        Text(verbatim: "\(Int(w))×\(Int(h))mm").font(.caption).foregroundStyle(.secondary)
                     }
-                    .frame(width: 130, height: 170, alignment: .bottom)
+                    .frame(width: 118, height: 180, alignment: .bottom)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

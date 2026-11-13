@@ -136,6 +136,8 @@ struct PaperSizeTests {
         let wide = PaperSize(series: .a3, landscape: true)
         #expect(wide.sizeMM.width == 420 && wide.sizeMM.height == 297)
         #expect(PaperSize(series: .a1, landscape: false).sizeMM.height == 841)
+        #expect(PaperSize(series: .a0, landscape: false).sizeMM == (841, 1189))
+        #expect(PaperSize(series: .b1, landscape: true).sizeMM == (1030, 728))
         #expect(PaperSize(series: .b4, landscape: false).sizeMM.width == 257)
     }
 
