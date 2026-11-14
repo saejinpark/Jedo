@@ -409,11 +409,14 @@ private struct SheetBar: View {
                     }
                 }
             } label: {
-                CarbonSwatch(ink: ink, selected: false)
+                CarbonSwatch(ink: ink, blend: row.carbonBlend, selected: false)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .accessibilityLabel("먹지 색")
+            if let blend = row.carbonBlend {
+                BlendPickers(blend: blend) { session.setCarbonBlend(row.id, $0) }
+            }
         }
     }
 
@@ -758,9 +761,12 @@ private struct SheetsPanel: View {
                         }
                     }
                 } label: {
-                    CarbonSwatch(ink: ink, selected: false).frame(width: 30, height: 30)
+                    CarbonSwatch(ink: ink, blend: row.carbonBlend, selected: false).frame(width: 30, height: 30)
                 }
                 .accessibilityLabel("먹지 색")
+                if let blend = row.carbonBlend {
+                    BlendPickers(blend: blend) { session.setCarbonBlend(row.id, $0) }
+                }
             }
             iconButton("trash", label: row.isCarbon ? "먹지 치우기" : "치우기 (그린 것도 함께)") { session.removeLayer(row.id) }
                 .foregroundStyle(Palette.danger)
@@ -776,9 +782,36 @@ private struct SheetsPanel: View {
     }
 }
 
+/// The two colours a mixed carbon runs between: the one at its left edge, the one at its right.
+private struct BlendPickers: View {
+    let blend: CarbonBlend
+    let change: (CarbonBlend) -> Void
+
+    private func binding(_ end: WritableKeyPath<CarbonBlend, [Double]>) -> Binding<Color> {
+        Binding {
+            let c = blend[keyPath: end]
+            return Color(red: c[0], green: c[1], blue: c[2])
+        } set: { colour in
+            var (r, g, b, a) = (CGFloat(0), CGFloat(0), CGFloat(0), CGFloat(0))
+            guard UIColor(colour).getRed(&r, green: &g, blue: &b, alpha: &a) else { return }
+            var next = blend
+            next[keyPath: end] = [Double(r), Double(g), Double(b)]
+            change(CarbonBlend(from: next.from, to: next.to))
+        }
+    }
+
+    var body: some View {
+        ColorPicker("왼쪽 끝 색", selection: binding(\.from), supportsOpacity: false).labelsHidden()
+            .frame(width: Metric.cell, height: Metric.cell)
+        ColorPicker("오른쪽 끝 색", selection: binding(\.to), supportsOpacity: false).labelsHidden()
+            .frame(width: Metric.cell, height: Metric.cell)
+    }
+}
+
 /// A carbon's coating, as a small chip.
 private struct CarbonSwatch: View {
     let ink: CarbonInk
+    var blend: CarbonBlend? = nil
     let selected: Bool
 
     var body: some View {
@@ -787,7 +820,8 @@ private struct CarbonSwatch: View {
             let n = 13, m = 10
             for i in 0..<n {
                 for j in 0..<m {
-                    let c = ink.isPattern ? ink.printColour(atMM: Double(i) * 1.5 + 0.5, Double(j) * 1.5 + 0.5) : ink.colour(at: Double(i) / Double(n - 1))
+                    let t = Double(i) / Double(n - 1)
+                    let c = ink.isPattern ? ink.printColour(atMM: Double(i) * 1.5 + 0.5, Double(j) * 1.5 + 0.5) : ink == .custom ? (blend ?? .standard).colour(at: t) : ink.colour(at: t)
                     context.fill(Path(CGRect(x: size.width * CGFloat(i) / CGFloat(n), y: size.height * CGFloat(j) / CGFloat(m),
                                              width: size.width / CGFloat(n) + 0.5, height: size.height / CGFloat(m) + 0.5)),
                                  with: .color(Color(red: c.r, green: c.g, blue: c.b)))

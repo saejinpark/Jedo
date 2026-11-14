@@ -33,6 +33,7 @@ final class DrawingSession {
         let hasPrint: Bool
         /// For carbon: its coating.
         let carbonInk: CarbonInk?
+        var carbonBlend: CarbonBlend? = nil
         let isPhoto: Bool
         /// A photo used as carbon.
         let photoCarbon: Bool
@@ -47,7 +48,10 @@ final class DrawingSession {
     }
     /// Whether the carbon lies under everything, copying what is pressed above it.
     /// Lays a sheet of carbon in this coating.
-    func addCarbon(_ ink: CarbonInk) { canvas?.addCarbonLayer(ink) }
+    func addCarbon(_ ink: CarbonInk) {
+        canvas?.carbonBlend = carbonBlend
+        canvas?.addCarbonLayer(ink)
+    }
 
     /// Lays a picture as carbon: pressed through, it gives its colours.
     func addPhotoCarbon(_ data: Data) {
@@ -470,6 +474,22 @@ let text = String(format: "strokes %d, drawing %.2f s (%.2f ms a stroke, slowest
         canvas?.setCarbonInk(id, ink)
     }
 
+    /// The colours of the carbon the user mixes, kept between drawings.
+    var carbonBlend: CarbonBlend = {
+        let saved = UserDefaults.standard.array(forKey: "carbonBlend") as? [Double] ?? []
+        return saved.count == 6 ? CarbonBlend(from: Array(saved[0..<3]), to: Array(saved[3..<6])) : .standard
+    }() {
+        didSet {
+            canvas?.carbonBlend = carbonBlend
+            UserDefaults.standard.set(carbonBlend.from + carbonBlend.to, forKey: "carbonBlend")
+        }
+    }
+
+    func setCarbonBlend(_ id: Int, _ blend: CarbonBlend) {
+        carbonBlend = blend
+        canvas?.setCarbonBlend(id, blend)
+    }
+
     /// Whether any tone lies on the paper.
     var hasTone: Bool { layerRows.contains(where: \.isTone) }
     /// Whether anything lies on the paper for the knife: tone, or a sheet of paper to cut in pieces.
@@ -483,6 +503,7 @@ let text = String(format: "strokes %d, drawing %.2f s (%.2f ms a stroke, slowest
                      canStamp: layer.kind.takesPencil && !layer.glued && !layer.photoCarbon,
                      hasPrint: { if case .grid(let p) = layer.kind { !p.isPlain } else { false } }(),
                      carbonInk: layer.kind == .carbon ? layer.carbonInk : nil,
+                     carbonBlend: layer.kind == .carbon && layer.carbonInk == .custom ? layer.carbonBlend ?? .standard : nil,
                      isPhoto: layer.kind.photo != nil, photoCarbon: layer.photoCarbon, glued: layer.glued,
                      symbol: layer.kind.photo != nil ? (layer.glued ? "photo.fill" : "photo") : layer.kind == .carbon ? "square.fill" : layer.kind.isTone ? "circle.grid.3x3.fill"
                         : { if case .grid(let p) = layer.kind, p.isPlain { "doc.plaintext" } else { "squareshape.split.3x3" } }(),

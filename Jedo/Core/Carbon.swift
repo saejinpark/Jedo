@@ -8,6 +8,8 @@ enum CarbonInk: String, CaseIterable, Hashable, Codable, Sendable {
     case rainbow, sunset, sea
     /// Coated in a cloth's print, for laying a fabric into a fashion drawing.
     case stripe, gingham, dots, tartan, houndstooth
+    /// A run between two colours the user mixed: the colours are the sheet's own (`CarbonBlend`).
+    case custom
 
     var name: String {
         switch self {
@@ -24,10 +26,11 @@ enum CarbonInk: String, CaseIterable, Hashable, Codable, Sendable {
         case .dots: "물방울"
         case .tartan: "타탄 체크"
         case .houndstooth: "하운드투스"
+        case .custom: "내 그라데이션"
         }
     }
 
-    var isGradient: Bool { self == .rainbow || self == .sunset || self == .sea }
+    var isGradient: Bool { self == .rainbow || self == .sunset || self == .sea || self == .custom }
     var isPattern: Bool { [.stripe, .gingham, .dots, .tartan, .houndstooth].contains(self) }
     /// Whether the coating is one colour all over.
     var isPlain: Bool { !isGradient && !isPattern }
@@ -87,6 +90,7 @@ enum CarbonInk: String, CaseIterable, Hashable, Codable, Sendable {
         case .sunset: return hue(345, 410)
         case .sea: return hue(160, 250)
         case .stripe, .gingham, .dots, .tartan, .houndstooth: return printIndex(atMM: t * 40, 2)
+        case .custom: return CarbonBlend.standard.paletteIndex(at: t)
         }
     }
 
@@ -94,6 +98,39 @@ enum CarbonInk: String, CaseIterable, Hashable, Codable, Sendable {
     func colour(at t: Double) -> (r: Double, g: Double, b: Double) {
         CarbonPalette.colours[paletteIndex(at: t)]
     }
+}
+
+/// A carbon coating the user mixed: one colour at the sheet's left edge running to another at its right.
+struct CarbonBlend: Equatable, Codable, Sendable {
+    /// Red, green, blue, 0…1.
+    var from: [Double]
+    var to: [Double]
+
+    static let standard = CarbonBlend(from: [0.95, 0.45, 0.20], to: [0.35, 0.20, 0.60])
+
+    init(from: [Double], to: [Double]) {
+        func three(_ c: [Double]) -> [Double] { (0..<3).map { min(max($0 < c.count && c[$0].isFinite ? c[$0] : 0, 0), 1) } }
+        self.from = three(from)
+        self.to = three(to)
+    }
+
+    func colour(at t: Double) -> (r: Double, g: Double, b: Double) {
+        let t = min(max(t.isFinite ? t : 0, 0), 1)
+        return (from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t, from[2] + (to[2] - from[2]) * t)
+    }
+
+    /// The palette entry at `t` across. Copies are kept by palette entry, so the run comes out in fine steps.
+    func paletteIndex(at t: Double) -> Int { CarbonPalette.cubeIndex(colour(at: t)) }
+
+    /// The palette entry at `t` across for the pixel at x, y: neighbouring entries are
+    /// mixed pixel by pixel, so the steps between them don't show as bands.
+    func paletteIndex(at t: Double, x: Int, y: Int) -> Int {
+        let c = colour(at: t)
+        let d = (Self.dither[(y & 3) * 4 + (x & 3)] - 0.5) / Double(CarbonPalette.cubeSteps - 1)
+        return CarbonPalette.cubeIndex((c.r + d, c.g + d, c.b + d))
+    }
+
+    private static let dither: [Double] = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map { (Double($0) + 0.5) / 16 }
 }
 
 /// Every colour a carbon copy can be. Copies keep the colour they were made

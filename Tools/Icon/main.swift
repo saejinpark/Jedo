@@ -42,22 +42,22 @@ do {
     let width = { (s: Double) in 94 - 0.03 * s }
     let ss = Array(stride(from: 40.0, through: 800, by: 20))
     let band = ss.map { at($0, bow($0) - width($0) / 2, lean) } + ss.reversed().map { at($0, bow($0) + width($0) / 2, lean) }
-    fill(band, hex(0xE3B96B))
+    fill(band, hex(0xEAD9A0))
     for s in [250.0, 520.0] {
         fill([at(s, bow(s) - width(s) / 2, lean), at(s + 16, bow(s + 16) - width(s + 16) / 2, lean),
-              at(s + 16, bow(s + 16) + width(s + 16) / 2, lean), at(s, bow(s) + width(s) / 2, lean)], hex(0xB98A45), shadow: false)
+              at(s + 16, bow(s + 16) + width(s + 16) / 2, lean), at(s, bow(s) + width(s) / 2, lean)], hex(0xC2A866), shadow: false)
     }
     for s in stride(from: 110.0, through: 760, by: 65) where !(240...290).contains(s) && !(510...560).contains(s) {
         let w = width(s) / 2
         fill([at(s, bow(s) - w, lean), at(s + 11, bow(s + 11) - w, lean), at(s + 11, bow(s + 11) - w + 30, lean), at(s, bow(s) - w + 30, lean)],
-             hex(0x7A5522), shadow: false)
+             hex(0x7C6A36), shadow: false)
     }
 }
 
 // 2. The stylus, leaning right: a wooden handle, a steel shank, a ball at its tip.
 do {
     let lean = 0.60
-    fill([at(40, -30, lean), at(470, -30, lean), at(470, 30, lean), at(40, 30, lean)], hex(0xD9573F))
+    fill([at(40, -30, lean), at(470, -30, lean), at(470, 30, lean), at(40, 30, lean)], hex(0x8E3B46))
     fill([at(470, -34, lean), at(530, -34, lean), at(530, 34, lean), at(470, 34, lean)], hex(0xF1F2F4))
     fill([at(530, -20, lean), at(770, -9, lean), at(770, 9, lean), at(530, 20, lean)], hex(0xC5CBD6))
     let tip = at(778, 0, lean)
@@ -77,7 +77,12 @@ do {
     // Its inner scroll is cut clean through, so the tools behind show in it.
     path.addLines(between: FrenchCurveData.smallCutout.map(place)); path.closeSubpath()
     ctx.saveGState(); ctx.translateBy(x: 0, y: 14); ctx.addPath(path); ctx.setFillColor(rgb(0, 0, 0, 0.22)); ctx.fillPath(using: .evenOdd); ctx.restoreGState()
-    ctx.addPath(path); ctx.setFillColor(hex(0xF7F4EC, 0.94)); ctx.fillPath(using: .evenOdd)
+    // Old hard plastic: orange with a flesh tint, lighter where the light catches its upper half.
+    ctx.saveGState()
+    ctx.addPath(path); ctx.clip(using: .evenOdd)
+    let plastic = CGGradient(colorsSpace: space, colors: [hex(0xFFC79A, 0.96), hex(0xF79A58, 0.96), hex(0xE9803F, 0.96)] as CFArray, locations: [0, 0.55, 1])!
+    ctx.drawLinearGradient(plastic, start: CGPoint(x: 380, y: 150), end: CGPoint(x: 640, y: 880), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+    ctx.restoreGState()
 }
 
 let image = ctx.makeImage()!

@@ -96,7 +96,7 @@ final class PaperLayerView: UIView {
             // A coating that runs across the sheet, as it prints.
             let gradient = CAGradientLayer()
             gradient.colors = stride(from: 0.0, through: 1.0, by: 0.125).map { t in
-                let c = Self.coating(sheet.carbonInk.colour(at: t))
+                let c = Self.coating(sheet.coatingColour(at: t))
                 return UIColor(red: c.r, green: c.g, blue: c.b, alpha: 0.62).cgColor
             }
             gradient.startPoint = CGPoint(x: 0, y: 0.5)

@@ -1176,7 +1176,8 @@ final class CanvasView: UIView {
         let step = Self.sheetCascadeMM * sheet.pixelsPerMillimeter * Double(count % 6)
         pose.center.x += step
         pose.center.y -= step
-        let layer = PaperLayer(id: nextLayerID, kind: .carbon, pose: pose, carbonInk: ink)
+        var layer = PaperLayer(id: nextLayerID, kind: .carbon, pose: pose, carbonInk: ink)
+        if ink == .custom { layer.carbonBlend = carbonBlend }
         nextLayerID += 1
         layers.insert(layer, at: layers.prefix(while: \.glued).count)
         showLayer(layer, surfaces: [], sheet: sheet)
@@ -1188,10 +1189,22 @@ final class CanvasView: UIView {
     /// What the next carbon laid is coated with.
     var carbonInk: CarbonInk = .navy
 
+    /// The two colours the next carbon the user mixes runs between.
+    var carbonBlend = CarbonBlend.standard
+
+    /// Changes the colours a mixed carbon runs between. What it already copied keeps its colour.
+    func setCarbonBlend(_ id: Int, _ blend: CarbonBlend) {
+        guard let i = layers.firstIndex(where: { $0.id == id && $0.kind == .carbon }) else { return }
+        layers[i].carbonBlend = blend
+        reshow(layers[i])
+        layersChanged()
+    }
+
     /// Recoats a carbon. What it already copied keeps its colour.
     func setCarbonInk(_ id: Int, _ ink: CarbonInk) {
         guard let i = layers.firstIndex(where: { $0.id == id && $0.kind == .carbon }) else { return }
         layers[i].carbonInk = ink
+        if ink == .custom, layers[i].carbonBlend == nil { layers[i].carbonBlend = carbonBlend }
         reshow(layers[i])
         layersChanged()
     }
@@ -1275,6 +1288,10 @@ final class CanvasView: UIView {
             return { _, _ in index }
         }
         let width = carbon.kind.sizeMM.width * ppmm
+        if ink == .custom {
+            let blend = carbon.carbonBlend ?? .standard
+            return { x, y in blend.paletteIndex(at: (ox + ax * Double(x) + bx * Double(y)) / width, x: x, y: y) }
+        }
         return { x, y in ink.paletteIndex(at: (ox + ax * Double(x) + bx * Double(y)) / width) }
     }
 

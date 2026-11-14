@@ -236,6 +236,13 @@ struct PaperLayer: Identifiable, Equatable, Sendable {
     var photoCarbon = false
     /// Glued down to the paper (collage): it no longer moves, and is part of the paper.
     var glued = false
+    /// For carbon coated `.custom`: the two colours it runs between.
+    var carbonBlend: CarbonBlend? = nil
+
+    /// A carbon's coating at `t` across the sheet: its own blend, or its ink's run of colours.
+    func coatingColour(at t: Double) -> (r: Double, g: Double, b: Double) {
+        carbonInk == .custom ? (carbonBlend ?? .standard).colour(at: t) : carbonInk.colour(at: t)
+    }
 
     /// Whether pressing through it copies onto what lies under it.
     var isCarbon: Bool { kind == .carbon || (photoCarbon && kind.photo != nil) }
@@ -243,7 +250,7 @@ struct PaperLayer: Identifiable, Equatable, Sendable {
     /// The same sheet under another id: a piece cut from it.
     func piece(id: Int, outline: [CGPoint]) -> PaperLayer {
         PaperLayer(id: id, kind: kind, pose: pose, pieceMM: outline, carbonInk: carbonInk, flippedX: flippedX, flippedY: flippedY,
-                   photoCarbon: photoCarbon, glued: glued)
+                   photoCarbon: photoCarbon, glued: glued, carbonBlend: carbonBlend)
     }
 
     private var mirror: (x: Double, y: Double) { (flippedX ? -1 : 1, flippedY ? -1 : 1) }

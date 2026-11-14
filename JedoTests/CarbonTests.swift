@@ -50,6 +50,20 @@ struct CarbonTests {
         #expect(CarbonInk.houndstooth.printIndex(atMM: 8.2, 9.7) == light)
     }
 
+    @Test func aMixedCarbonRunsFromOneColourToTheOther() {
+        let blend = CarbonBlend(from: [1, 0, 0], to: [0, 0, 1])
+        #expect(blend.colour(at: 0).r == 1 && blend.colour(at: 1).b == 1)
+        #expect(abs(blend.colour(at: 0.5).r - 0.5) < 1e-9)
+        #expect(blend.paletteIndex(at: 0) == CarbonPalette.cubeIndex((1, 0, 0)))
+        #expect(blend.paletteIndex(at: 0) != blend.paletteIndex(at: 1))
+        // A broken record is mended rather than trusted.
+        #expect(CarbonBlend(from: [2, -1], to: []).from == [1, 0, 0])
+        var layer = PaperLayer(id: 1, kind: .carbon, pose: ToolPose(center: .zero, angle: 0), carbonInk: .custom)
+        layer.carbonBlend = blend
+        #expect(layer.coatingColour(at: 1).b == 1)
+        #expect(layer.piece(id: 2, outline: []).carbonBlend == blend)
+    }
+
     @Test func pressingThroughCarbonLaysItsColour() {
         let sheet = DraftingSheet(width: 200, height: 100, pixelsPerMillimeter: 10, isCarbonCopy: true)
         sheet.beginStroke(grade: .b6, instrument: .dipPen(.gPen), colour: { x, _ in x < 100 ? 2 : 3 })
