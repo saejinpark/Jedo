@@ -299,6 +299,9 @@ private struct DeskToolsGroup: View {
             ToolSetMenu(session: session, title: "형판", kinds: ToolKind.templates)
             ToolSetMenu(session: session, title: "운형자", kinds: ToolKind.frenchCurves)
             tool(.hipCurve)
+            ToolButton(icon: .symbol("lines.measurement.horizontal"), label: session.tapeOut ? "줄자 넣기" : "줄자 꺼내기", selected: session.tapeOut) {
+                session.tapeOut.toggle()
+            }
         }
     }
 

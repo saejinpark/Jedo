@@ -18,7 +18,7 @@ struct ShellLayout: Equatable, Codable, Sendable {
         case pencil
         /// The eraser and its kind, the compass, the knife.
         case hand
-        /// Rulers, set squares, scale, protractor, pins, templates, curves.
+        /// Rulers, set squares, scale, protractor, pins, templates, curves, the tape measure.
         case desk
         /// The layers panel: what lies on the paper.
         case sheets
@@ -36,7 +36,7 @@ struct ShellLayout: Equatable, Codable, Sendable {
             switch self {
             case .pencil: (11, 2)
             case .hand: (4, 1)
-            case .desk: (10, 1)
+            case .desk: (11, 1)
             case .sheets: (1, 1)
             case .papers: (7, 1)
             case .history: (2, 1)

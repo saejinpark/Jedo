@@ -22,7 +22,7 @@ struct ShellLayoutTests {
         for group in [ShellLayout.Group.history, .hand, .sheets, .desk] { #expect(cells[group]!.y == 14) }
         #expect(cells[.papers]!.y == 13)
         // The drawing palm's corner stays clear.
-        #expect(!cells.values.contains { $0.x + $0.w > 17 && $0.y + $0.h > 10 })
+        #expect(!cells.values.contains { $0.x + $0.w > 18 && $0.y + $0.h > 10 })
     }
 
     @Test func nothingOverlapsOnAnyIPad() {

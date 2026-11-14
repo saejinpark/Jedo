@@ -108,6 +108,13 @@ final class DrawingSession {
             }
         }
     }
+    /// Whether the tape measure is out, so two fingertips pull it out between them.
+    var tapeOut = false {
+        didSet {
+            canvas?.tapeOut = tapeOut
+            if tapeOut { show(.tape) }
+        }
+    }
     /// Whether the compass is out, so a finger held still plants its needle.
     var compassOnDesk = false {
         didSet {
@@ -129,6 +136,8 @@ final class DrawingSession {
         case eraser
         /// The knife was picked up.
         case knife
+        /// The tape measure came out.
+        case tape
         /// The eraser was picked up with the erasing shield out.
         case shield
         /// The stylus was picked up.
@@ -144,6 +153,7 @@ final class DrawingSession {
             switch self {
             case .pencil: "선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡고 컴퍼스 바늘을 꽂습니다."
             case .compass: "손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다."
+            case .tape: "두 손가락으로 종이를 누르고 벌리면 그 사이에 줄자가 펴집니다. 빨간 선에서 눈금을 읽고, 끝을 잡아 다시 옮깁니다."
             case .eraser: "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
             case .shield: "지움판 위를 문지르면 구멍 안쪽만 지워지고, 지움판은 밀리지 않습니다. 옮기려면 두 손가락으로 잡으세요."
             case .place(let kind): "\(kind.name): 놓을 자리를 손가락으로 누르세요. 누른 채 끌어 맞춥니다."
@@ -158,6 +168,7 @@ final class DrawingSession {
             switch self {
             case .pencil: "applepencil.tip"
             case .compass: "compass.drawing"
+            case .tape: "lines.measurement.horizontal"
             case .eraser, .shield: "eraser"
             case .knife: "scissors.badge.ellipsis"
             case .place: "hand.point.down"

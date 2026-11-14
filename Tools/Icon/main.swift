@@ -1,6 +1,7 @@
-// Draws the app icon: three tools of the drafting desk fanned from one point —
-// a bamboo curve rule, a stylus, and in front a French curve (the app's own
-// outline). Few filled, overlapping shapes on a plain ground, the weight in the
+// Draws the app icon: seven tools of the drafting desk gathered on one point —
+// the parallel rule and two set squares at the back, a bamboo curve rule and a
+// stylus fanned before them, a French curve (the app's own outline) in front,
+// and the compass standing on it. Few filled, overlapping shapes on a plain ground, the weight in the
 // middle, as the Human Interface Guidelines ask of an app icon.
 // Run with Tools/Icon/render.sh
 
@@ -34,6 +35,26 @@ func fill(_ points: [CGPoint], _ colour: CGColor, shadow: Bool = true) {
         ctx.saveGState(); ctx.translateBy(x: 0, y: 14); ctx.addPath(path); ctx.setFillColor(rgb(0, 0, 0, 0.22)); ctx.fillPath(); ctx.restoreGState()
     }
     ctx.addPath(path); ctx.setFillColor(colour); ctx.fillPath()
+}
+
+// 0. At the back: the parallel rule across the board, and the two set squares standing on it.
+func triangle(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint, inset: Double, _ colour: CGColor) {
+    // The same triangle again inside it, cut out: a set square's window.
+    let m = CGPoint(x: (a.x + b.x + c.x) / 3, y: (a.y + b.y + c.y) / 3)
+    let inner = [a, b, c].map { CGPoint(x: m.x + ($0.x - m.x) * inset, y: m.y + ($0.y - m.y) * inset) }
+    let path = CGMutablePath()
+    path.addLines(between: [a, b, c]); path.closeSubpath()
+    path.addLines(between: inner); path.closeSubpath()
+    ctx.addPath(path); ctx.setFillColor(colour); ctx.fillPath(using: .evenOdd)
+}
+do {
+    let top = 690.0
+    triangle(CGPoint(x: 96, y: top), CGPoint(x: 446, y: top), CGPoint(x: 96, y: top - 350), inset: 0.42, hex(0x7FD6C2, 0.62))
+    triangle(CGPoint(x: 928, y: top), CGPoint(x: 668, y: top), CGPoint(x: 928, y: top - 450), inset: 0.42, hex(0x8DBBF2, 0.62))
+    ctx.setFillColor(hex(0xDCE6F2, 0.60))
+    ctx.fill(CGRect(x: -20, y: top, width: size + 40, height: 104))
+    ctx.setFillColor(hex(0xFFFFFF, 0.55))
+    ctx.fill(CGRect(x: -20, y: top, width: size + 40, height: 14))
 }
 
 // 1. The bamboo curve rule, leaning left: a long band, bowed a little, with its joints and a few graduations.
@@ -83,6 +104,27 @@ do {
     let plastic = CGGradient(colorsSpace: space, colors: [hex(0xFFC79A, 0.96), hex(0xF79A58, 0.96), hex(0xE9803F, 0.96)] as CFArray, locations: [0, 0.55, 1])!
     ctx.drawLinearGradient(plastic, start: CGPoint(x: 380, y: 150), end: CGPoint(x: 640, y: 880), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
     ctx.restoreGState()
+}
+
+// 4. On top: the compass, open, standing on the curve.
+do {
+    let hinge = CGPoint(x: 512, y: 250), needle = CGPoint(x: 408, y: 668), lead = CGPoint(x: 616, y: 668)
+    func leg(_ to: CGPoint, _ colour: CGColor, width: Double) {
+        let dx = to.x - hinge.x, dy = to.y - hinge.y, l = (dx * dx + dy * dy).squareRoot()
+        let nx = -dy / l * width / 2, ny = dx / l * width / 2
+        // Full width at the hinge, tapering to a point.
+        fill([CGPoint(x: hinge.x + nx, y: hinge.y + ny), CGPoint(x: hinge.x - nx, y: hinge.y - ny),
+              CGPoint(x: to.x - nx * 0.18, y: to.y - ny * 0.18), CGPoint(x: to.x + nx * 0.18, y: to.y + ny * 0.18)], colour)
+    }
+    leg(needle, hex(0xF3F5F8), width: 46)
+    leg(lead, hex(0xDDE2EA), width: 46)
+    fill([CGPoint(x: hinge.x - 15, y: hinge.y - 96), CGPoint(x: hinge.x + 15, y: hinge.y - 96), CGPoint(x: hinge.x + 15, y: hinge.y), CGPoint(x: hinge.x - 15, y: hinge.y)], hex(0xF3F5F8))
+    ctx.setFillColor(rgb(0, 0, 0, 0.22))
+    ctx.fillEllipse(in: CGRect(x: hinge.x - 42, y: hinge.y - 42 + 10, width: 84, height: 84))
+    ctx.setFillColor(hex(0xF3F5F8))
+    ctx.fillEllipse(in: CGRect(x: hinge.x - 42, y: hinge.y - 42, width: 84, height: 84))
+    ctx.setFillColor(hex(0x34436B))
+    ctx.fillEllipse(in: CGRect(x: hinge.x - 15, y: hinge.y - 15, width: 30, height: 30))
 }
 
 let image = ctx.makeImage()!

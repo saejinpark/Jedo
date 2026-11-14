@@ -817,6 +817,7 @@ final class CanvasView: UIView {
         // A tool let go stays where it lies; picked up again, it finds the pin anew.
         for kind in pivots.keys where holders[kind, default: []].isEmpty { pivots[kind] = nil }
         if let held = pinHolder, touches.contains(held.touch) { pinHolder = nil }
+        releaseTape(touches)
         for id in layerHolders.keys { layerHolders[id]?.removeAll { touches.contains($0.touch) } }
         layerHolders = layerHolders.filter { !$0.value.isEmpty }
     }
@@ -841,6 +842,89 @@ final class CanvasView: UIView {
 
     /// Which face of the triangular scale is up when it is next taken out.
     var scaleFace = 0
+
+    // MARK: Tape measure
+
+    /// Whether the tape measure is out: two fingertips on the paper pull it out between them.
+    var tapeOut = false {
+        didSet {
+            guard !tapeOut else { return }
+            tape = nil
+            tapeHolders = [:]
+            tapeChanged()
+        }
+    }
+    /// The tape's zero and its far end, in paper pixels.
+    private(set) var tape: (a: CGPoint, b: CGPoint)?
+    /// Fingers holding the tape's ends: 0 its zero, 1 its far end.
+    private var tapeHolders: [UITouch: Int] = [:]
+    private let tapeView = TapeView()
+    private static let tapeGripMM = 9.0
+
+    private func tapeChanged() {
+        guard let tape, let sheet else {
+            tapeView.isHidden = true
+            return
+        }
+        if tapeView.superview == nil { insertSubview(tapeView, belowSubview: pinsView) }
+        bringSubviewToFront(tapeView)
+        bringSubviewToFront(pinsView)
+        tapeView.show(from: CGPoint(x: tape.a.x / scale, y: tape.a.y / scale), to: CGPoint(x: tape.b.x / scale, y: tape.b.y / scale),
+                      pointsPerMM: CGFloat(sheet.pixelsPerMillimeter) / scale)
+    }
+
+    /// A fingertip on one of the tape's ends takes hold of it. While one end is held, the next
+    /// fingertip anywhere takes the other end to where it lands: the tape is pulled out between the two.
+    private func grabTape(_ touch: UITouch) -> Bool {
+        guard tapeOut, let sheet, let now = tape else { return false }
+        let point = pixelLocation(touch), grip = Self.tapeGripMM * sheet.pixelsPerMillimeter
+        let held = Set(tapeHolders.values)
+        if held.count == 1, let other = [0, 1].first(where: { !held.contains($0) }) {
+            tape = other == 0 ? (point, now.b) : (now.a, point)
+            tapeHolders[touch] = other
+            tapeChanged()
+            return true
+        }
+        guard held.isEmpty else { return false }
+        let ends = [now.a, now.b]
+        guard let i = ends.indices.min(by: { ends[$0].distance(to: point) < ends[$1].distance(to: point) }),
+              ends[i].distance(to: point) <= grip else { return false }
+        tapeHolders[touch] = i
+        return true
+    }
+
+    /// With no tape laid yet, a fingertip on bare paper starts one there.
+    private func startTape(_ touch: UITouch) -> Bool {
+        guard tapeOut, tape == nil, !eraserInHand, sheet != nil else { return false }
+        let point = pixelLocation(touch)
+        tape = (point, point)
+        tapeHolders[touch] = 0
+        tapeChanged()
+        return true
+    }
+
+    private func moveTape(_ touches: Set<UITouch>) {
+        guard var now = tape else { return }
+        var moved = false
+        for touch in touches {
+            guard let end = tapeHolders[touch] else { continue }
+            if end == 0 { now.a = pixelLocation(touch) } else { now.b = pixelLocation(touch) }
+            moved = true
+        }
+        guard moved else { return }
+        tape = now
+        tapeChanged()
+    }
+
+    private func releaseTape(_ touches: Set<UITouch>) {
+        guard touches.contains(where: { tapeHolders[$0] != nil }) else { return }
+        for touch in touches { tapeHolders[touch] = nil }
+        // Let go before it was pulled out at all: nothing to leave lying.
+        if tapeHolders.isEmpty, let now = tape, let sheet, now.a.distance(to: now.b) < 3 * sheet.pixelsPerMillimeter {
+            tape = nil
+            tapeChanged()
+        }
+    }
 
     // MARK: Perspective pins
 
@@ -1636,8 +1720,10 @@ final class CanvasView: UIView {
         let now = CACurrentMediaTime()
         for touch in touches where isFinger(touch, event) {
             guard touch.majorRadius < Self.fingertipRadius else { continue }
+            if grabTape(touch) { continue }
             if toolInHand != nil, layToolInHand(at: touch) { continue }
             if grabTool(touch) { continue }
+            if startTape(touch) { continue }
             // A finger held still may plant the needle; once it moves it may rub with the eraser.
             presses.begin(touch, at: pixelLocation(touch), time: now)
             scheduleLongPressCheck()
@@ -1875,6 +1961,7 @@ final class CanvasView: UIView {
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         movePin(touches)
+        moveTape(touches)
         moveTools(touches)
         moveLayers(touches)
         for touch in touches where touch.type == .direct && touch != activeTouch {
