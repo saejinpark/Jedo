@@ -571,21 +571,65 @@ final class CanvasView: UIView {
 
     // MARK: Tools
 
-    /// Puts a tool on the paper, lying level with the screen as it is now, or takes it away.
+    /// A tool taken out and held over the desk, waiting for a finger to press where it goes.
+    private(set) var toolInHand: ToolKind?
+    /// Called when a tool taken out is laid down, or put back before it was.
+    var onToolInHandChange: ((ToolKind?) -> Void)?
+    /// Called when a tool taken out is put back without being laid.
+    var onToolPutBack: ((ToolKind) -> Void)?
+
+    /// Takes a tool out, to be laid where a finger next presses the desk, or
+    /// takes it away.
     func setTool(_ kind: ToolKind, onDesk: Bool) {
-        guard let sheet else { return }
         guard onDesk else {
+            if toolInHand == kind { setToolInHand(nil) }
             tools.removeAll { $0.kind == kind }
             holders[kind] = nil
+            stacked[kind] = nil
             toolViews[kind]?.isHidden = true
             toolsChanged()
             return
         }
-        guard !tools.contains(where: { $0.kind == kind }), var pose = screenPose(at: Self.restingSpot(kind)) else { return }
+        guard sheet != nil, !tools.contains(where: { $0.kind == kind }) else { return }
+        // One taken out but not yet laid goes back in the drawer.
+        if let other = toolInHand, other != kind { onToolPutBack?(other) }
+        setToolInHand(kind)
+    }
+
+    private func setToolInHand(_ kind: ToolKind?) {
+        toolInHand = kind
+        onToolInHandChange?(kind)
+    }
+
+    /// Called when the place pressed is taken by another tool.
+    var onToolSpotTaken: ((ToolKind) -> Void)?
+
+    /// Lays the tool in hand where `touch` presses, level with the screen,
+    /// and keeps it under that finger so pressing and dragging puts it just
+    /// so. A rigid tool isn't laid over another: that spot is taken, and the
+    /// press is used up saying so. Sheets lie under tools and don't count.
+    private func layToolInHand(at touch: UITouch) -> Bool {
+        guard let kind = toolInHand, let sheet, let level = screenPose(at: CGPoint(x: 0.5, y: 0.5)) else { return false }
+        let point = pixelLocation(touch)
+        var pose = ToolPose(center: point, angle: level.angle)
         if kind == .parallelRule { pose = ParallelRule.constrain(pose, boardCentreX: Double(paperRect.midX)) }
+        if ToolContact.collides(kind) {
+            let mine = ToolContact.polygon(DeskTool(kind: kind, pose: pose).shape(pixelsPerMillimeter: sheet.pixelsPerMillimeter))
+            let taken = tools.indices.contains {
+                ToolContact.collides(tools[$0].kind) && ToolContact.overlaps(mine, ToolContact.polygon(toolShapes[$0]))
+            }
+            if taken {
+                onToolSpotTaken?(kind)
+                return true
+            }
+        }
         tools.append(DeskTool(kind: kind, pose: pose, face: kind == .scaleRule ? scaleFace : 0))
         showTool(tools[tools.count - 1], sheet: sheet)
+        setToolInHand(nil)
         raise(kind)
+        stacked[kind] = overlapping(kind)
+        holders[kind] = [(touch, point)]
+        return true
     }
 
     /// A spot on the screen (as fractions of its size) on the paper, lying level with the screen.
@@ -596,31 +640,6 @@ final class CanvasView: UIView {
         let right = convert(CGPoint(x: onScreen.x + 100, y: onScreen.y), from: window)
         return ToolPose(center: CGPoint(x: here.x * scale, y: here.y * scale),
                         angle: atan2(Double(right.y - here.y), Double(right.x - here.x)))
-    }
-
-    /// Where on the screen each tool is first laid, as fractions of its size.
-    private static func restingSpot(_ kind: ToolKind) -> CGPoint {
-        switch kind {
-        case .ruler: CGPoint(x: 0.5, y: 0.5)
-        case .parallelRule: CGPoint(x: 0.5, y: 0.62)
-        case .setSquare45: CGPoint(x: 0.3, y: 0.38)
-        case .setSquare60: CGPoint(x: 0.66, y: 0.38)
-        case .circleTemplate: CGPoint(x: 0.5, y: 0.7)
-        case .ellipseTemplate: CGPoint(x: 0.5, y: 0.3)
-        case .squareTemplate: CGPoint(x: 0.42, y: 0.5)
-        case .hexTemplate: CGPoint(x: 0.58, y: 0.6)
-        case .arcTemplate: CGPoint(x: 0.5, y: 0.5)
-        case .letteringGuide: CGPoint(x: 0.5, y: 0.45)
-        case .scaleRule: CGPoint(x: 0.5, y: 0.56)
-        case .erasingShield: CGPoint(x: 0.5, y: 0.4)
-        case .brailleSlate: CGPoint(x: 0.5, y: 0.42)
-        case .morsePlate: CGPoint(x: 0.5, y: 0.46)
-        case .frenchCurveA: CGPoint(x: 0.28, y: 0.48)
-        case .frenchCurveB: CGPoint(x: 0.52, y: 0.5)
-        case .frenchCurveC: CGPoint(x: 0.76, y: 0.42)
-        case .hipCurve: CGPoint(x: 0.5, y: 0.5)
-        case .protractor: CGPoint(x: 0.62, y: 0.62)
-        }
     }
 
     private func toolView(_ kind: ToolKind) -> any ToolDisplay {
@@ -1355,6 +1374,7 @@ final class CanvasView: UIView {
         let now = CACurrentMediaTime()
         for touch in touches where isFinger(touch, event) {
             guard touch.majorRadius < Self.fingertipRadius else { continue }
+            if toolInHand != nil, layToolInHand(at: touch) { continue }
             if grabTool(touch) { continue }
             // A finger held still may plant the needle; once it moves it may rub with the eraser.
             presses.begin(touch, at: pixelLocation(touch), time: now)

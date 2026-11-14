@@ -100,12 +100,18 @@ final class DrawingSession {
         case eraser
         /// The knife was picked up.
         case knife
+        /// A tool was taken out and waits to be laid.
+        case place(ToolKind)
+        /// The spot pressed for it is taken.
+        case spotTaken(ToolKind)
 
         var text: String {
             switch self {
             case .pencil: "선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡고 컴퍼스 바늘을 꽂습니다."
             case .compass: "손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다."
             case .eraser: "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
+            case .place(let kind): "\(kind.name): 놓을 자리를 손가락으로 누르세요. 누른 채 끌어 맞춥니다."
+            case .spotTaken: "그 자리에는 다른 도구가 있습니다. 빈 곳을 누르거나 그 도구를 먼저 치우세요."
             case .knife: "세워 그으면 톤이 잘리고, 종이를 끝에서 끝까지 가르면 두 조각이 됩니다. 눕혀 문지르면 망점이 긁혀 나갑니다."
             }
         }
@@ -116,6 +122,8 @@ final class DrawingSession {
             case .compass: "compass.drawing"
             case .eraser: "eraser"
             case .knife: "scissors"
+            case .place: "hand.point.down"
+            case .spotTaken: "exclamationmark.circle"
             }
         }
     }
@@ -132,6 +140,34 @@ final class DrawingSession {
         if onDesk { toolsOnDesk.insert(kind) } else { toolsOnDesk.remove(kind) }
         canvas?.setTool(kind, onDesk: onDesk)
     }
+
+    /// A tool taken out, waiting to be laid where a finger presses.
+    private(set) var toolInHand: ToolKind?
+
+    func toolInHandChanged(_ kind: ToolKind?) {
+        toolInHand = kind
+        // Stays up until the tool is laid: it is what the hand is doing now.
+        hintTask?.cancel()
+        if let kind {
+            hint = .place(kind)
+        } else if case .place = hint {
+            hint = nil
+        }
+    }
+
+    /// The spot pressed is taken by another tool: say so, then go back to waiting.
+    func toolSpotTaken(_ kind: ToolKind) {
+        hintTask?.cancel()
+        hint = .spotTaken(kind)
+        hintTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.2))
+            guard !Task.isCancelled, let self, self.toolInHand == kind else { return }
+            self.hint = .place(kind)
+        }
+    }
+
+    /// A tool taken out and not laid, put back because another was taken.
+    func toolPutBack(_ kind: ToolKind) { toolsOnDesk.remove(kind) }
 
     /// Lays the drawing paper on the desk.
     func start(on paper: PaperSize) {

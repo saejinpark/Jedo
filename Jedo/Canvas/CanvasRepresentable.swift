@@ -15,6 +15,9 @@ struct CanvasRepresentable: UIViewControllerRepresentable {
         view.onLayersChange = { [weak session] layers, hidden in session?.layersChanged(layers, hidden: hidden) }
         view.eraserKind = session.eraserKind
         view.onPinsChange = { [weak session] count in session?.pinsChanged(count) }
+        view.onToolInHandChange = { [weak session] kind in session?.toolInHandChanged(kind) }
+        view.onToolPutBack = { [weak session] kind in session?.toolPutBack(kind) }
+        view.onToolSpotTaken = { [weak session] kind in session?.toolSpotTaken(kind) }
         session.canvas = view
         session.desk = controller.desk
         controller.desk.mapOnTrailing = session.mapOnTrailing
