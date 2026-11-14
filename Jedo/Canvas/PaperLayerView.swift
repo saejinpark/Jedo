@@ -71,8 +71,8 @@ final class PaperLayerView: UIView {
             layer.addSublayer(print)
         }
         if sheet.kind == .carbon, sheet.carbonInk.isPattern {
-            // A cloth print shows on the sheet as it will press: two samples to the millimetre is plenty to see it by.
-            let ink = sheet.carbonInk, perMM = 2.0
+            // A cloth print shows on the sheet as it will press: four samples to the millimetre keep its dots round.
+            let ink = sheet.carbonInk, perMM = 4.0
             let cols = Int((w * perMM).rounded(.up)), rows = Int((h * perMM).rounded(.up))
             var pixels = [UInt32](repeating: 0, count: cols * rows)
             for y in 0..<rows {
@@ -85,7 +85,7 @@ final class PaperLayerView: UIView {
             let print = CALayer()
             print.frame = bounds
             print.contents = CanvasView.makeImage(pixels: pixels, width: cols, height: rows)
-            print.magnificationFilter = .nearest
+            print.magnificationFilter = .linear
             let clip = CAShapeLayer()
             clip.path = outline
             clip.fillRule = .evenOdd
