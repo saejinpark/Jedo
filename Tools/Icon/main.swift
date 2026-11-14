@@ -106,9 +106,10 @@ do {
     ctx.restoreGState()
 }
 
-// 4. On top: the compass, open, standing on the curve.
+// 4. On top: the compass, open, over the curve.
 do {
-    let hinge = CGPoint(x: 512, y: 250), needle = CGPoint(x: 408, y: 668), lead = CGPoint(x: 616, y: 668)
+    // Turned over, its joint on the very middle of the icon and its legs opening upward.
+    let hinge = CGPoint(x: 512, y: 512), needle = CGPoint(x: 408, y: 104), lead = CGPoint(x: 616, y: 104)
     func leg(_ to: CGPoint, _ colour: CGColor, width: Double) {
         let dx = to.x - hinge.x, dy = to.y - hinge.y, l = (dx * dx + dy * dy).squareRoot()
         let nx = -dy / l * width / 2, ny = dx / l * width / 2
@@ -118,7 +119,7 @@ do {
     }
     leg(needle, hex(0xF3F5F8), width: 46)
     leg(lead, hex(0xDDE2EA), width: 46)
-    fill([CGPoint(x: hinge.x - 15, y: hinge.y - 96), CGPoint(x: hinge.x + 15, y: hinge.y - 96), CGPoint(x: hinge.x + 15, y: hinge.y), CGPoint(x: hinge.x - 15, y: hinge.y)], hex(0xF3F5F8))
+    fill([CGPoint(x: hinge.x - 15, y: hinge.y), CGPoint(x: hinge.x + 15, y: hinge.y), CGPoint(x: hinge.x + 15, y: hinge.y + 96), CGPoint(x: hinge.x - 15, y: hinge.y + 96)], hex(0xF3F5F8))
     ctx.setFillColor(rgb(0, 0, 0, 0.22))
     ctx.fillEllipse(in: CGRect(x: hinge.x - 42, y: hinge.y - 42 + 10, width: 84, height: 84))
     ctx.setFillColor(hex(0xF3F5F8))

@@ -1,8 +1,9 @@
 import UIKit
 
-/// The tape measure pulled out between two fingertips: a soft tape graduated in
-/// millimetres from its tab, running on a little past the far finger, with a
-/// red hairline where that finger holds it. The length is read off the tape.
+/// The tape measure pulled out between two points: a soft tape graduated in
+/// millimetres from its tab, running on a little past the far point, with a
+/// red hairline there. The length is read off the tape. Its body lies on the
+/// side away from the fingers that hold it, so they never cover the graduations.
 final class TapeView: UIView {
     /// Width of the tape.
     static let widthMM = 14.0
@@ -11,6 +12,8 @@ final class TapeView: UIView {
 
     private var lengthMM = 0.0
     private var pointsPerMM: CGFloat = 5
+    /// Which side of the measured line the body lies on, in the view's own y: +1 below its top edge, −1 above its bottom edge.
+    private var side: CGFloat = 1
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -22,8 +25,8 @@ final class TapeView: UIView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    /// Lays the tape from `a` to `b`, in the canvas's points.
-    func show(from a: CGPoint, to b: CGPoint, pointsPerMM pt: CGFloat) {
+    /// Lays the tape from `a` to `b`, in the canvas's points, its body toward `up` (a direction on the canvas).
+    func show(from a: CGPoint, to b: CGPoint, pointsPerMM pt: CGFloat, up: CGVector) {
         let length = hypot(b.x - a.x, b.y - a.y)
         lengthMM = Double(length / pt)
         pointsPerMM = pt
@@ -33,8 +36,10 @@ final class TapeView: UIView {
         transform = .identity
         bounds = CGRect(x: 0, y: 0, width: before + length + after, height: CGFloat(Self.widthMM) * pt)
         // The zero sits on `a`; the tape lies to one side of the line measured, its graduated edge on it.
-        let angle = atan2(b.y - a.y, b.x - a.x)
-        let along = (before + length + after) / 2 - before, across = bounds.height / 2
+        // A tape not yet pulled out lies level, reading left to right.
+        let angle = length > 0.5 ? atan2(b.y - a.y, b.x - a.x) : atan2(-up.dx, up.dy)
+        side = -sin(angle) * up.dx + cos(angle) * up.dy >= 0 ? 1 : -1
+        let along = (before + length + after) / 2 - before, across = side * bounds.height / 2
         center = CGPoint(x: a.x + cos(angle) * along - sin(angle) * across, y: a.y + sin(angle) * along + cos(angle) * across)
         transform = CGAffineTransform(rotationAngle: angle)
         CATransaction.commit()
@@ -59,17 +64,23 @@ final class TapeView: UIView {
         ctx.setStrokeColor(ink.cgColor)
         let last = Int((lengthMM + Self.tailMM).rounded(.down))
         let font = UIFont.monospacedDigitSystemFont(ofSize: max(2.8 * pt, 6), weight: .medium)
+        // The graduated edge lies on the line measured; the figures stand upright as the tape is held.
+        let edge: CGFloat = side > 0 ? 0 : bounds.height
         for mm in 0...max(last, 0) {
             let x = zero + CGFloat(mm) * pt
             let tall: CGFloat = mm % 10 == 0 ? 5.5 : mm % 5 == 0 ? 4 : 2.5
             ctx.setLineWidth(mm % 10 == 0 ? 1 : 0.6)
-            ctx.move(to: CGPoint(x: x, y: 0))
-            ctx.addLine(to: CGPoint(x: x, y: tall * pt))
+            ctx.move(to: CGPoint(x: x, y: edge))
+            ctx.addLine(to: CGPoint(x: x, y: edge + side * tall * pt))
             ctx.strokePath()
             if mm % 10 == 0, mm > 0 {
                 let text = NSAttributedString(string: "\(mm / 10)", attributes: [.font: font, .foregroundColor: ink])
                 let size = text.size()
-                text.draw(at: CGPoint(x: x - size.width / 2, y: 6.5 * pt))
+                ctx.saveGState()
+                ctx.translateBy(x: x, y: edge + side * 8.6 * pt)
+                if side > 0 { ctx.rotate(by: .pi) }
+                text.draw(at: CGPoint(x: -size.width / 2, y: -size.height / 2))
+                ctx.restoreGState()
             }
         }
         // The red hairline at the far fingertip: read the tape here.
