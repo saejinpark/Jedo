@@ -1,7 +1,7 @@
-// Draws the app icon: seven tools of the drafting desk gathered on one point —
-// the parallel rule and two set squares at the back, a bamboo curve rule and a
-// stylus fanned before them, a French curve (the app's own outline) in front,
-// and the compass standing on it. Few filled, overlapping shapes on a plain ground, the weight in the
+// Draws the app icon: five tools of the drafting desk gathered on its centre —
+// the parallel rule and two set squares at the back, a French curve (the app's
+// own outline) in front, and the compass over it with its joint on the middle.
+// `--fan` adds a bamboo curve rule and a stylus fanned behind the curve. Few filled, overlapping shapes on a plain ground, the weight in the
 // middle, as the Human Interface Guidelines ask of an app icon.
 // Run with Tools/Icon/render.sh
 
@@ -49,16 +49,19 @@ func triangle(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint, inset: Double, _ colour:
 }
 do {
     let top = 690.0
-    triangle(CGPoint(x: 96, y: top), CGPoint(x: 446, y: top), CGPoint(x: 96, y: top - 350), inset: 0.42, hex(0x7FD6C2, 0.62))
-    triangle(CGPoint(x: 928, y: top), CGPoint(x: 668, y: top), CGPoint(x: 928, y: top - 450), inset: 0.42, hex(0x8DBBF2, 0.62))
+    triangle(CGPoint(x: 96, y: top), CGPoint(x: 446, y: top), CGPoint(x: 96, y: top - 350), inset: 0.42, hex(0x7FD6C2, 0.80))
+    triangle(CGPoint(x: 928, y: top), CGPoint(x: 668, y: top), CGPoint(x: 928, y: top - 450), inset: 0.42, hex(0x8DBBF2, 0.80))
     ctx.setFillColor(hex(0xDCE6F2, 0.60))
     ctx.fill(CGRect(x: -20, y: top, width: size + 40, height: 104))
     ctx.setFillColor(hex(0xFFFFFF, 0.55))
     ctx.fill(CGRect(x: -20, y: top, width: size + 40, height: 14))
 }
 
+// Five tools read better than seven at the size of an icon: the bamboo rule and the stylus stay in the drawer.
+let fan = CommandLine.arguments.contains("--fan")
+
 // 1. The bamboo curve rule, leaning left: a long band, bowed a little, with its joints and a few graduations.
-do {
+if fan {
     let lean = -0.60, bow = { (s: Double) in 0.00016 * s * s }
     let width = { (s: Double) in 94 - 0.03 * s }
     let ss = Array(stride(from: 40.0, through: 800, by: 20))
@@ -76,7 +79,7 @@ do {
 }
 
 // 2. The stylus, leaning right: a wooden handle, a steel shank, a ball at its tip.
-do {
+if fan {
     let lean = 0.60
     fill([at(40, -30, lean), at(470, -30, lean), at(470, 30, lean), at(40, 30, lean)], hex(0x8E3B46))
     fill([at(470, -34, lean), at(530, -34, lean), at(530, 34, lean), at(470, 34, lean)], hex(0xF1F2F4))
