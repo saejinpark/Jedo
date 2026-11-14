@@ -22,6 +22,9 @@ struct CanvasRepresentable: UIViewControllerRepresentable {
         session.canvas = view
         session.desk = controller.desk
         controller.desk.mapOrigin = session.mapOrigin
+        #if DEBUG
+        if session.runScriptIfAsked() { return controller }
+        #endif
         session.resumeSaved()
         return controller
     }

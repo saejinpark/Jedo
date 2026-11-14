@@ -474,6 +474,10 @@ final class CanvasView: UIView {
         let paper = CALayer()
         paper.frame = frame
         paper.masksToBounds = true
+        // The paper's own colour under the grain tiles: scaled down for an export,
+        // the hairline between tiles would otherwise show the grey under it.
+        let base = GraphiteShading.paper
+        paper.backgroundColor = UIColor(red: base.r, green: base.g, blue: base.b, alpha: 1).cgColor
         // Tiles keep to the desk's grid so the grain lines up with the graphite's.
         let first = (x: Int(frame.minX / step), y: Int(frame.minY / step))
         let last = (x: Int(frame.maxX / step), y: Int(frame.maxY / step))
@@ -1956,6 +1960,47 @@ final class CanvasView: UIView {
             altitude: isPencil ? Double(touch.altitudeAngle) : .pi / 2,
             azimuth: isPencil ? Double(touch.azimuthAngle(in: self)) : 0
         )
+    }
+
+    // MARK: Drawing from a record
+
+    /// A point of a recorded stroke, in millimetres from the paper's top-left corner.
+    struct RecordedPoint {
+        var x: Double
+        var y: Double
+        var pressure: Double = 0.5
+        /// Radians; π/2 is upright.
+        var altitude: Double = .pi / 2
+    }
+
+    /// Draws one stroke from a record, through everything a stroke of the
+    /// pencil goes through: the sheet on top where it lies, carbon under it,
+    /// one step to undo. The base of replaying a demonstration.
+    @discardableResult
+    func draw(_ points: [RecordedPoint], grade: PencilGrade, instrument: Instrument) -> Bool {
+        guard let sheet, activeTouch == nil, !points.isEmpty else { return false }
+        let ppmm = sheet.pixelsPerMillimeter
+        let samples = points.map {
+            StrokeSample(location: CGPoint(x: Double(paperRect.minX) + $0.x * ppmm, y: Double(paperRect.minY) + $0.y * ppmm),
+                         pressure: $0.pressure, altitude: $0.altitude, azimuth: 0)
+        }
+        var changed: [SurfaceID] = []
+        for (id, mask) in layerStack().targets(erasing: false) {
+            guard let target = surface(id)?.sheet else { continue }
+            if instrument == .roller, !id.isCarbonCopy { continue }
+            let (point, map) = onSurface(id)
+            target.beginStroke(grade: grade, instrument: instrument, mask: mask.mapped(point),
+                               colour: id.isCarbonCopy ? carbonColours(onto: id) : nil)
+            target.extendStroke(with: samples.map(map), predicted: [])
+            if target.endStroke() { changed.append(id) }
+        }
+        if !changed.isEmpty {
+            undoStack.append(.marks(changed))
+            redoStack.removeAll()
+        }
+        refresh()
+        notifyHistory()
+        return !changed.isEmpty
     }
 
     // MARK: Drawing graphite

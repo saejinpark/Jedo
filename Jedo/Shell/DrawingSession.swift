@@ -216,6 +216,71 @@ final class DrawingSession {
         canvas?.resume(saved)
     }
 
+    #if DEBUG
+    /// For trying whole drawings through the real engine: `-JedoScript name`
+    /// draws Documents/name.json and writes the paper to Documents/name.png.
+    func runScriptIfAsked() -> Bool {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-JedoScript"), i + 1 < args.count,
+              let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+              let data = try? Data(contentsOf: folder.appendingPathComponent(args[i + 1] + ".json")),
+              let script = try? JSONDecoder().decode(DrawingScript.self, from: data),
+              let series = PaperSize.Series.allCases.first(where: { "\($0)" == script.paper }) else { return false }
+        canvas?.discardDrawing()
+        paper = PaperSize(series: series, landscape: script.landscape)
+        canvas?.start(on: paper!)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            for stroke in script.strokes {
+                guard let instrument = DrawingScript.instrument(stroke.i) else { continue }
+                let grade = PencilGrade.allCases.first { $0.label == stroke.g } ?? .hb
+                canvas?.draw(stroke.pts.map {
+                    CanvasView.RecordedPoint(x: $0[0], y: $0[1], pressure: $0.count > 2 ? $0[2] : 0.5,
+                                             altitude: $0.count > 3 ? $0[3] : .pi / 2)
+                }, grade: grade, instrument: instrument)
+            }
+            try? await Task.sleep(for: .seconds(0.5))
+            if let image = canvas?.exportImage(includeSheets: true), let png = image.pngData() {
+                try? png.write(to: folder.appendingPathComponent(args[i + 1] + ".png"))
+            }
+        }
+        return true
+    }
+
+    struct DrawingScript: Decodable {
+        struct Stroke: Decodable {
+            /// m03 m05 m07 m09 wood g maru p013 p018 p025 p035 p05 p07 p10
+            var i: String
+            var g: String?
+            /// [x mm, y mm, pressure?, altitude?]
+            var pts: [[Double]]
+        }
+        var paper: String
+        var landscape: Bool
+        var strokes: [Stroke]
+
+        static func instrument(_ code: String) -> Instrument? {
+            switch code {
+            case "m03": .mechanical(.mm03)
+            case "m05": .mechanical(.mm05)
+            case "m07": .mechanical(.mm07)
+            case "m09": .mechanical(.mm09)
+            case "wood": .wood
+            case "g": .dipPen(.gPen)
+            case "maru": .dipPen(.maru)
+            case "p013": .technicalPen(.w013)
+            case "p018": .technicalPen(.w018)
+            case "p025": .technicalPen(.w025)
+            case "p035": .technicalPen(.w035)
+            case "p05": .technicalPen(.w05)
+            case "p07": .technicalPen(.w07)
+            case "p10": .technicalPen(.w10)
+            default: nil
+            }
+        }
+    }
+    #endif
+
     /// Throws the drawing away for good, so a fresh sheet can be laid.
     func throwAwayPaper() {
         canvas?.discardDrawing()
