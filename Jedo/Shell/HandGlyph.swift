@@ -13,20 +13,18 @@ struct HandGlyph: View {
             let line = StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round)
             switch tool {
             case .cutter:
-                // The snap-off blade's end: a strip cut off at an angle to a point, scored for the next snap.
-                context.translateBy(x: 3, y: 21)
-                context.rotate(by: .degrees(-40))
+                // An art knife: a slim body, and a narrow 30° blade coming out of it to a sharp point.
+                context.translateBy(x: 23, y: 23)
+                context.rotate(by: .degrees(-135))
+                context.stroke(Path(roundedRect: CGRect(x: 0, y: -2.6, width: 18, height: 5.2), cornerRadius: 1.8),
+                               with: .foreground, style: line)
                 var blade = Path()
-                blade.move(to: CGPoint(x: 0, y: -4))
-                blade.addLine(to: CGPoint(x: 26, y: -4))
-                blade.addLine(to: CGPoint(x: 19, y: 4))
-                blade.addLine(to: CGPoint(x: -7, y: 4))
+                blade.move(to: CGPoint(x: 18, y: -1.6))
+                blade.addLine(to: CGPoint(x: 29.5, y: -1.6))
+                blade.addLine(to: CGPoint(x: 24, y: 1.6))
+                blade.addLine(to: CGPoint(x: 18, y: 1.6))
                 blade.closeSubpath()
                 context.fill(blade, with: .foreground)
-                var score = Path()
-                score.move(to: CGPoint(x: 15, y: -4))
-                score.addLine(to: CGPoint(x: 8, y: 4))
-                context.stroke(score, with: .color(.white.opacity(0.9)), lineWidth: 1.1)
             case .roller:
                 // The rubber cylinder on top, its frame, and the handle below.
                 let drum = Path(roundedRect: CGRect(x: 3, y: 2.5, width: 20, height: 7), cornerRadius: 3.5)
