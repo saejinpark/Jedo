@@ -147,6 +147,20 @@ final class PaperDeskView: UIView {
         startTicking()
     }
 
+    /// Glides the view until a point of the paper (mm) is in the middle of
+    /// the screen, when it lies outside the middle part of it: for watching a replay.
+    func follow(mm: CGPoint) {
+        guard !canvas.paperFitsScreen, let p = canvas.viewPoint(mm: mm) else { return }
+        let seen = canvas.convert(p, to: self)
+        let from = target ?? offset
+        let calm = bounds.insetBy(dx: bounds.width * 0.3, dy: bounds.height * 0.3)
+            .offsetBy(dx: from.x - offset.x, dy: from.y - offset.y)
+        guard !calm.contains(seen) else { return }
+        target = Self.clamp(CGPoint(x: offset.x + bounds.midX - seen.x, y: offset.y + bounds.midY - seen.y),
+                            extent: paperExtent, screen: bounds.size)
+        startTicking()
+    }
+
     private func pan(_ push: CGVector) {
         self.push = push
         if push != .zero {

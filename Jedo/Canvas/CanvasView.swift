@@ -1983,6 +1983,13 @@ final class CanvasView: UIView {
         var altitude: Double = .pi / 2
     }
 
+    /// Where a point of the paper (mm from its top-left) is in this view.
+    func viewPoint(mm: CGPoint) -> CGPoint? {
+        guard let sheet else { return nil }
+        let ppmm = sheet.pixelsPerMillimeter
+        return CGPoint(x: (paperRect.minX + mm.x * ppmm) / scale, y: (paperRect.minY + mm.y * ppmm) / scale)
+    }
+
     /// Draws one stroke from a record, through everything a stroke of the
     /// pencil goes through: the sheet on top where it lies, carbon under it,
     /// one step to undo. The base of replaying a demonstration.

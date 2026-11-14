@@ -219,6 +219,7 @@ final class DrawingSession {
     #if DEBUG
     /// For trying whole drawings through the real engine: `-JedoScript name`
     /// draws Documents/name.json and writes the paper to Documents/name.png.
+    /// `-JedoPace seconds` draws it slowly enough to watch, the view following the pen.
     func runScriptIfAsked() -> Bool {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-JedoScript"), i + 1 < args.count,
@@ -240,12 +241,18 @@ final class DrawingSession {
                 canvas?.placeLayer(id, centreMM: at)
             }
             canvas?.selectSheet(nil)
+            let pace = args.firstIndex(of: "-JedoPace").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }
             let began = Date()
             var slowest = 0.0
             for stroke in script.strokes {
                 let t = Date()
                 defer { slowest = max(slowest, Date().timeIntervalSince(t)) }
                 guard let instrument = DrawingScript.instrument(stroke.i) else { continue }
+                if let pace, let first = stroke.pts.first {
+                    // Slowly, for watching: the view follows the pen.
+                    desk?.follow(mm: CGPoint(x: first[0], y: first[1]))
+                    try? await Task.sleep(for: .seconds(pace * (1 + Double(stroke.pts.count) / 10)))
+                }
                 let grade = PencilGrade.allCases.first { $0.label == stroke.g } ?? .hb
                 canvas?.draw(stroke.pts.map {
                     CanvasView.RecordedPoint(x: $0[0], y: $0[1], pressure: $0.count > 2 ? $0[2] : 0.5,
