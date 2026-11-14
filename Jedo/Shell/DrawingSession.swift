@@ -153,7 +153,7 @@ final class DrawingSession {
             switch self {
             case .pencil: "선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡고 컴퍼스 바늘을 꽂습니다."
             case .compass: "손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다."
-            case .tape: "두 손가락으로 종이를 누르고 벌리면 손가락 위쪽에 줄자가 펴집니다. 빨간 선에서 눈금을 읽고, 둥근 손잡이를 잡아 다시 옮깁니다."
+            case .tape: "두 손가락으로 종이를 누르고 벌리면 그 사이에 줄자가 펴집니다. 눈금은 손가락 반대쪽 가장자리에 있고, 빨간 선에서 읽습니다. 끝을 잡아 다시 옮깁니다."
             case .eraser: "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
             case .shield: "지움판 위를 문지르면 구멍 안쪽만 지워지고, 지움판은 밀리지 않습니다. 옮기려면 두 손가락으로 잡으세요."
             case .place(let kind): "\(kind.name): 놓을 자리를 손가락으로 누르세요. 누른 채 끌어 맞춥니다."
@@ -295,6 +295,9 @@ final class DrawingSession {
                             canvas?.placeLayer(id, centreMM: at[0], angle: p.count > 2 ? p[2] : 0)
                             canvas?.selectSheet(nil)
                         }
+                    case "blend":
+                        // The colours of the next mixed carbon, in one run: r g b each, then 1 for rings.
+                        if let blend = CarbonBlend(record: stroke.pts.first ?? []) { canvas?.carbonBlend = blend }
                     case "carbon":
                         let ink = CarbonInk(rawValue: stroke.k ?? "") ?? .navy
                         if let id = canvas?.addCarbonLayer(ink), let p = stroke.pts.first {
@@ -486,13 +489,10 @@ let text = String(format: "strokes %d, drawing %.2f s (%.2f ms a stroke, slowest
     }
 
     /// The colours of the carbon the user mixes, kept between drawings.
-    var carbonBlend: CarbonBlend = {
-        let saved = UserDefaults.standard.array(forKey: "carbonBlend") as? [Double] ?? []
-        return saved.count == 6 ? CarbonBlend(from: Array(saved[0..<3]), to: Array(saved[3..<6])) : .standard
-    }() {
+    var carbonBlend: CarbonBlend = (UserDefaults.standard.array(forKey: "carbonBlend") as? [Double]).flatMap(CarbonBlend.init(record:)) ?? .standard {
         didSet {
             canvas?.carbonBlend = carbonBlend
-            UserDefaults.standard.set(carbonBlend.from + carbonBlend.to, forKey: "carbonBlend")
+            UserDefaults.standard.set(carbonBlend.record, forKey: "carbonBlend")
         }
     }
 

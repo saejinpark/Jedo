@@ -64,6 +64,25 @@ struct CarbonTests {
         #expect(layer.piece(id: 2, outline: []).carbonBlend == blend)
     }
 
+    @Test func aMixedCarbonTakesMoreColoursAndRunsInRings() {
+        let three = CarbonBlend(from: [1, 0, 0], to: [0, 0, 1], between: [[0, 1, 0]])
+        #expect(three.stops.count == 3)
+        #expect(three.colour(at: 0.5).g == 1 && three.colour(at: 0).r == 1 && three.colour(at: 1).b == 1)
+        #expect(abs(three.colour(at: 0.25).r - 0.5) < 1e-9)
+        // No more than four colours, however many are given.
+        #expect(CarbonBlend(from: [0], to: [1], between: [[0], [0], [0], [0]]).stops.count == 4)
+        // Across: the place is how far across. In rings: the middle is the first colour, the nearer edge the last.
+        #expect(three.position(u: 0.3, v: 0.9, aspect: 0.7) == 0.3)
+        let rings = CarbonBlend(from: [1, 0, 0], to: [0, 0, 1], round: true)
+        #expect(rings.position(u: 0.5, v: 0.5, aspect: 0.7) == 0)
+        #expect(abs(rings.position(u: 1, v: 0.5, aspect: 0.7) - 1) < 1e-9)
+        #expect(rings.position(u: 0.5, v: 1, aspect: 0.7) == 1)
+        // Kept and read back; an old record of two colours still reads.
+        #expect(CarbonBlend(record: rings.record) == rings && CarbonBlend(record: three.record) == three)
+        #expect(CarbonBlend(record: [1, 0, 0, 0, 0, 1]) == CarbonBlend(from: [1, 0, 0], to: [0, 0, 1]))
+        #expect(CarbonBlend(record: [1, 0, 0]) == nil)
+    }
+
     @Test func pressingThroughCarbonLaysItsColour() {
         let sheet = DraftingSheet(width: 200, height: 100, pixelsPerMillimeter: 10, isCarbonCopy: true)
         sheet.beginStroke(grade: .b6, instrument: .dipPen(.gPen), colour: { x, _ in x < 100 ? 2 : 3 })

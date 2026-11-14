@@ -854,16 +854,13 @@ final class CanvasView: UIView {
             tapeChanged()
         }
     }
-    /// The points the tape measures between, its zero and its far end, in paper pixels.
-    /// They stand clear of the fingers that hold them, each on a stem above its handle.
+    /// Where the fingers hold the tape, its zero and its far end, in paper pixels. The tape lies from
+    /// that line away from the hand, its graduations along its far edge.
     private(set) var tape: (a: CGPoint, b: CGPoint)?
     /// Fingers holding the tape's ends (0 its zero, 1 its far end), and where each end is from its finger.
     private var tapeHolders: [UITouch: (end: Int, offset: CGPoint)] = [:]
     private let tapeView = TapeView()
-    private let tapeHandles = CAShapeLayer()
-    private static let tapeGripMM = 10.0
-    /// How far above its handle an end stands, and the handle's radius.
-    private static let tapeStemMM = 24.0, tapeHandleMM = 5.0
+    private static let tapeGripMM = 11.0
 
     /// Up on the screen as a direction on the canvas, however the canvas is turned.
     private var screenUp: CGVector {
@@ -871,86 +868,59 @@ final class CanvasView: UIView {
         return CGVector(dx: sin(angle), dy: -cos(angle))
     }
 
-    /// Where an end's handle is: straight below it on the screen.
-    private func tapeHandle(of end: CGPoint, pixelsPerMillimeter ppmm: Double) -> CGPoint {
-        let up = screenUp, stem = Self.tapeStemMM * ppmm
-        return CGPoint(x: Double(end.x) - Double(up.dx) * stem, y: Double(end.y) - Double(up.dy) * stem)
-    }
-
     private func tapeChanged() {
         guard let tape, let sheet else {
             tapeView.isHidden = true
-            tapeHandles.isHidden = true
             return
         }
-        if tapeView.superview == nil {
-            insertSubview(tapeView, belowSubview: pinsView)
-            tapeHandles.fillColor = UIColor(red: 0.99, green: 0.95, blue: 0.74, alpha: 0.9).cgColor
-            tapeHandles.strokeColor = UIColor(red: 0.45, green: 0.38, blue: 0.16, alpha: 0.9).cgColor
-            tapeHandles.lineWidth = 1
-            tapeHandles.actions = Self.noAnimations
-            layer.addSublayer(tapeHandles)
-        }
+        if tapeView.superview == nil { insertSubview(tapeView, belowSubview: pinsView) }
         bringSubviewToFront(tapeView)
         bringSubviewToFront(pinsView)
-        let ppmm = sheet.pixelsPerMillimeter, pt = CGFloat(ppmm) / scale
+        let pt = CGFloat(sheet.pixelsPerMillimeter) / scale
         func points(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x / scale, y: p.y / scale) }
         // Whichever finger came first, the tape reads from left to right across the screen.
         let up = screenUp
         let leftToRight = Double(tape.b.x - tape.a.x) * -Double(up.dy) + Double(tape.b.y - tape.a.y) * Double(up.dx) >= 0
         tapeView.show(from: points(leftToRight ? tape.a : tape.b), to: points(leftToRight ? tape.b : tape.a), pointsPerMM: pt, up: up)
-        // A stem down from each end to a round handle for the fingertip.
-        let path = CGMutablePath()
-        let r = CGFloat(Self.tapeHandleMM) * pt
-        for end in [tape.a, tape.b] {
-            let top = points(end), handle = points(tapeHandle(of: end, pixelsPerMillimeter: ppmm))
-            let d = hypot(handle.x - top.x, handle.y - top.y)
-            path.move(to: top)
-            path.addLine(to: CGPoint(x: top.x + (handle.x - top.x) * (d - r) / max(d, 1), y: top.y + (handle.y - top.y) * (d - r) / max(d, 1)))
-            path.addEllipse(in: CGRect(x: handle.x - r, y: handle.y - r, width: 2 * r, height: 2 * r))
-        }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        tapeHandles.frame = bounds
-        tapeHandles.path = path
-        tapeHandles.isHidden = false
-        tapeHandles.zPosition = 5
-        CATransaction.commit()
     }
 
-    /// A fingertip on a handle (or on an end itself) takes hold of that end, which keeps its place
-    /// from the finger. While one end is held, the next fingertip anywhere takes the other end to
-    /// stand above where it lands: the tape is pulled out between the two.
+    /// A fingertip on one of the tape's ends takes hold of it. While one end is held, the next
+    /// fingertip anywhere takes the other end to where it lands: the tape is pulled out between the two.
     private func grabTape(_ touch: UITouch) -> Bool {
         guard tapeOut, let sheet, let now = tape else { return false }
-        let ppmm = sheet.pixelsPerMillimeter
-        let point = pixelLocation(touch), grip = Self.tapeGripMM * ppmm
+        let point = pixelLocation(touch), grip = Self.tapeGripMM * sheet.pixelsPerMillimeter
         let held = Set(tapeHolders.values.map(\.end))
         if held.count == 1, let other = [0, 1].first(where: { !held.contains($0) }) {
-            let up = screenUp, stem = Self.tapeStemMM * ppmm
-            let offset = CGPoint(x: Double(up.dx) * stem, y: Double(up.dy) * stem)
-            let end = CGPoint(x: point.x + offset.x, y: point.y + offset.y)
-            tape = other == 0 ? (end, now.b) : (now.a, end)
-            tapeHolders[touch] = (other, offset)
+            tape = other == 0 ? (point, now.b) : (now.a, point)
+            tapeHolders[touch] = (other, .zero)
             tapeChanged()
             return true
         }
         guard held.isEmpty else { return false }
         let ends = [now.a, now.b]
-        let reach = ends.map { min($0.distance(to: point), tapeHandle(of: $0, pixelsPerMillimeter: ppmm).distance(to: point)) }
-        guard let i = reach.indices.min(by: { reach[$0] < reach[$1] }), reach[i] <= grip else { return false }
+        guard let i = ends.indices.min(by: { ends[$0].distance(to: point) < ends[$1].distance(to: point) }),
+              ends[i].distance(to: point) <= grip else { return false }
         tapeHolders[touch] = (i, CGPoint(x: ends[i].x - point.x, y: ends[i].y - point.y))
         return true
     }
 
-    /// With no tape laid yet, a fingertip on bare paper starts one: its zero stands above the finger.
+    /// With no tape laid yet, a fingertip on bare paper starts one there. With the eraser in hand one
+    /// finger rubs, so the tape waits for two: the second finger starts it from where the first rests.
     private func startTape(_ touch: UITouch) -> Bool {
-        guard tapeOut, tape == nil, !eraserInHand, let sheet else { return false }
-        let point = pixelLocation(touch), up = screenUp, stem = Self.tapeStemMM * sheet.pixelsPerMillimeter
-        let offset = CGPoint(x: Double(up.dx) * stem, y: Double(up.dy) * stem)
-        let end = CGPoint(x: point.x + offset.x, y: point.y + offset.y)
-        tape = (end, end)
-        tapeHolders[touch] = (0, offset)
+        guard tapeOut, tape == nil, sheet != nil else { return false }
+        let point = pixelLocation(touch)
+        guard eraserInHand else {
+            tape = (point, point)
+            tapeHolders[touch] = (0, .zero)
+            tapeChanged()
+            return true
+        }
+        guard activeTouch == nil,
+              let other = presses.still().first(where: { $0.0 != touch && $0.0.phase != .ended && $0.0.phase != .cancelled }) else { return false }
+        presses.cancel(other.0)
+        tape = (pixelLocation(other.0), point)
+        tapeHolders[other.0] = (0, .zero)
+        tapeHolders[touch] = (1, .zero)
         tapeChanged()
         return true
     }
@@ -1428,7 +1398,11 @@ final class CanvasView: UIView {
         let width = carbon.kind.sizeMM.width * ppmm
         if ink == .custom {
             let blend = carbon.carbonBlend ?? .standard
-            return { x, y in blend.paletteIndex(at: (ox + ax * Double(x) + bx * Double(y)) / width, x: x, y: y) }
+            let height = carbon.kind.sizeMM.height * ppmm
+            return { x, y in
+                let u = (ox + ax * Double(x) + bx * Double(y)) / width, v = (oy + ay * Double(x) + by * Double(y)) / height
+                return blend.paletteIndex(at: blend.position(u: u, v: v, aspect: width / height), x: x, y: y)
+            }
         }
         return { x, y in ink.paletteIndex(at: (ox + ax * Double(x) + bx * Double(y)) / width) }
     }

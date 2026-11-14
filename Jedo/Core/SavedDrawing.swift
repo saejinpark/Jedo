@@ -96,7 +96,7 @@ enum DrawingStore {
             /// A photo used as carbon, and glued down.
             var photoCarbon: Bool?
             var glued: Bool?
-            /// For carbon the user mixed: its two colours, r g b r g b.
+            /// For carbon the user mixed: its colours, r g b each, then 1 if it runs in rings (0 or nothing if across).
             var carbonBlend: [Double]?
         }
 
@@ -119,7 +119,7 @@ enum DrawingStore {
                              carbonInk: sheet.layer.kind == .carbon ? sheet.layer.carbonInk : nil,
                              flipped: sheet.layer.flippedX || sheet.layer.flippedY ? [sheet.layer.flippedX, sheet.layer.flippedY] : nil,
                              photoCarbon: sheet.layer.photoCarbon ? true : nil, glued: sheet.layer.glued ? true : nil,
-                             carbonBlend: sheet.layer.carbonInk == .custom ? sheet.layer.carbonBlend.map { $0.from + $0.to } : nil)
+                             carbonBlend: sheet.layer.carbonInk == .custom ? sheet.layer.carbonBlend.map { $0.stops.flatMap { $0 } + [$0.isRound ? 1 : 0] } : nil)
             }
             nextLayerID = s.nextLayerID
             pins = s.pins.flatMap { [Double($0.x), Double($0.y)] }
@@ -146,7 +146,7 @@ enum DrawingStore {
                                            pieceMM: piece, carbonInk: sheet.carbonInk ?? .navy,
                                            flippedX: sheet.flipped?.first ?? false, flippedY: sheet.flipped?.last ?? false,
                                            photoCarbon: sheet.photoCarbon ?? false, glued: sheet.glued ?? false,
-                                           carbonBlend: sheet.carbonBlend.flatMap { $0.count == 6 ? CarbonBlend(from: Array($0[0..<3]), to: Array($0[3..<6])) : nil })
+                                           carbonBlend: sheet.carbonBlend.flatMap(CarbonBlend.init(record:)))
                     let r = layer.rasterSize(pixelsPerMillimeter: pixelsPerMillimeter)
                     return DrawingState.Sheet(layer: layer, hidden: sheet.hidden,
                                               graphite: try sheet.graphite?.raster(width: r.width, height: r.height),

@@ -1,18 +1,18 @@
 import UIKit
 
-/// The tape measure pulled out between two points: a soft tape graduated in
-/// millimetres from its tab, running on a little past the far point, with a
-/// red hairline there. The length is read off the tape. Its body lies on the
-/// side away from the fingers that hold it, so they never cover the graduations.
+/// The tape measure pulled out between two fingertips: a soft tape graduated in
+/// millimetres from its tab, running on a little past the far finger, with a
+/// red hairline there. The length is read off the tape. The fingers hold its
+/// near edge; the graduations run along its far edge, clear of them.
 final class TapeView: UIView {
     /// Width of the tape.
-    static let widthMM = 14.0
+    static let widthMM = 24.0
     /// How far the tape runs before its zero (the tab) and past the far end.
     static let tabMM = 3.0, tailMM = 16.0
 
     private var lengthMM = 0.0
     private var pointsPerMM: CGFloat = 5
-    /// Which side of the measured line the body lies on, in the view's own y: +1 below its top edge, −1 above its bottom edge.
+    /// Which way the body lies from the edge the fingers hold, in the view's own y: +1 down from its top edge, −1 up from its bottom edge.
     private var side: CGFloat = 1
 
     override init(frame: CGRect) {
@@ -35,7 +35,7 @@ final class TapeView: UIView {
         CATransaction.setDisableActions(true)
         transform = .identity
         bounds = CGRect(x: 0, y: 0, width: before + length + after, height: CGFloat(Self.widthMM) * pt)
-        // The zero sits on `a`; the tape lies to one side of the line measured, its graduated edge on it.
+        // The zero sits level with `a`; the fingers' line is one edge of the tape, and its body lies away from them.
         // A tape not yet pulled out lies level, reading left to right.
         let angle = length > 0.5 ? atan2(b.y - a.y, b.x - a.x) : atan2(-up.dx, up.dy)
         side = -sin(angle) * up.dx + cos(angle) * up.dy >= 0 ? 1 : -1
@@ -64,20 +64,20 @@ final class TapeView: UIView {
         ctx.setStrokeColor(ink.cgColor)
         let last = Int((lengthMM + Self.tailMM).rounded(.down))
         let font = UIFont.monospacedDigitSystemFont(ofSize: max(2.8 * pt, 6), weight: .medium)
-        // The graduated edge lies on the line measured; the figures stand upright as the tape is held.
-        let edge: CGFloat = side > 0 ? 0 : bounds.height
+        // The graduated edge is the one away from the fingers; the figures stand upright as the tape is held.
+        let edge: CGFloat = side > 0 ? bounds.height : 0, inward: CGFloat = -side
         for mm in 0...max(last, 0) {
             let x = zero + CGFloat(mm) * pt
             let tall: CGFloat = mm % 10 == 0 ? 5.5 : mm % 5 == 0 ? 4 : 2.5
             ctx.setLineWidth(mm % 10 == 0 ? 1 : 0.6)
             ctx.move(to: CGPoint(x: x, y: edge))
-            ctx.addLine(to: CGPoint(x: x, y: edge + side * tall * pt))
+            ctx.addLine(to: CGPoint(x: x, y: edge + inward * tall * pt))
             ctx.strokePath()
             if mm % 10 == 0, mm > 0 {
                 let text = NSAttributedString(string: "\(mm / 10)", attributes: [.font: font, .foregroundColor: ink])
                 let size = text.size()
                 ctx.saveGState()
-                ctx.translateBy(x: x, y: edge + side * 8.6 * pt)
+                ctx.translateBy(x: x, y: edge + inward * 8.6 * pt)
                 if side > 0 { ctx.rotate(by: .pi) }
                 text.draw(at: CGPoint(x: -size.width / 2, y: -size.height / 2))
                 ctx.restoreGState()

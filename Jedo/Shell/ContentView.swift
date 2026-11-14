@@ -858,24 +858,45 @@ private struct BlendPickers: View {
     let blend: CarbonBlend
     let change: (CarbonBlend) -> Void
 
-    private func binding(_ end: WritableKeyPath<CarbonBlend, [Double]>) -> Binding<Color> {
+    private func binding(_ i: Int) -> Binding<Color> {
         Binding {
-            let c = blend[keyPath: end]
+            let c = blend.stops[i]
             return Color(red: c[0], green: c[1], blue: c[2])
         } set: { colour in
             var (r, g, b, a) = (CGFloat(0), CGFloat(0), CGFloat(0), CGFloat(0))
             guard UIColor(colour).getRed(&r, green: &g, blue: &b, alpha: &a) else { return }
-            var next = blend
-            next[keyPath: end] = [Double(r), Double(g), Double(b)]
-            change(CarbonBlend(from: next.from, to: next.to))
+            var stops = blend.stops
+            guard stops.indices.contains(i) else { return }
+            stops[i] = [Double(r), Double(g), Double(b)]
+            change(blend.with(stops: stops))
         }
     }
 
     var body: some View {
-        ColorPicker("왼쪽 끝 색", selection: binding(\.from), supportsOpacity: false).labelsHidden()
-            .frame(width: Metric.cell, height: Metric.cell)
-        ColorPicker("오른쪽 끝 색", selection: binding(\.to), supportsOpacity: false).labelsHidden()
-            .frame(width: Metric.cell, height: Metric.cell)
+        let stops = blend.stops
+        ForEach(stops.indices, id: \.self) { i in
+            ColorPicker(i == 0 ? "첫 색" : i == stops.count - 1 ? "끝 색" : "사이 색 \(i)", selection: binding(i), supportsOpacity: false)
+                .labelsHidden()
+                .frame(width: Metric.cell, height: Metric.cell)
+        }
+        if stops.count < 2 + CarbonBlend.mostBetween {
+            // One more colour, halfway between the last two.
+            ToolButton(icon: .symbol("plus"), label: "색 하나 더") {
+                let a = stops[stops.count - 2], b = stops[stops.count - 1]
+                change(blend.with(stops: stops.dropLast() + [[(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], b]))
+            }
+        }
+        if stops.count > 2 {
+            ToolButton(icon: .symbol("minus"), label: "사이 색 하나 빼기") {
+                var fewer = stops
+                fewer.remove(at: stops.count - 2)
+                change(blend.with(stops: fewer))
+            }
+        }
+        ToolButton(icon: .symbol(blend.isRound ? "circle.circle" : "arrow.left.and.right"),
+                   label: blend.isRound ? "가운데에서 퍼지는 그라데이션 (누르면 가로로)" : "가로로 흐르는 그라데이션 (누르면 가운데에서 퍼지게)") {
+            change(CarbonBlend(from: blend.from, to: blend.to, between: blend.between ?? [], round: !blend.isRound))
+        }
     }
 }
 

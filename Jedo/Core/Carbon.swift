@@ -102,22 +102,62 @@ enum CarbonInk: String, CaseIterable, Hashable, Codable, Sendable {
 
 /// A carbon coating the user mixed: one colour at the sheet's left edge running to another at its right.
 struct CarbonBlend: Equatable, Codable, Sendable {
-    /// Red, green, blue, 0…1.
+    /// Red, green, blue, 0…1: the colour at the sheet's left edge (or its middle, when round)…
     var from: [Double]
+    /// …and at its right edge (or its rim).
     var to: [Double]
+    /// Colours between the two, evenly spaced: up to two.
+    var between: [[Double]]? = nil
+    /// Runs outward from the middle of the sheet in rings instead of across it.
+    var round: Bool? = nil
 
     static let standard = CarbonBlend(from: [0.95, 0.45, 0.20], to: [0.35, 0.20, 0.60])
+    static let mostBetween = 2
 
-    init(from: [Double], to: [Double]) {
-        func three(_ c: [Double]) -> [Double] { (0..<3).map { min(max($0 < c.count && c[$0].isFinite ? c[$0] : 0, 0), 1) } }
-        self.from = three(from)
-        self.to = three(to)
+    init(from: [Double], to: [Double], between: [[Double]] = [], round: Bool = false) {
+        self.from = Self.three(from)
+        self.to = Self.three(to)
+        self.between = between.isEmpty ? nil : between.prefix(Self.mostBetween).map(Self.three)
+        self.round = round ? true : nil
+    }
+
+    private static func three(_ c: [Double]) -> [Double] { (0..<3).map { min(max($0 < c.count && c[$0].isFinite ? c[$0] : 0, 0), 1) } }
+
+    var isRound: Bool { round ?? false }
+    /// Every colour in order, first to last.
+    var stops: [[Double]] { [from] + (between ?? []).prefix(Self.mostBetween).map(Self.three) + [to] }
+
+    /// The same blend with its colours replaced (two to four of them).
+    func with(stops: [[Double]]) -> CarbonBlend {
+        guard stops.count >= 2 else { return self }
+        return CarbonBlend(from: stops[0], to: stops[stops.count - 1], between: Array(stops.dropFirst().dropLast()), round: isRound)
     }
 
     func colour(at t: Double) -> (r: Double, g: Double, b: Double) {
-        let t = min(max(t.isFinite ? t : 0, 0), 1)
-        return (from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t, from[2] + (to[2] - from[2]) * t)
+        let all = stops
+        let t = min(max(t.isFinite ? t : 0, 0), 1) * Double(all.count - 1)
+        let i = min(Int(t), all.count - 2), f = t - Double(i)
+        let a = all[i], b = all[i + 1]
+        return (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f)
     }
+
+    /// How far along the blend a point of the sheet is: `u`, `v` are 0…1 across and down it,
+    /// and `aspect` is the sheet's width over its height. Round, the rings reach the nearer edges.
+    func position(u: Double, v: Double, aspect: Double) -> Double {
+        guard isRound else { return u }
+        let dx = (u - 0.5) * max(aspect, 1), dy = (v - 0.5) * max(1 / aspect, 1)
+        return min((dx * dx + dy * dy).squareRoot() * 2, 1)
+    }
+
+    /// From a flat record: r g b for each colour, then optionally 1 for rings. Nil when it doesn't add up.
+    init?(record: [Double]) {
+        let colours = record.count / 3, round = record.count % 3 == 1 && record.last == 1
+        guard record.count % 3 <= 1, (2...2 + Self.mostBetween).contains(colours) else { return nil }
+        let stops = (0..<colours).map { Array(record[$0 * 3..<$0 * 3 + 3]) }
+        self.init(from: stops[0], to: stops[colours - 1], between: Array(stops.dropFirst().dropLast()), round: round)
+    }
+
+    var record: [Double] { stops.flatMap { $0 } + [isRound ? 1 : 0] }
 
     /// The palette entry at `t` across. Copies are kept by palette entry, so the run comes out in fine steps.
     func paletteIndex(at t: Double) -> Int { CarbonPalette.cubeIndex(colour(at: t)) }

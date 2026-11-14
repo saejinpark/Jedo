@@ -99,8 +99,16 @@ final class PaperLayerView: UIView {
                 let c = Self.coating(sheet.coatingColour(at: t))
                 return UIColor(red: c.r, green: c.g, blue: c.b, alpha: 0.62).cgColor
             }
-            gradient.startPoint = CGPoint(x: 0, y: 0.5)
-            gradient.endPoint = CGPoint(x: 1, y: 0.5)
+            if sheet.carbonInk == .custom, sheet.carbonBlend?.isRound == true {
+                // Rings from the middle out to the nearer edges, as it prints.
+                let reach = min(bounds.width, bounds.height) / 2
+                gradient.type = .radial
+                gradient.startPoint = CGPoint(x: 0.5, y: 0.5)
+                gradient.endPoint = CGPoint(x: 0.5 + reach / max(bounds.width, 1), y: 0.5 + reach / max(bounds.height, 1))
+            } else {
+                gradient.startPoint = CGPoint(x: 0, y: 0.5)
+                gradient.endPoint = CGPoint(x: 1, y: 0.5)
+            }
             let clip = CAShapeLayer()
             clip.path = outline
             clip.fillRule = .evenOdd
