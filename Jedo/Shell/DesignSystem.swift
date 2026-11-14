@@ -28,6 +28,14 @@ enum Palette {
     static let paper = Color(red: 0.965, green: 0.955, blue: 0.925)
     /// Grid sheet rulings.
     static let ruling = Color(red: 0.20, green: 0.50, blue: 0.40)
+    /// Something that can't be taken back: putting a sheet away, a taken spot.
+    static let danger = Color(red: 0.80, green: 0.22, blue: 0.18)
+    /// A free place to put something down.
+    static let go = Color(red: 0.20, green: 0.60, blue: 0.35)
+    /// Secondary text on a card.
+    static let inkSoft = ink.opacity(0.55)
+    /// A hairline on a card.
+    static let hairline = ink.opacity(0.08)
 }
 
 /// Sizes and spacing of the shell.
@@ -46,6 +54,20 @@ enum Metric {
     static let margin: CGFloat = 20
     /// A group's card sits this far inside its grid squares, so neighbours stand apart.
     static let cardInset: CGFloat = 2
+    /// A card that stands alone: the paper picker, the guide, a hint.
+    static let panelRadius: CGFloat = 22
+    static let hintRadius: CGFloat = 18
+    /// A small colour chip.
+    static let swatchRadius: CGFloat = 5
+}
+
+/// The one way a card is drawn: frosted, hairline rim, soft shadow.
+extension View {
+    func card(radius: CGFloat = Metric.groupRadius) -> some View {
+        background(.regularMaterial, in: RoundedRectangle(cornerRadius: radius))
+            .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Palette.hairline))
+            .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
+    }
 }
 
 /// A group of controls on a frosted card, laid on the screen's grid: every

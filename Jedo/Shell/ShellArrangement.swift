@@ -36,6 +36,25 @@ struct ShellGrid {
         return CGRect(x: origin.x + CGFloat(c.x) * u, y: origin.y + CGFloat(c.y) * u, width: CGFloat(c.w) * u, height: CGFloat(c.h) * u)
     }
 
+    /// A free block of squares `w` by `h`, the one nearest `near`: where a card
+    /// (the layers list) can open without covering any group.
+    func freeBlock(w: Int, h: Int, near: ShellLayout.Cells, avoiding taken: [ShellLayout.Cells]) -> ShellLayout.Cells? {
+        var best: (ShellLayout.Cells, Int)?
+        guard w <= columns, h <= rows else { return nil }
+        for y in 0...(rows - h) {
+            for x in 0...(columns - w) {
+                let c = ShellLayout.Cells(x: x, y: y, w: w, h: h)
+                guard !taken.contains(where: c.overlaps) else { continue }
+                // Distance between the block and the button, edge to edge.
+                let dx = max(near.x - (x + w - 1), x - (near.x + near.w - 1), 0)
+                let dy = max(near.y - (y + h - 1), y - (near.y + near.h - 1), 0)
+                let d = dx + dy
+                if best == nil || d < best!.1 { best = (c, d) }
+            }
+        }
+        return best?.0
+    }
+
     /// Where a passing hint sits: the widest run of free squares in the
     /// highest two free rows, so it never covers a group or the map.
     func hintSpot(avoiding taken: [ShellLayout.Cells]) -> CGRect {
@@ -90,7 +109,7 @@ struct ArrangeBoard: View {
                                                y: from.y + Int((dragOffset.height / u).rounded()), w: from.w, h: from.h)
                     let inside = to.x >= 0 && to.y >= 0 && to.x + to.w <= grid.columns && to.y + to.h <= grid.rows
                     let free = inside && !cells.contains { $0.key != group && $0.value.overlaps(to) }
-                    let colour = free ? Color(red: 0.2, green: 0.6, blue: 0.35) : Color(red: 0.85, green: 0.25, blue: 0.2)
+                    let colour = free ? Palette.go : Palette.danger
                     context.fill(Path(roundedRect: grid.rect(to), cornerRadius: Metric.groupRadius), with: .color(colour.opacity(0.22)))
                 }
             }
@@ -108,8 +127,7 @@ struct ArrangeBoard: View {
             }
             .padding(22)
             .frame(width: 400)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-            .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+            .card(radius: Metric.panelRadius)
             .position(x: grid.size.width / 2, y: grid.size.height / 2)
         }
         .frame(width: grid.size.width, height: grid.size.height)

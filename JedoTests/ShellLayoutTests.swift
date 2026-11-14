@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 import Testing
 @testable import Jedo
 
@@ -63,5 +64,18 @@ struct ShellLayoutTests {
     @Test func controlsTakeWholeSquares() {
         #expect(UnitRow.units(Metric.cell) == 1)
         #expect(UnitRow.units(62) == 2)
+    }
+}
+
+struct ShellGridTests {
+    @Test func aCardOpensOnFreeSquaresNearestItsButton() {
+        let grid = ShellGrid(size: CGSize(width: 834, height: 1210), insets: .init(), edgeRulers: true)
+        let cells = ShellLayout.standard(leftHanded: false).cells(columns: grid.columns, rows: grid.rows)
+        let taken = Array(cells.values)
+        let block = grid.freeBlock(w: 8, h: 4, near: cells[.sheets]!, avoiding: taken)!
+        #expect(!taken.contains(where: block.overlaps))
+        #expect(block.x + block.w <= grid.columns && block.y + block.h <= grid.rows)
+        // Close by: within a few squares of the button, not across the screen.
+        #expect(abs(block.y + block.h - cells[.sheets]!.y) <= 4)
     }
 }

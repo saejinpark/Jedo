@@ -265,6 +265,8 @@ final class DrawingSession {
 
     func setLayer(_ id: Int, hidden: Bool) { canvas?.setLayer(id, hidden: hidden) }
 
+    /// Whether the list of layers lies open on the screen.
+    var layersOpen = false
     /// The sheet picked out on the desk, whose bar of actions shows.
     var selectedSheet: Int?
     var selectedRow: LayerRow? { selectedSheet.flatMap { id in layerRows.first { $0.id == id } } }

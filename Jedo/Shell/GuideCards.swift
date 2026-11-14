@@ -57,7 +57,7 @@ struct GuideCards: View {
             }
             .padding(28)
             .frame(width: 460)
-            .background(Palette.paper, in: RoundedRectangle(cornerRadius: 24))
+            .background(Palette.paper, in: RoundedRectangle(cornerRadius: Metric.panelRadius))
             .shadow(color: .black.opacity(0.18), radius: 20, y: 6)
             .clipped()
         }

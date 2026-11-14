@@ -44,7 +44,22 @@ struct ContentView: View {
                             // The map is drawn by the desk; while arranging, a card stands in for it to drag.
                             placed(.map, at: c, grid: grid, cells: cells)
                         }
-                        let spot = grid.hintSpot(avoiding: Array(cells.values))
+                        // The layers card: 8 squares wide, as tall as its list, on the free squares nearest its button.
+                        let panelRows = min(max(Int((CGFloat(60 + (session.layerRows.count + 1) * 44) / ShellLayout.unit).rounded(.up)), 2), max(grid.rows - 8, 2))
+                        let panelCells: ShellLayout.Cells? = session.layersOpen && !arranging
+                            ? cells[.sheets].flatMap { grid.freeBlock(w: min(8, grid.columns), h: panelRows, near: $0, avoiding: Array(cells.values)) }
+                            : nil
+                        if let panelCells {
+                            let rect = grid.rect(panelCells)
+                            ScrollView {
+                                SheetsPanel(session: session)
+                            }
+                            .frame(width: rect.width - 2 * Metric.cardInset, height: rect.height - 2 * Metric.cardInset)
+                            .card()
+                            .position(x: rect.midX, y: rect.midY)
+                            .transition(.opacity)
+                        }
+                        let spot = grid.hintSpot(avoiding: Array(cells.values) + (panelCells.map { [$0] } ?? []))
                         if let row = session.selectedRow, !arranging {
                             // What can be done with the sheet picked out, right where the eye is.
                             SheetBar(session: session, row: row)
@@ -69,6 +84,8 @@ struct ContentView: View {
                 .ignoresSafeArea()
                 .animation(.spring(duration: 0.35), value: session.hint)
                 .animation(.snappy(duration: 0.2), value: session.selectedSheet)
+                .animation(.snappy(duration: 0.2), value: session.layersOpen)
+                .animation(.snappy(duration: 0.2), value: session.layerRows.count)
                 .animation(.snappy(duration: 0.25), value: savedLayout)
             }
         }
@@ -609,7 +626,7 @@ private struct PaperPicker: View {
                 Label("화면 맞춤", systemImage: "ipad")
                     .font(.headline)
                     .padding(.horizontal, 18).padding(.vertical, 10)
-                    .background(Color(red: 0.965, green: 0.955, blue: 0.925), in: Capsule())
+                    .background(Palette.paper, in: Capsule())
                     .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
             }
             .buttonStyle(.plain)
@@ -618,7 +635,7 @@ private struct PaperPicker: View {
                 .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
         .padding(32)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+        .card(radius: Metric.panelRadius)
         .animation(.spring(duration: 0.3), value: landscape)
     }
 
@@ -630,7 +647,7 @@ private struct PaperPicker: View {
                     VStack(spacing: 8) {
                         let (w, h) = paper.sizeMM
                         Rectangle()
-                            .fill(Color(red: 0.965, green: 0.955, blue: 0.925))
+                            .fill(Palette.paper)
                             .frame(width: w / 1189 * 125, height: h / 1189 * 125)
                             .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
                         Text(paper.name).font(.headline)
@@ -650,17 +667,12 @@ private struct PaperPicker: View {
 /// and see them as they lie over the paper, top first.
 private struct SheetsButton: View {
     @Bindable var session: DrawingSession
-    @Environment(\.shellSide) private var side
-    @State private var open = false
 
     var body: some View {
-        Button { open.toggle() } label: {
-            ToolFace(icon: .symbol("square.3.layers.3d"), selected: open || !session.layerRows.isEmpty)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("레이어")
-        .popover(isPresented: $open, arrowEdge: side.onTop ? .top : .bottom) {
-            SheetsPanel(session: session)
+        // The list opens as a card on free squares of the grid, never over a group, and stays while working.
+        ToolButton(icon: .symbol("square.3.layers.3d"), label: session.layersOpen ? "레이어 닫기" : "레이어 열기",
+                   selected: session.layersOpen) {
+            session.layersOpen.toggle()
         }
     }
 }
@@ -684,13 +696,14 @@ private struct SheetsPanel: View {
                         iconButton("eraser.line.dashed", label: "용지 비우기") { session.clearLayer(nil) }
                             .foregroundStyle(Palette.ink)
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.inkSoft)
                     .padding(.horizontal, 16).padding(.vertical, 8)
                 }
             }
         }
         .padding(.vertical, 4)
-        .frame(width: 420)
+        .foregroundStyle(Palette.ink)
+        .tint(Palette.ink)
     }
 
     private func chips(_ items: [(String, () -> Void)], perRow: Int = 3) -> some View {
@@ -750,7 +763,7 @@ private struct SheetsPanel: View {
                 .accessibilityLabel("먹지 색")
             }
             iconButton("trash", label: row.isCarbon ? "먹지 치우기" : "치우기 (그린 것도 함께)") { session.removeLayer(row.id) }
-                .foregroundStyle(.red)
+                .foregroundStyle(Palette.danger)
         }
         .padding(.horizontal, 16).padding(.vertical, 6)
     }
@@ -769,13 +782,13 @@ private struct CarbonSwatch: View {
     let selected: Bool
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 5)
+        RoundedRectangle(cornerRadius: Metric.swatchRadius)
             .fill(LinearGradient(colors: stride(from: 0.0, through: 1.0, by: 0.25).map { t in
                 let c = ink.colour(at: t)
                 return Color(red: c.r, green: c.g, blue: c.b)
             }, startPoint: .leading, endPoint: .trailing))
             .frame(width: 26, height: 20)
-            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Palette.ink.opacity(selected ? 0.9 : 0.15), lineWidth: selected ? 2 : 0.5))
+            .overlay(RoundedRectangle(cornerRadius: Metric.swatchRadius).strokeBorder(Palette.ink.opacity(selected ? 0.9 : 0.15), lineWidth: selected ? 2 : 0.5))
             .padding(2)
     }
 }
@@ -919,8 +932,7 @@ private struct HintBubble: View {
             .lineLimit(3)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
-            .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+            .card(radius: Metric.hintRadius)
     }
 }
 
