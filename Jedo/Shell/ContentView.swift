@@ -10,6 +10,9 @@ struct ContentView: View {
     /// Whether the guide has been through once.
     @AppStorage("guideSeen") private var guideSeen = false
     @State private var showingGuide = false
+    /// Asking what the controls are: a press explains a control instead of using it.
+    @State private var helping = false
+    @State private var helpTopic: Help.Topic?
     @State private var dragging: ShellLayout.Group?
     @State private var dragOffset = CGSize.zero
 
@@ -67,7 +70,29 @@ struct ContentView: View {
                                 .position(x: spot.midX, y: spot.midY)
                                 .transition(.opacity)
                         }
-                        if let hint = session.hint {
+                        if helping, !arranging {
+                            if let c = cells[.map] {
+                                let rect = grid.rect(c)
+                                Color.white.opacity(0.001)
+                                    .contentShape(Rectangle())
+                                    .frame(width: rect.width, height: rect.height)
+                                    .onTapGesture { helpTopic = Help.map }
+                                    .position(x: rect.midX, y: rect.midY)
+                            }
+                            let topic = helpTopic ?? Help.asking
+                            VStack(alignment: .leading, spacing: 4) {
+                                Label(topic.title, systemImage: "questionmark.circle").font(.callout.weight(.bold))
+                                Text(topic.text).font(.callout).fixedSize(horizontal: false, vertical: true)
+                            }
+                            .foregroundStyle(Palette.ink)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: min(spot.width - 8, 520), alignment: .leading)
+                            .card(radius: Metric.hintRadius)
+                            .position(x: spot.midX, y: spot.midY + ShellLayout.unit / 2)
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                        } else if let hint = session.hint {
                             HintBubble(hint: hint)
                                 .frame(maxWidth: min(spot.width - 8, 560))
                                 .fixedSize(horizontal: false, vertical: true)
@@ -117,6 +142,27 @@ struct ContentView: View {
             .environment(\.shellUpright, layout.isUpright(group))
             .frame(width: rect.width, height: rect.height, alignment: fromRight ? .topTrailing : .topLeading)
             .allowsHitTesting(!arranging)
+            .overlay {
+                if helping, !arranging {
+                    // Asking: each square explains its control instead of working it.
+                    let upright = layout.isUpright(group)
+                    let towardEnd = upright ? c.y + c.h / 2 >= grid.rows / 2 : fromRight
+                    ZStack(alignment: .topLeading) {
+                        ForEach(0..<(c.w * c.h), id: \.self) { k in
+                            if let topic = Help.topic(group, column: k % c.w, row: k / c.w, w: c.w, h: c.h, upright: upright, towardEnd: towardEnd) {
+                                RoundedRectangle(cornerRadius: Metric.cellRadius)
+                                    .fill(Palette.go.opacity(helpTopic == topic ? 0.28 : 0.001))
+                                    .frame(width: Metric.cell, height: Metric.cell)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { helpTopic = topic }
+                                    .offset(x: CGFloat(k % c.w) * ShellLayout.unit + (ShellLayout.unit - Metric.cell) / 2,
+                                            y: CGFloat(k / c.w) * ShellLayout.unit + (ShellLayout.unit - Metric.cell) / 2)
+                            }
+                        }
+                    }
+                    .frame(width: rect.width, height: rect.height, alignment: .topLeading)
+                }
+            }
             .overlay {
                 if arranging {
                     RoundedRectangle(cornerRadius: Metric.groupRadius)
@@ -177,8 +223,10 @@ struct ContentView: View {
                           session = DrawingSession()
                       },
                       hand: { savedLayout = ShellLayout.standard(leftHanded: $0).encoded },
-                      arrange: { arranging = true },
-                      guide: { showingGuide = true })
+                      arrange: { helping = false; arranging = true },
+                      guide: { showingGuide = true },
+                      helping: helping,
+                      help: { helping.toggle(); helpTopic = nil })
         }
     }
 }
@@ -559,14 +607,12 @@ private struct ViewGroup: View {
     let hand: (Bool) -> Void
     let arrange: () -> Void
     let guide: () -> Void
+    let helping: Bool
+    let help: () -> Void
     @State private var confirmingNewPaper = false
 
     var body: some View {
         ControlGroup {
-            ToolButton(icon: .symbol("ruler.fill"), label: session.edgeRulers ? "가장자리 눈금 끄기" : "가장자리 눈금 켜기",
-                       selected: session.edgeRulers) {
-                session.edgeRulers.toggle()
-            }
             Menu {
                 Button("종이만") { session.export(includeSheets: false) }
                 Button("얹힌 트레이싱지·먹지·톤까지") { session.export(includeSheets: true) }
@@ -586,7 +632,8 @@ private struct ViewGroup: View {
                 Divider()
                 Button { arrange() } label: { Label("직접 옮기기…", systemImage: "hand.draw") }
                 Divider()
-                Button { guide() } label: { Label("사용법", systemImage: "questionmark.circle") }
+                Toggle(isOn: $session.edgeRulers) { Label("가장자리 눈금", systemImage: "ruler") }
+                Button { guide() } label: { Label("처음 안내 다시 보기", systemImage: "book") }
             } label: {
                 ToolFace(icon: .symbol("rectangle.3.group"))
             }
@@ -601,6 +648,7 @@ private struct ViewGroup: View {
             } message: {
                 Text("그린 것과 얹힌 시트가 모두 사라지고 되돌릴 수 없습니다. 남기려면 먼저 내보내기를 하세요.")
             }
+            ToolButton(icon: .symbol("questionmark"), label: helping ? "설명 끝내기" : "이 버튼은 뭐지?", selected: helping, action: help)
         }
     }
 }
