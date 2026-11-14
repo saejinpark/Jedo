@@ -278,6 +278,12 @@ final class DrawingSession {
         _ = canvas?.addPhotoLayer(photo)
     }
 
+    /// Lays the first page of a PDF on the desk as a print at its real size.
+    func addPDF(at url: URL) {
+        guard let page = PhotoStore.addPDF(at: url) else { return }
+        _ = canvas?.addPhotoLayer(page)
+    }
+
     func glueLayer(_ id: Int) { canvas?.glueLayer(id) }
     func setPhotoCarbon(_ id: Int, _ on: Bool) { canvas?.setPhotoCarbon(id, on) }
     func shiftLayer(_ id: Int, up: Bool) { canvas?.shiftLayer(id, up: up) }

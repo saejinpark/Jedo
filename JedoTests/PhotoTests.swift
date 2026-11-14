@@ -61,3 +61,27 @@ struct PhotoTests {
         #expect(back.sheets[0].layer == layer)
     }
 }
+
+@MainActor
+struct PDFPageTests {
+    @Test func anA4PDFPageComesInAtItsRealSize() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("jedo-\(UUID()).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        var box = CGRect(x: 0, y: 0, width: 595.28, height: 841.89)
+        let ctx = try #require(CGContext(url as CFURL, mediaBox: &box, nil))
+        ctx.beginPDFPage(nil)
+        ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+        ctx.fill(CGRect(x: 100, y: 700, width: 200, height: 40))
+        ctx.endPDFPage()
+        ctx.closePDF()
+        let page = try #require(PhotoStore.addPDF(at: url))
+        #expect(page.widthMM == 210 && page.heightMM == 297)
+        let image = try #require(PhotoStore.image(page.id))
+        #expect(image.width > 1500 && image.height > image.width)
+        // Dark where the bar was drawn (near the top), white elsewhere.
+        let pixels = try #require(PhotoStore.pixels(page.id))
+        #expect(pixels.colour(u: 0.33, v: 0.145)!.r < 0.2)
+        #expect(pixels.colour(u: 0.8, v: 0.8)!.r > 0.9)
+        PhotoStore.keepOnly([])
+    }
+}

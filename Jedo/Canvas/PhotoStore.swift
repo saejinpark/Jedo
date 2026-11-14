@@ -31,6 +31,38 @@ enum PhotoStore {
         return PhotoRef(id: id, pixelWidth: image.width, pixelHeight: image.height)
     }
 
+    /// Takes in the first page of a PDF as a print at its real size (an A4
+    /// page comes out 210 × 297 mm). Nil if it can't be read.
+    @MainActor
+    static func addPDF(at url: URL) -> PhotoRef? {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let document = CGPDFDocument(url as CFURL), let page = document.page(at: 1) else { return nil }
+        var box = page.getBoxRect(.cropBox)
+        if page.rotationAngle % 180 != 0 { box.size = CGSize(width: box.height, height: box.width) }
+        guard box.width > 1, box.height > 1 else { return nil }
+        // Sharp enough to read at real size, never more pixels than a photo.
+        let scale = min(200.0 / 72, CGFloat(maxPixels + 600) / max(box.width, box.height))
+        let w = Int(box.width * scale), h = Int(box.height * scale)
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        // The page's own transform never enlarges, so fit it at 1:1 and scale the context.
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.concatenate(page.getDrawingTransform(.cropBox, rect: CGRect(origin: .zero, size: box.size), rotate: 0, preserveAspectRatio: true))
+        ctx.drawPDFPage(page)
+        guard let image = ctx.makeImage() else { return nil }
+        let id = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        guard let out = CGImageDestinationCreateWithURL(self.url(id) as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(out, image, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+        guard CGImageDestinationFinalize(out) else { return nil }
+        images[id] = image
+        let mm = 25.4 / 72
+        return PhotoRef(id: id, widthMM: (Double(box.width) * mm).rounded(), heightMM: (Double(box.height) * mm).rounded())
+    }
+
     private static func thumbnail(_ source: CGImageSource, maxPixels: Int) -> CGImage? {
         CGImageSourceCreateThumbnailAtIndex(source, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,

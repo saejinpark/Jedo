@@ -1,4 +1,5 @@
 import PhotosUI
+import UniformTypeIdentifiers
 import SwiftUI
 
 struct ContentView: View {
@@ -425,6 +426,7 @@ private struct PapersGroup: View {
     @Bindable var session: DrawingSession
     @State private var pickingPhoto = false
     @State private var photoAsCarbon = false
+    @State private var pickingPDF = false
     @State private var photoPick: PhotosPickerItem?
 
     var body: some View {
@@ -435,10 +437,11 @@ private struct PapersGroup: View {
                 ForEach(TonePattern.allCases, id: \.self) { p in Button(p.name) { session.addTone(p) } }
             } label: { ToolFace(icon: .symbol("circle.grid.3x3.fill")) }
                 .menuStyle(.button).buttonStyle(.plain).accessibilityLabel("톤 얹기")
-            ToolButton(icon: .symbol("photo"), label: "사진 얹기") {
-                photoAsCarbon = false
-                pickingPhoto = true
-            }
+            Menu {
+                Button { photoAsCarbon = false; pickingPhoto = true } label: { Label("사진 고르기", systemImage: "photo") }
+                Button { pickingPDF = true } label: { Label("PDF 문서 가져오기", systemImage: "doc.richtext") }
+            } label: { ToolFace(icon: .symbol("photo")) }
+                .menuStyle(.button).buttonStyle(.plain).accessibilityLabel("사진·문서 얹기")
             Menu {
                 ForEach(CarbonInk.allCases, id: \.self) { ink in Button("\(ink.name) 먹지") { session.addCarbon(ink) } }
                 Divider()
@@ -453,6 +456,9 @@ private struct PapersGroup: View {
             ToolButton(icon: .hand(.roller), label: "롤러", selected: session.holds(.roller)) {
                 session.instrument = .roller
             }
+        }
+        .fileImporter(isPresented: $pickingPDF, allowedContentTypes: [.pdf]) { result in
+            if case .success(let url) = result { session.addPDF(at: url) }
         }
         .photosPicker(isPresented: $pickingPhoto, selection: $photoPick, matching: .images, photoLibrary: .shared())
         .onChange(of: photoPick) { _, item in
