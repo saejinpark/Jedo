@@ -191,7 +191,7 @@ final class CanvasView: UIView {
         isMultipleTouchEnabled = true // a resting palm must not block the pencil
         backgroundColor = Self.deskColour
         isOpaque = true
-        accessibilityLabel = "제도 용지"
+        accessibilityLabel = tr("제도 용지")
         // Graphite tiles live in their own layer, between the paper and the tools.
         inkLayer.actions = Self.noAnimations
         layer.addSublayer(inkLayer)
@@ -854,6 +854,8 @@ final class CanvasView: UIView {
             tapeChanged()
         }
     }
+    /// A tape in inches and sixteenths, as a tailor's tape has on its other face.
+    var tapeInches = false { didSet { tapeView.inches = tapeInches } }
     /// Where the fingers hold the tape, its zero and its far end, in paper pixels. The tape lies from
     /// that line away from the hand, its graduations along its far edge.
     private(set) var tape: (a: CGPoint, b: CGPoint)?

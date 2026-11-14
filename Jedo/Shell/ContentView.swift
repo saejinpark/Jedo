@@ -169,7 +169,7 @@ struct ContentView: View {
                         .strokeBorder(Palette.ink.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                         .background(group == .map ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Color.clear),
                                     in: RoundedRectangle(cornerRadius: Metric.groupRadius))
-                        .overlay { if group == .map { Label("지도", systemImage: "map").font(.caption.weight(.semibold)) } }
+                        .overlay { if group == .map { Label(tr("지도"), systemImage: "map").font(.caption.weight(.semibold)) } }
                         .contentShape(Rectangle())
                         .gesture(
                             DragGesture(minimumDistance: 0)
@@ -238,7 +238,7 @@ private struct HandGroup: View {
 
     var body: some View {
         ControlGroup {
-            ToolButton(icon: .symbol("eraser"), label: session.eraserInHand ? "지우개 내려놓기" : "지우개 들기",
+            ToolButton(icon: .symbol("eraser"), label: session.eraserInHand ? tr("지우개 내려놓기") : tr("지우개 들기"),
                        selected: session.eraserInHand) {
                 session.eraserInHand.toggle()
             }
@@ -248,23 +248,23 @@ private struct HandGroup: View {
                         session.eraserKind = kind
                         if !session.eraserInHand { session.eraserInHand = true }
                     } label: {
-                        Label("\(kind.name)지우개", systemImage: session.eraserKind == kind ? "checkmark" : "")
+                        Label(tr("%@지우개", "\(kind.name)"), systemImage: session.eraserKind == kind ? "checkmark" : "")
                     }
                 }
                 Divider()
                 let shieldOut = session.toolsOnDesk.contains(.erasingShield)
-                Button(shieldOut ? "지움판 치우기" : "지움판 꺼내기") { session.toggle(.erasingShield) }
+                Button(shieldOut ? tr("지움판 치우기") : tr("지움판 꺼내기")) { session.toggle(.erasingShield) }
             } label: {
                 ValueFace(title: session.eraserKind.name)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
-            .accessibilityLabel("지우개 종류")
-            ToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
+            .accessibilityLabel(tr("지우개 종류"))
+            ToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? tr("컴퍼스 치우기") : tr("컴퍼스 꺼내기"),
                        selected: session.compassOnDesk) {
                 session.compassOnDesk.toggle()
             }
-            ToolButton(icon: .hand(.cutter), label: session.knifeInHand ? "커터 내려놓기" : "커터 들기",
+            ToolButton(icon: .hand(.cutter), label: session.knifeInHand ? tr("커터 내려놓기") : tr("커터 들기"),
                        enabled: session.canCut, selected: session.knifeInHand) {
                 if session.canCut { session.knifeInHand.toggle() }
             }
@@ -346,7 +346,7 @@ private struct TechnicalPenMenu: View {
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
-        .accessibilityLabel(current.map { "제도펜 \($0.label)mm" } ?? "제도펜")
+        .accessibilityLabel(current.map { tr("제도펜 %@mm", "\($0.label)") } ?? tr("제도펜"))
     }
 }
 
@@ -364,18 +364,35 @@ private struct DeskToolsGroup: View {
             tool(.protractor)
             PinMenu(session: session)
             GroupDivider()
-            ToolSetMenu(session: session, title: "형판", kinds: ToolKind.templates)
-            ToolSetMenu(session: session, title: "운형자", kinds: ToolKind.frenchCurves)
+            ToolSetMenu(session: session, title: tr("형판"), kinds: ToolKind.templates)
+            ToolSetMenu(session: session, title: tr("운형자"), kinds: ToolKind.frenchCurves)
             tool(.hipCurve)
-            ToolButton(icon: .symbol("lines.measurement.horizontal"), label: session.tapeOut ? "줄자 넣기" : "줄자 꺼내기", selected: session.tapeOut) {
-                session.tapeOut.toggle()
+            // The tape measure, in centimetres or, as on a tailor's tape, inches.
+            Menu {
+                Button {
+                    session.tapeInches = false
+                    session.tapeOut = true
+                } label: { Label(tr("센티 줄자"), systemImage: session.tapeOut && !session.tapeInches ? "checkmark" : "") }
+                Button {
+                    session.tapeInches = true
+                    session.tapeOut = true
+                } label: { Label(tr("인치 줄자"), systemImage: session.tapeOut && session.tapeInches ? "checkmark" : "") }
+                if session.tapeOut {
+                    Divider()
+                    Button(tr("줄자 넣기")) { session.tapeOut = false }
+                }
+            } label: {
+                ToolFace(icon: .symbol("lines.measurement.horizontal"), selected: session.tapeOut)
             }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .accessibilityLabel(tr("줄자"))
         }
     }
 
     private func tool(_ kind: ToolKind) -> some View {
         let onDesk = session.toolsOnDesk.contains(kind)
-        return ToolButton(icon: ToolIcon(kind), label: onDesk ? "\(kind.name) 치우기" : "\(kind.name) 꺼내기", selected: onDesk) {
+        return ToolButton(icon: ToolIcon(kind), label: onDesk ? tr("%@ 치우기", "\(kind.name)") : tr("%@ 꺼내기", "\(kind.name)"), selected: onDesk) {
             session.toggle(kind)
         }
     }
@@ -388,8 +405,8 @@ private struct ScaleRuleMenu: View {
     var body: some View {
         let onDesk = session.toolsOnDesk.contains(.scaleRule)
         Menu {
-            Button(onDesk ? "삼각 스케일 치우기" : "삼각 스케일 꺼내기") { session.toggle(.scaleRule) }
-            Picker("면", selection: $session.scaleFace) {
+            Button(onDesk ? tr("삼각 스케일 치우기") : tr("삼각 스케일 꺼내기")) { session.toggle(.scaleRule) }
+            Picker(tr("면"), selection: $session.scaleFace) {
                 ForEach(ScaleRule.faces.indices, id: \.self) { face in
                     Text(ScaleRule.faceName(face)).tag(face)
                 }
@@ -401,7 +418,7 @@ private struct ScaleRuleMenu: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuActionDismissBehavior(.disabled)
-        .accessibilityLabel("삼각 스케일")
+        .accessibilityLabel(tr("삼각 스케일"))
     }
 }
 
@@ -415,12 +432,12 @@ private struct PinMenu: View {
             Button {
                 session.addPin()
             } label: {
-                Label(session.pinCount == 0 ? "핀 꽂기" : "핀 하나 더 꽂기", systemImage: "pin")
+                Label(session.pinCount == 0 ? tr("핀 꽂기") : tr("핀 하나 더 꽂기"), systemImage: "pin")
             }
             .disabled(session.pinCount >= CanvasView.maxPins)
             if session.pinCount > 0 {
                 Button(role: .destructive) { session.removePins() } label: {
-                    Label("핀 모두 뽑기", systemImage: "pin.slash")
+                    Label(tr("핀 모두 뽑기"), systemImage: "pin.slash")
                 }
             }
         } label: {
@@ -428,7 +445,7 @@ private struct PinMenu: View {
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
-        .accessibilityLabel("투시 핀")
+        .accessibilityLabel(tr("투시 핀"))
     }
 }
 
@@ -457,20 +474,20 @@ private struct SheetBar: View {
 
     @ViewBuilder private var doing: some View {
         if row.isPhoto, !row.glued {
-            ToolButton(icon: .symbol("pin"), label: "종이에 붙이기") { session.glueLayer(row.id) }
-            ToolButton(icon: .symbol("drop.halffull"), label: row.photoCarbon ? "사진으로 쓰기" : "먹지로 쓰기",
+            ToolButton(icon: .symbol("pin"), label: tr("종이에 붙이기")) { session.glueLayer(row.id) }
+            ToolButton(icon: .symbol("drop.halffull"), label: row.photoCarbon ? tr("사진으로 쓰기") : tr("먹지로 쓰기"),
                        selected: row.photoCarbon) {
                 session.setPhotoCarbon(row.id, !row.photoCarbon)
             }
         }
         if row.canStamp {
-            ToolButton(icon: .symbol("arrow.down.to.line.compact"), label: "그린 것 찍기") { session.stampLayer(row.id) }
+            ToolButton(icon: .symbol("arrow.down.to.line.compact"), label: tr("그린 것 찍기")) { session.stampLayer(row.id) }
             if row.hasPrint {
-                ToolButton(icon: .symbol("printer"), label: "인쇄까지 찍기") { session.stampLayer(row.id, withPrint: true) }
+                ToolButton(icon: .symbol("printer"), label: tr("인쇄까지 찍기")) { session.stampLayer(row.id, withPrint: true) }
             }
         }
         if !row.isCarbon && !row.isTone && !row.photoCarbon {
-            ToolButton(icon: .symbol("eraser.line.dashed"), label: "비우기") { session.clearLayer(row.id) }
+            ToolButton(icon: .symbol("eraser.line.dashed"), label: tr("비우기")) { session.clearLayer(row.id) }
         }
         if let ink = row.carbonInk {
             Menu {
@@ -484,7 +501,7 @@ private struct SheetBar: View {
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
-            .accessibilityLabel("먹지 색")
+            .accessibilityLabel(tr("먹지 색"))
             if let blend = row.carbonBlend {
                 BlendPickers(blend: blend) { session.setCarbonBlend(row.id, $0) }
             }
@@ -493,21 +510,21 @@ private struct SheetBar: View {
 
     @ViewBuilder private var lying: some View {
         if !row.glued {
-            ToolButton(icon: .symbol("arrow.left.and.right.righttriangle.left.righttriangle.right"), label: "좌우로 뒤집기") {
+            ToolButton(icon: .symbol("arrow.left.and.right.righttriangle.left.righttriangle.right"), label: tr("좌우로 뒤집기")) {
                 session.flipLayer(row.id, leftRight: true)
             }
-            ToolButton(icon: .symbol("arrow.up.and.down.righttriangle.up.righttriangle.down"), label: "위아래로 뒤집기") {
+            ToolButton(icon: .symbol("arrow.up.and.down.righttriangle.up.righttriangle.down"), label: tr("위아래로 뒤집기")) {
                 session.flipLayer(row.id, leftRight: false)
             }
-            ToolButton(icon: .symbol("chevron.up"), label: "한 장 위로", enabled: row.canRaise) { session.shiftLayer(row.id, up: true) }
-            ToolButton(icon: .symbol("chevron.down"), label: "한 장 아래로", enabled: row.canLower) { session.shiftLayer(row.id, up: false) }
+            ToolButton(icon: .symbol("chevron.up"), label: tr("한 장 위로"), enabled: row.canRaise) { session.shiftLayer(row.id, up: true) }
+            ToolButton(icon: .symbol("chevron.down"), label: tr("한 장 아래로"), enabled: row.canLower) { session.shiftLayer(row.id, up: false) }
         }
-        ToolButton(icon: .symbol("eye.slash"), label: "숨기기") { session.setLayer(row.id, hidden: true) }
-        ToolButton(icon: .symbol("trash"), label: "치우기") { session.removeLayer(row.id) }
+        ToolButton(icon: .symbol("eye.slash"), label: tr("숨기기")) { session.setLayer(row.id, hidden: true) }
+        ToolButton(icon: .symbol("trash"), label: tr("치우기")) { session.removeLayer(row.id) }
     }
 
     private var close: some View {
-        ToolButton(icon: .symbol("xmark"), label: "닫기") { session.selectSheet(nil) }
+        ToolButton(icon: .symbol("xmark"), label: tr("닫기")) { session.selectSheet(nil) }
     }
 }
 
@@ -522,29 +539,29 @@ private struct PapersGroup: View {
 
     var body: some View {
         ControlGroup {
-            menu("트레이싱지", symbol: "doc.plaintext", GridPattern.allCases.filter { $0.isPlain || $0.isGraph }) { session.addSheet($0) }
-            menu("원고지·공책", symbol: "doc.text", GridPattern.allCases.filter { !$0.isPlain && !$0.isGraph }) { session.addSheet($0) }
+            menu(tr("트레이싱지"), symbol: "doc.plaintext", GridPattern.allCases.filter { $0.isPlain || $0.isGraph }) { session.addSheet($0) }
+            menu(tr("원고지·공책"), symbol: "doc.text", GridPattern.allCases.filter { !$0.isPlain && !$0.isGraph }) { session.addSheet($0) }
             Menu {
                 ForEach(TonePattern.allCases, id: \.self) { p in Button(p.name) { session.addTone(p) } }
             } label: { ToolFace(icon: .symbol("circle.grid.3x3.fill")) }
-                .menuStyle(.button).buttonStyle(.plain).accessibilityLabel("톤 얹기")
+                .menuStyle(.button).buttonStyle(.plain).accessibilityLabel(tr("톤 얹기"))
             Menu {
-                Button { photoAsCarbon = false; pickingPhoto = true } label: { Label("사진 고르기", systemImage: "photo") }
-                Button { pickingPDF = true } label: { Label("PDF 문서 가져오기", systemImage: "doc.richtext") }
+                Button { photoAsCarbon = false; pickingPhoto = true } label: { Label(tr("사진 고르기"), systemImage: "photo") }
+                Button { pickingPDF = true } label: { Label(tr("PDF 문서 가져오기"), systemImage: "doc.richtext") }
             } label: { ToolFace(icon: .symbol("photo")) }
-                .menuStyle(.button).buttonStyle(.plain).accessibilityLabel("사진·문서 얹기")
+                .menuStyle(.button).buttonStyle(.plain).accessibilityLabel(tr("사진·문서 얹기"))
             Menu {
-                ForEach(CarbonInk.allCases, id: \.self) { ink in Button("\(ink.name) 먹지") { session.addCarbon(ink) } }
+                ForEach(CarbonInk.allCases, id: \.self) { ink in Button(tr("%@ 먹지", "\(ink.name)")) { session.addCarbon(ink) } }
                 Divider()
-                Button { photoAsCarbon = true; pickingPhoto = true } label: { Label("사진 먹지", systemImage: "photo") }
+                Button { photoAsCarbon = true; pickingPhoto = true } label: { Label(tr("사진 먹지"), systemImage: "photo") }
             } label: {
                 CarbonSwatch(ink: .navy, selected: false).frame(width: Metric.cell, height: Metric.cell)
             }
-            .menuStyle(.button).buttonStyle(.plain).accessibilityLabel("먹지 얹기")
-            ToolButton(icon: .hand(.stylus), label: "철필", selected: session.holds(.stylus)) {
+            .menuStyle(.button).buttonStyle(.plain).accessibilityLabel(tr("먹지 얹기"))
+            ToolButton(icon: .hand(.stylus), label: tr("철필"), selected: session.holds(.stylus)) {
                 session.instrument = .stylus
             }
-            ToolButton(icon: .hand(.roller), label: "롤러", selected: session.holds(.roller)) {
+            ToolButton(icon: .hand(.roller), label: tr("롤러"), selected: session.holds(.roller)) {
                 session.instrument = .roller
             }
         }
@@ -567,7 +584,7 @@ private struct PapersGroup: View {
         Menu {
             ForEach(patterns, id: \.self) { p in Button(p.name) { add(p) } }
         } label: { ToolFace(icon: .symbol(symbol)) }
-            .menuStyle(.button).buttonStyle(.plain).accessibilityLabel("\(title) 얹기")
+            .menuStyle(.button).buttonStyle(.plain).accessibilityLabel(tr("%@ 얹기", "\(title)"))
     }
 }
 
@@ -586,11 +603,11 @@ private struct HistoryGroup: View {
 
     var body: some View {
         ControlGroup {
-            ToolButton(icon: .symbol("arrow.uturn.backward"), label: "실행 취소", enabled: session.canUndo) {
+            ToolButton(icon: .symbol("arrow.uturn.backward"), label: tr("실행 취소"), enabled: session.canUndo) {
                 session.undo()
             }
             .keyboardShortcut("z", modifiers: .command)
-            ToolButton(icon: .symbol("arrow.uturn.forward"), label: "다시 실행", enabled: session.canRedo) {
+            ToolButton(icon: .symbol("arrow.uturn.forward"), label: tr("다시 실행"), enabled: session.canRedo) {
                 session.redo()
             }
             .keyboardShortcut("z", modifiers: [.command, .shift])
@@ -614,41 +631,41 @@ private struct ViewGroup: View {
     var body: some View {
         ControlGroup {
             Menu {
-                Button("종이만") { session.export(includeSheets: false) }
-                Button("얹힌 트레이싱지·먹지·톤까지") { session.export(includeSheets: true) }
+                Button(tr("종이만")) { session.export(includeSheets: false) }
+                Button(tr("얹힌 트레이싱지·먹지·톤까지")) { session.export(includeSheets: true) }
             } label: {
                 ToolFace(icon: .symbol("square.and.arrow.up"))
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
-            .accessibilityLabel("내보내기")
+            .accessibilityLabel(tr("내보내기"))
             Menu {
                 Button { hand(false) } label: {
-                    Label("오른손잡이 배치", systemImage: leftHanded ? "" : "checkmark")
+                    Label(tr("오른손잡이 배치"), systemImage: leftHanded ? "" : "checkmark")
                 }
                 Button { hand(true) } label: {
-                    Label("왼손잡이 배치", systemImage: leftHanded ? "checkmark" : "")
+                    Label(tr("왼손잡이 배치"), systemImage: leftHanded ? "checkmark" : "")
                 }
                 Divider()
-                Button { arrange() } label: { Label("직접 옮기기…", systemImage: "hand.draw") }
+                Button { arrange() } label: { Label(tr("직접 옮기기…"), systemImage: "hand.draw") }
                 Divider()
-                Toggle(isOn: $session.edgeRulers) { Label("가장자리 눈금", systemImage: "ruler") }
-                Button { guide() } label: { Label("처음 안내 다시 보기", systemImage: "book") }
+                Toggle(isOn: $session.edgeRulers) { Label(tr("가장자리 눈금"), systemImage: "ruler") }
+                Button { guide() } label: { Label(tr("처음 안내 다시 보기"), systemImage: "book") }
             } label: {
                 ToolFace(icon: .symbol("rectangle.3.group"))
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
-            .accessibilityLabel("배치")
-            ToolButton(icon: .symbol("doc.badge.plus"), label: "새 종이") {
+            .accessibilityLabel(tr("배치"))
+            ToolButton(icon: .symbol("doc.badge.plus"), label: tr("새 종이")) {
                 confirmingNewPaper = true
             }
-            .confirmationDialog("지금 종이를 치우고 새 종이를 깔까요?", isPresented: $confirmingNewPaper, titleVisibility: .visible) {
-                Button("치우고 새 종이 깔기", role: .destructive, action: newPaper)
+            .confirmationDialog(tr("지금 종이를 치우고 새 종이를 깔까요?"), isPresented: $confirmingNewPaper, titleVisibility: .visible) {
+                Button(tr("치우고 새 종이 깔기"), role: .destructive, action: newPaper)
             } message: {
-                Text("그린 것과 얹힌 시트가 모두 사라지고 되돌릴 수 없습니다. 남기려면 먼저 내보내기를 하세요.")
+                Text(tr("그린 것과 얹힌 시트가 모두 사라지고 되돌릴 수 없습니다. 남기려면 먼저 내보내기를 하세요."))
             }
-            ToolButton(icon: .symbol("questionmark"), label: helping ? "설명 끝내기" : "이 버튼은 뭐지?", selected: helping, action: help)
+            ToolButton(icon: .symbol("questionmark"), label: helping ? tr("설명 끝내기") : tr("이 버튼은 뭐지?"), selected: helping, action: help)
         }
     }
 }
@@ -687,25 +704,25 @@ private struct PaperPicker: View {
 
     var body: some View {
         VStack(spacing: 22) {
-            Text("종이 고르기").font(.title2.weight(.semibold))
-            Picker("방향", selection: $landscape) {
-                Text("세로").tag(false)
-                Text("가로").tag(true)
+            Text(tr("종이 고르기")).font(.title2.weight(.semibold))
+            Picker(tr("방향"), selection: $landscape) {
+                Text(tr("세로")).tag(false)
+                Text(tr("가로")).tag(true)
             }
             .pickerStyle(.segmented)
             .frame(width: 200)
             row(PaperSize.Series.aSizes)
             row(PaperSize.Series.bSizes)
             Button { choose(PaperSize(series: .screen, landscape: false)) } label: {
-                Label("화면 맞춤", systemImage: "ipad")
+                Label(tr("화면 맞춤"), systemImage: "ipad")
                     .font(.headline)
                     .padding(.horizontal, 18).padding(.vertical, 10)
                     .background(Palette.paper, in: Capsule())
                     .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
             }
             .buttonStyle(.plain)
-            .accessibilityHint("종이가 화면에 꼭 맞아 옮길 필요가 없습니다")
-            Text("실제 크기로 책상에 고정됩니다. 화면은 지도와 조이스틱으로 옮겨 다닙니다.\n화면 맞춤은 지금 화면 그대로가 종이라 지도와 조이스틱이 없습니다.")
+            .accessibilityHint(tr("종이가 화면에 꼭 맞아 옮길 필요가 없습니다"))
+            Text(tr("실제 크기로 책상에 고정됩니다. 화면은 지도와 조이스틱으로 옮겨 다닙니다.\n화면 맞춤은 지금 화면 그대로가 종이라 지도와 조이스틱이 없습니다."))
                 .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
         .padding(32)
@@ -744,7 +761,7 @@ private struct SheetsButton: View {
 
     var body: some View {
         // The list opens as a card on free squares of the grid, never over a group, and stays while working.
-        ToolButton(icon: .symbol("square.3.layers.3d"), label: session.layersOpen ? "레이어 닫기" : "레이어 열기",
+        ToolButton(icon: .symbol("square.3.layers.3d"), label: session.layersOpen ? tr("레이어 닫기") : tr("레이어 열기"),
                    selected: session.layersOpen) {
             session.layersOpen.toggle()
         }
@@ -757,7 +774,7 @@ private struct SheetsPanel: View {
     var body: some View {
         // Only what lies on the paper, top first: laying new sheets is the paper group's.
         VStack(alignment: .leading, spacing: 0) {
-            PanelSection(title: "레이어 (위에서부터)") {
+            PanelSection(title: tr("레이어 (위에서부터)")) {
                 VStack(spacing: 0) {
                     ForEach(session.layerRows) { row in
                         layerRow(row)
@@ -765,9 +782,9 @@ private struct SheetsPanel: View {
                     }
                     HStack(spacing: 10) {
                         Image(systemName: "doc").frame(width: 22)
-                        Text("용지 (배경)")
+                        Text(tr("용지 (배경)"))
                         Spacer()
-                        iconButton("eraser.line.dashed", label: "용지 비우기") { session.clearLayer(nil) }
+                        iconButton("eraser.line.dashed", label: tr("용지 비우기")) { session.clearLayer(nil) }
                             .foregroundStyle(Palette.ink)
                     }
                     .foregroundStyle(Palette.inkSoft)
@@ -807,22 +824,22 @@ private struct SheetsPanel: View {
             if row.canStamp && row.hasPrint {
                 // Printed paper: the drawing alone, or the print with it (manuscript squares onto the paper).
                 Menu {
-                    Button("그린 것만 찍기") { session.stampLayer(row.id) }
-                    Button("인쇄까지 찍기") { session.stampLayer(row.id, withPrint: true) }
+                    Button(tr("그린 것만 찍기")) { session.stampLayer(row.id) }
+                    Button(tr("인쇄까지 찍기")) { session.stampLayer(row.id, withPrint: true) }
                 } label: {
                     Image(systemName: "arrow.down.to.line.compact").frame(width: 30, height: 30)
                 }
-                .accessibilityLabel("찍기")
+                .accessibilityLabel(tr("찍기"))
             } else if row.canStamp {
-                iconButton("arrow.down.to.line.compact", label: "종이에 찍기") { session.stampLayer(row.id) }
+                iconButton("arrow.down.to.line.compact", label: tr("종이에 찍기")) { session.stampLayer(row.id) }
             }
-            iconButton(row.hidden ? "eye.slash" : "eye", label: row.hidden ? "보이기" : "숨기기") {
+            iconButton(row.hidden ? "eye.slash" : "eye", label: row.hidden ? tr("보이기") : tr("숨기기")) {
                 session.setLayer(row.id, hidden: !row.hidden)
             }
-            iconButton("chevron.up", label: "위로", enabled: row.canRaise) { session.shiftLayer(row.id, up: true) }
-            iconButton("chevron.down", label: "아래로", enabled: row.canLower) { session.shiftLayer(row.id, up: false) }
+            iconButton("chevron.up", label: tr("위로"), enabled: row.canRaise) { session.shiftLayer(row.id, up: true) }
+            iconButton("chevron.down", label: tr("아래로"), enabled: row.canLower) { session.shiftLayer(row.id, up: false) }
             if !row.isCarbon && !row.isTone {
-                iconButton("eraser.line.dashed", label: "비우기") { session.clearLayer(row.id) }
+                iconButton("eraser.line.dashed", label: tr("비우기")) { session.clearLayer(row.id) }
             }
             if let ink = row.carbonInk {
                 Menu {
@@ -834,12 +851,12 @@ private struct SheetsPanel: View {
                 } label: {
                     CarbonSwatch(ink: ink, blend: row.carbonBlend, selected: false).frame(width: 30, height: 30)
                 }
-                .accessibilityLabel("먹지 색")
+                .accessibilityLabel(tr("먹지 색"))
                 if let blend = row.carbonBlend {
                     BlendPickers(blend: blend) { session.setCarbonBlend(row.id, $0) }
                 }
             }
-            iconButton("trash", label: row.isCarbon ? "먹지 치우기" : "치우기 (그린 것도 함께)") { session.removeLayer(row.id) }
+            iconButton("trash", label: row.isCarbon ? tr("먹지 치우기") : tr("치우기 (그린 것도 함께)")) { session.removeLayer(row.id) }
                 .foregroundStyle(Palette.danger)
         }
         .padding(.horizontal, 16).padding(.vertical, 6)
@@ -875,26 +892,26 @@ private struct BlendPickers: View {
     var body: some View {
         let stops = blend.stops
         ForEach(stops.indices, id: \.self) { i in
-            ColorPicker(i == 0 ? "첫 색" : i == stops.count - 1 ? "끝 색" : "사이 색 \(i)", selection: binding(i), supportsOpacity: false)
+            ColorPicker(i == 0 ? tr("첫 색") : i == stops.count - 1 ? tr("끝 색") : tr("사이 색 %@", "\(i)"), selection: binding(i), supportsOpacity: false)
                 .labelsHidden()
                 .frame(width: Metric.cell, height: Metric.cell)
         }
         if stops.count < 2 + CarbonBlend.mostBetween {
             // One more colour, halfway between the last two.
-            ToolButton(icon: .symbol("plus"), label: "색 하나 더") {
+            ToolButton(icon: .symbol("plus"), label: tr("색 하나 더")) {
                 let a = stops[stops.count - 2], b = stops[stops.count - 1]
                 change(blend.with(stops: stops.dropLast() + [[(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], b]))
             }
         }
         if stops.count > 2 {
-            ToolButton(icon: .symbol("minus"), label: "사이 색 하나 빼기") {
+            ToolButton(icon: .symbol("minus"), label: tr("사이 색 하나 빼기")) {
                 var fewer = stops
                 fewer.remove(at: stops.count - 2)
                 change(blend.with(stops: fewer))
             }
         }
         ToolButton(icon: .symbol(blend.isRound ? "circle.circle" : "arrow.left.and.right"),
-                   label: blend.isRound ? "가운데에서 퍼지는 그라데이션 (누르면 가로로)" : "가로로 흐르는 그라데이션 (누르면 가운데에서 퍼지게)") {
+                   label: blend.isRound ? tr("가운데에서 퍼지는 그라데이션 (누르면 가로로)") : tr("가로로 흐르는 그라데이션 (누르면 가운데에서 퍼지게)")) {
             change(CarbonBlend(from: blend.from, to: blend.to, between: blend.between ?? [], round: !blend.isRound))
         }
     }
@@ -1037,21 +1054,21 @@ struct ToolGlyph: View {
 extension ToolKind {
     var name: String {
         switch self {
-        case .ruler: "자"
-        case .parallelRule: "평행자"
-        case .setSquare45: "45° 삼각자"
-        case .setSquare60: "30°·60° 삼각자"
-        case .circleTemplate: "원 형판"
-        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate: "\(ShapeTemplate.name(self)) 형판"
-        case .letteringGuide: "레터링 가이드"
-        case .scaleRule: "삼각 스케일"
-        case .erasingShield: "지움판"
-        case .brailleSlate: "점판"
-        case .morsePlate: "모스 부호판"
+        case .ruler: tr("자")
+        case .parallelRule: tr("평행자")
+        case .setSquare45: tr("45° 삼각자")
+        case .setSquare60: tr("30°·60° 삼각자")
+        case .circleTemplate: tr("원 형판")
+        case .ellipseTemplate, .squareTemplate, .hexTemplate, .arcTemplate: tr("%@ 형판", "\(ShapeTemplate.name(self))")
+        case .letteringGuide: tr("레터링 가이드")
+        case .scaleRule: tr("삼각 스케일")
+        case .erasingShield: tr("지움판")
+        case .brailleSlate: tr("점판")
+        case .morsePlate: tr("모스 부호판")
         case .frenchCurveA, .frenchCurveB, .frenchCurveC:
-            "운형자 \((ToolKind.frenchCurves.firstIndex(of: self) ?? 0) + 1) · \(FrenchCurve.form(self)?.name ?? "")"
-        case .hipCurve: "대나무 곡자"
-        case .protractor: "각도기"
+            tr("운형자 %@ · %@", "\((ToolKind.frenchCurves.firstIndex(of: self) ?? 0) + 1)", FrenchCurve.form(self)?.name ?? "")
+        case .hipCurve: tr("대나무 곡자")
+        case .protractor: tr("각도기")
         }
     }
 }

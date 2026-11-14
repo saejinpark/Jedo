@@ -16,7 +16,7 @@ final class CompassView: UIView {
         isOpaque = false
         backgroundColor = .clear
         isHidden = true
-        accessibilityLabel = "컴퍼스"
+        accessibilityLabel = tr("컴퍼스")
 
         shadowLayer.fillColor = UIColor.black.withAlphaComponent(0.13).cgColor
         legsLayer.fillColor = UIColor(red: 0.66, green: 0.69, blue: 0.72, alpha: 0.96).cgColor

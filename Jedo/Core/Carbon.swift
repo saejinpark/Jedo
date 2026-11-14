@@ -13,20 +13,20 @@ enum CarbonInk: String, CaseIterable, Hashable, Codable, Sendable {
 
     var name: String {
         switch self {
-        case .navy: "남색"
-        case .black: "검정"
-        case .red: "빨강"
-        case .blue: "파랑"
-        case .green: "초록"
-        case .rainbow: "무지개"
-        case .sunset: "노을"
-        case .sea: "바다"
-        case .stripe: "줄무늬"
-        case .gingham: "깅엄 체크"
-        case .dots: "물방울"
-        case .tartan: "타탄 체크"
-        case .houndstooth: "하운드투스"
-        case .custom: "내 그라데이션"
+        case .navy: tr("남색")
+        case .black: tr("검정")
+        case .red: tr("빨강")
+        case .blue: tr("파랑")
+        case .green: tr("초록")
+        case .rainbow: tr("무지개")
+        case .sunset: tr("노을")
+        case .sea: tr("바다")
+        case .stripe: tr("줄무늬")
+        case .gingham: tr("깅엄 체크")
+        case .dots: tr("물방울")
+        case .tartan: tr("타탄 체크")
+        case .houndstooth: tr("하운드투스")
+        case .custom: tr("내 그라데이션")
         }
     }
 

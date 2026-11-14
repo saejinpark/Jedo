@@ -16,7 +16,7 @@ final class RulerView: UIView {
         layer.shadowOpacity = 0.14
         layer.shadowRadius = 3
         layer.shadowOffset = CGSize(width: 0, height: 1.5)
-        accessibilityLabel = "자"
+        accessibilityLabel = tr("자")
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }

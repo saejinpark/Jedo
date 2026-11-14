@@ -124,9 +124,9 @@ enum FrenchCurve {
     }
 
     static let forms: [Form] = [
-        form(.frenchCurveA, "큰 것", FrenchCurveData.largeOutline, FrenchCurveData.largeCutout),
-        form(.frenchCurveB, "중간", FrenchCurveData.mediumOutline, FrenchCurveData.mediumCutout),
-        form(.frenchCurveC, "작은 것", FrenchCurveData.smallOutline, FrenchCurveData.smallCutout),
+        form(.frenchCurveA, tr("큰 것"), FrenchCurveData.largeOutline, FrenchCurveData.largeCutout),
+        form(.frenchCurveB, tr("중간"), FrenchCurveData.mediumOutline, FrenchCurveData.mediumCutout),
+        form(.frenchCurveC, tr("작은 것"), FrenchCurveData.smallOutline, FrenchCurveData.smallCutout),
     ]
 
     private static func form(_ kind: ToolKind, _ name: String, _ outline: [(Double, Double)], _ cutout: [(Double, Double)]) -> Form {

@@ -11,6 +11,8 @@ final class TapeView: UIView {
     static let tabMM = 3.0, tailMM = 16.0
 
     private var lengthMM = 0.0
+    /// Graduated in inches and sixteenths instead of centimetres and millimetres.
+    var inches = false { didSet { setNeedsDisplay() } }
     private var pointsPerMM: CGFloat = 5
     /// Which way the body lies from the edge the fingers hold, in the view's own y: +1 down from its top edge, −1 up from its bottom edge.
     private var side: CGFloat = 1
@@ -66,21 +68,33 @@ final class TapeView: UIView {
         let font = UIFont.monospacedDigitSystemFont(ofSize: max(2.8 * pt, 6), weight: .medium)
         // The graduated edge is the one away from the fingers; the figures stand upright as the tape is held.
         let edge: CGFloat = side > 0 ? bounds.height : 0, inward: CGFloat = -side
-        for mm in 0...max(last, 0) {
-            let x = zero + CGFloat(mm) * pt
-            let tall: CGFloat = mm % 10 == 0 ? 5.5 : mm % 5 == 0 ? 4 : 2.5
-            ctx.setLineWidth(mm % 10 == 0 ? 1 : 0.6)
+        // One graduation: its place along the tape in millimetres, how tall, how heavy, and its figure if it has one.
+        func mark(_ at: Double, tall: CGFloat, heavy: Bool, figure: String?) {
+            let x = zero + CGFloat(at) * pt
+            ctx.setLineWidth(heavy ? 1 : 0.6)
             ctx.move(to: CGPoint(x: x, y: edge))
             ctx.addLine(to: CGPoint(x: x, y: edge + inward * tall * pt))
             ctx.strokePath()
-            if mm % 10 == 0, mm > 0 {
-                let text = NSAttributedString(string: "\(mm / 10)", attributes: [.font: font, .foregroundColor: ink])
-                let size = text.size()
-                ctx.saveGState()
-                ctx.translateBy(x: x, y: edge + inward * 8.6 * pt)
-                if side > 0 { ctx.rotate(by: .pi) }
-                text.draw(at: CGPoint(x: -size.width / 2, y: -size.height / 2))
-                ctx.restoreGState()
+            guard let figure else { return }
+            let text = NSAttributedString(string: figure, attributes: [.font: font, .foregroundColor: ink])
+            let size = text.size()
+            ctx.saveGState()
+            ctx.translateBy(x: x, y: edge + inward * 8.6 * pt)
+            if side > 0 { ctx.rotate(by: .pi) }
+            text.draw(at: CGPoint(x: -size.width / 2, y: -size.height / 2))
+            ctx.restoreGState()
+        }
+        if inches {
+            // Sixteenths of an inch: taller at the eighth, quarter, half and whole.
+            let sixteenth = 25.4 / 16
+            for k in 0...max(Int(Double(last) / sixteenth), 0) {
+                let tall: CGFloat = k % 16 == 0 ? 5.5 : k % 8 == 0 ? 4.6 : k % 4 == 0 ? 3.6 : k % 2 == 0 ? 2.7 : 1.9
+                mark(Double(k) * sixteenth, tall: tall, heavy: k % 16 == 0, figure: k % 16 == 0 && k > 0 ? "\(k / 16)" : nil)
+            }
+        } else {
+            for mm in 0...max(last, 0) {
+                mark(Double(mm), tall: mm % 10 == 0 ? 5.5 : mm % 5 == 0 ? 4 : 2.5, heavy: mm % 10 == 0,
+                     figure: mm % 10 == 0 && mm > 0 ? "\(mm / 10)" : nil)
             }
         }
         // The red hairline at the far fingertip: read the tape here.

@@ -222,11 +222,11 @@ struct ValueFace: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            Text(title).font(.system(size: 11, weight: .semibold, design: .rounded)).lineLimit(1).minimumScaleFactor(0.7)
+            Text(title).font(.system(size: 11, weight: .semibold, design: .rounded)).lineLimit(1).minimumScaleFactor(0.6)
             Image(systemName: "chevron.down").font(.system(size: 6.5, weight: .bold))
         }
-        .padding(.horizontal, 5)
-        .frame(width: 42, height: 24)
+        .padding(.horizontal, 3)
+        .frame(width: Metric.cell, height: 24)
         .foregroundStyle(Palette.ink.opacity(0.8))
         .background(Palette.ink.opacity(0.09), in: Capsule())
         .overlay(Capsule().strokeBorder(Palette.ink.opacity(0.16), lineWidth: 0.5))

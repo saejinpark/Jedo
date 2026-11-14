@@ -33,9 +33,9 @@ enum EraserKind: CaseIterable, Hashable, Sendable {
 
     var name: String {
         switch self {
-        case .rubber: "고무"
-        case .kneaded: "떡"
-        case .electric: "전동"
+        case .rubber: tr("고무")
+        case .kneaded: tr("떡")
+        case .electric: tr("전동")
         }
     }
 

@@ -11,11 +11,11 @@ enum TonePattern: CaseIterable, Hashable, Sendable {
 
     var name: String {
         switch self {
-        case .dots10: "망점 10%"
-        case .dots30: "망점 30%"
-        case .dots50: "망점 50%"
-        case .lines: "사선"
-        case .gradation: "그라데이션"
+        case .dots10: tr("망점 10%")
+        case .dots30: tr("망점 30%")
+        case .dots50: tr("망점 50%")
+        case .lines: tr("사선")
+        case .gradation: tr("그라데이션")
         }
     }
 

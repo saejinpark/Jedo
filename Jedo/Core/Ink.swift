@@ -40,15 +40,15 @@ enum Nib: CaseIterable, Hashable, Sendable {
 
     var name: String {
         switch self {
-        case .gPen: "G펜"
-        case .maru: "마루펜"
+        case .gPen: tr("G펜")
+        case .maru: tr("마루펜")
         }
     }
 
     var label: String {
         switch self {
         case .gPen: "G"
-        case .maru: "마루"
+        case .maru: tr("마루")
         }
     }
 

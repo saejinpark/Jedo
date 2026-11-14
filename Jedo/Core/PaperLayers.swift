@@ -34,7 +34,7 @@ struct PaperSize: Hashable, Sendable {
         case .b3: "B3"
         case .b2: "B2"
         case .b1: "B1"
-        case .screen: "화면 맞춤"
+        case .screen: tr("화면 맞춤")
         }
     }
 
@@ -107,19 +107,19 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
     case fourLine
     var name: String {
         switch self {
-        case .manuscript: "원고지 200자"
-        case .genkou: "원고지 400자 (세로)"
-        case .manga: "만화 원고용지 B4"
-        case .squareBook: "깍두기 공책"
-        case .baekgang: "백강고시체 연습지"
-        case .staff: "오선지"
-        case .fourLine: "영어 4선 공책"
-        case .square1: "모눈 방안 1mm"
-        case .square5: "모눈 방안 5mm"
-        case .isometric: "모눈 등각 5mm"
-        case .polar: "모눈 극좌표"
-        case .tracing: "트레이싱지 A4"
-        case .butter: "버터지"
+        case .manuscript: tr("원고지 200자")
+        case .genkou: tr("원고지 400자 (세로)")
+        case .manga: tr("만화 원고용지 B4")
+        case .squareBook: tr("깍두기 공책")
+        case .baekgang: tr("백강고시체 연습지")
+        case .staff: tr("오선지")
+        case .fourLine: tr("영어 4선 공책")
+        case .square1: tr("모눈 방안 1mm")
+        case .square5: tr("모눈 방안 5mm")
+        case .isometric: tr("모눈 등각 5mm")
+        case .polar: tr("모눈 극좌표")
+        case .tracing: tr("트레이싱지 A4")
+        case .butter: tr("버터지")
         }
     }
 
@@ -192,9 +192,9 @@ enum SheetKind: Hashable, Sendable {
     var name: String {
         switch self {
         case .grid(let pattern): pattern.name
-        case .photo: "사진"
-        case .carbon: "먹지"
-        case .tone(let pattern): "톤 · \(pattern.name)"
+        case .photo: tr("사진")
+        case .carbon: tr("먹지")
+        case .tone(let pattern): tr("톤 · %@", "\(pattern.name)")
         }
     }
 

@@ -68,12 +68,12 @@ enum Instrument: Hashable, Sendable {
 
     var name: String {
         switch self {
-        case .wood: "연필"
-        case .mechanical(let size): "제도 샤프 \(size.label)mm"
-        case .technicalPen(let width): "제도펜 \(width.label)mm"
+        case .wood: tr("연필")
+        case .mechanical(let size): tr("제도 샤프 %@mm", "\(size.label)")
+        case .technicalPen(let width): tr("제도펜 %@mm", "\(width.label)")
         case .dipPen(let nib): nib.name
-        case .stylus: "누름 막대"
-        case .roller: "롤러"
+        case .stylus: tr("누름 막대")
+        case .roller: tr("롤러")
         }
     }
 

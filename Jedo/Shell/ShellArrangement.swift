@@ -116,14 +116,14 @@ struct ArrangeBoard: View {
                 }
             }
             VStack(spacing: 14) {
-                Text("배치 바꾸기").font(.headline)
-                Text("묶음을 끌어 모눈 위에 놓으세요. 다른 묶음이 있는 칸에는 놓이지 않습니다.\n묶음을 톡 치면 세로로 서고, 다시 치면 눕습니다.\n가까운 모서리에서 몇 칸인지로 기억해서, 아이패드를 돌려도 그 모서리에 남습니다.")
+                Text(tr("배치 바꾸기")).font(.headline)
+                Text(tr("묶음을 끌어 모눈 위에 놓으세요. 다른 묶음이 있는 칸에는 놓이지 않습니다.\n묶음을 톡 치면 세로로 서고, 다시 치면 눕습니다.\n가까운 모서리에서 몇 칸인지로 기억해서, 아이패드를 돌려도 그 모서리에 남습니다."))
                     .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 HStack(spacing: 8) {
-                    Chip(title: "오른손잡이 기본", selected: !leftHanded) { reset(false) }
-                    Chip(title: "왼손잡이 기본", selected: leftHanded) { reset(true) }
+                    Chip(title: tr("오른손잡이 기본"), selected: !leftHanded) { reset(false) }
+                    Chip(title: tr("왼손잡이 기본"), selected: leftHanded) { reset(true) }
                 }
-                Button("완료", action: done)
+                Button(tr("완료"), action: done)
                     .buttonStyle(.borderedProminent)
                     .tint(Palette.ink)
             }

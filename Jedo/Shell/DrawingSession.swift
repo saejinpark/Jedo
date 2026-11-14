@@ -115,6 +115,10 @@ final class DrawingSession {
             if tapeOut { show(.tape) }
         }
     }
+    /// The tape's other face: inches and sixteenths.
+    var tapeInches = false {
+        didSet { canvas?.tapeInches = tapeInches }
+    }
     /// Whether the compass is out, so a finger held still plants its needle.
     var compassOnDesk = false {
         didSet {
@@ -151,16 +155,16 @@ final class DrawingSession {
 
         var text: String {
             switch self {
-            case .pencil: "선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡고 컴퍼스 바늘을 꽂습니다."
-            case .compass: "손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다."
-            case .tape: "두 손가락으로 종이를 누르고 벌리면 그 사이에 줄자가 펴집니다. 눈금은 손가락 반대쪽 가장자리에 있고, 빨간 선에서 읽습니다. 끝을 잡아 다시 옮깁니다."
-            case .eraser: "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
-            case .shield: "지움판 위를 문지르면 구멍 안쪽만 지워지고, 지움판은 밀리지 않습니다. 옮기려면 두 손가락으로 잡으세요."
-            case .place(let kind): "\(kind.name): 놓을 자리를 손가락으로 누르세요. 누른 채 끌어 맞춥니다."
-            case .roller: "롤러는 먹지 위를 굴릴 때만 찍힙니다. 굴린 폭 30mm만큼 먹지 색이 밑으로 옮겨지고, 세게 누를수록 진합니다."
-            case .stylus: "철필은 흑연 없이 홈만 냅니다. 그 위를 연필로 칠하면 홈이 하얗게 남습니다. 홈은 지우개로 문지르면 펴집니다."
-            case .spotTaken: "그 자리에는 다른 도구가 있습니다. 빈 곳을 누르거나 그 도구를 먼저 치우세요."
-            case .knife: "종이를 가로질러 그으면 갈라지고, 한 바퀴 돌려 처음 자리로 오면 그 모양대로 오려집니다. 톤은 눕혀 문지르면 긁힙니다."
+            case .pencil: tr("선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡고 컴퍼스 바늘을 꽂습니다.")
+            case .compass: tr("손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다.")
+            case .tape: tr("두 손가락으로 종이를 누르고 벌리면 그 사이에 줄자가 펴집니다. 눈금은 손가락 반대쪽 가장자리에 있고, 빨간 선에서 읽습니다. 끝을 잡아 다시 옮깁니다.")
+            case .eraser: tr("손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다.")
+            case .shield: tr("지움판 위를 문지르면 구멍 안쪽만 지워지고, 지움판은 밀리지 않습니다. 옮기려면 두 손가락으로 잡으세요.")
+            case .place(let kind): tr("%@: 놓을 자리를 손가락으로 누르세요. 누른 채 끌어 맞춥니다.", "\(kind.name)")
+            case .roller: tr("롤러는 먹지 위를 굴릴 때만 찍힙니다. 굴린 폭 30mm만큼 먹지 색이 밑으로 옮겨지고, 세게 누를수록 진합니다.")
+            case .stylus: tr("철필은 흑연 없이 홈만 냅니다. 그 위를 연필로 칠하면 홈이 하얗게 남습니다. 홈은 지우개로 문지르면 펴집니다.")
+            case .spotTaken: tr("그 자리에는 다른 도구가 있습니다. 빈 곳을 누르거나 그 도구를 먼저 치우세요.")
+            case .knife: tr("종이를 가로질러 그으면 갈라지고, 한 바퀴 돌려 처음 자리로 오면 그 모양대로 오려집니다. 톤은 눕혀 문지르면 긁힙니다.")
             }
         }
 
@@ -415,7 +419,7 @@ let text = String(format: "strokes %d, drawing %.2f s (%.2f ms a stroke, slowest
         format.locale = Locale(identifier: "en_US_POSIX")
         format.dateFormat = "yyyy-MM-dd HHmm"
         let stamp = format.string(from: .now)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("제도 \(stamp).png")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(tr("제도 %@.png", "\(stamp)"))
         do { try data.write(to: url, options: .atomic) } catch { return }
         guard let window = canvas.window, var top = window.rootViewController else { return }
         while let shown = top.presentedViewController { top = shown }
@@ -530,7 +534,7 @@ let text = String(format: "strokes %d, drawing %.2f s (%.2f ms a stroke, slowest
         if layer.kind.photo != nil {
             let photos = layers.filter { $0.kind.photo != nil }.map(\.id).sorted()
             let n = (photos.firstIndex(of: layer.id) ?? 0) + 1
-            return layer.glued ? "사진 \(n) (붙임)" : layer.photoCarbon ? "사진 \(n) (먹지)" : "사진 \(n)"
+            return layer.glued ? tr("사진 %@ (붙임)", "\(n)") : layer.photoCarbon ? tr("사진 %@ (먹지)", "\(n)") : tr("사진 %@", "\(n)")
         }
         let alike = layers.filter { $0.kind == layer.kind }.map(\.id).sorted()
         guard alike.count > 1, let n = alike.firstIndex(of: layer.id) else { return layer.kind.name }

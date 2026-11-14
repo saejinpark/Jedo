@@ -263,8 +263,8 @@ final class MinimapView: UIView {
         layer.shadowOpacity = 0.12
         layer.shadowRadius = 6
         layer.shadowOffset = CGSize(width: 0, height: 2)
-        accessibilityLabel = "전체 용지 지도"
-        accessibilityHint = "끌어서 보는 곳을 옮깁니다"
+        accessibilityLabel = tr("전체 용지 지도")
+        accessibilityHint = tr("끌어서 보는 곳을 옮깁니다")
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -354,7 +354,7 @@ final class PanStick: UIView {
         layer.shadowOpacity = 0.10
         layer.shadowRadius = 6
         layer.shadowOffset = CGSize(width: 0, height: 2)
-        accessibilityLabel = "화면 이동 조이스틱"
+        accessibilityLabel = tr("화면 이동 조이스틱")
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }

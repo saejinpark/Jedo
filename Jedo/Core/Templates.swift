@@ -41,15 +41,15 @@ enum ShapeTemplate {
 
     static func name(_ kind: ToolKind) -> String {
         switch kind {
-        case .ellipseTemplate: "타원"
-        case .squareTemplate: "사각·삼각"
-        case .hexTemplate: "육각·팔각"
-        case .arcTemplate: "원주 1/4"
-        case .letteringGuide: "레터링"
-        case .erasingShield: "지움판"
-        case .brailleSlate: "점판"
-        case .morsePlate: "모스 부호판"
-        default: "원"
+        case .ellipseTemplate: tr("타원")
+        case .squareTemplate: tr("사각·삼각")
+        case .hexTemplate: tr("육각·팔각")
+        case .arcTemplate: tr("원주 1/4")
+        case .letteringGuide: tr("레터링")
+        case .erasingShield: tr("지움판")
+        case .brailleSlate: tr("점판")
+        case .morsePlate: tr("모스 부호판")
+        default: tr("원")
         }
     }
 

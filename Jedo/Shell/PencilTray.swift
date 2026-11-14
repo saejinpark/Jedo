@@ -28,7 +28,7 @@ struct PencilGrades: View {
                     .contentShape(RoundedRectangle(cornerRadius: Metric.cellRadius))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("연필 \(grade.label)")
+                .accessibilityLabel(tr("연필 %@", "\(grade.label)"))
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }

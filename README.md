@@ -301,3 +301,7 @@ xcodebuild -project Jedo.xcodeproj -scheme Jedo -destination 'platform=iOS Simul
 - 자를 따라 한 획 안에서 왔다 갔다 해도 아직 진해지지 않는다. 덧긋기 감지는 컴퍼스와 지우개에만 있다.
 - 렌더링은 Core Graphics(CPU)다. 맥 벤치마크에서 6B를 눕혀 빠르게 칠해도 프레임당 0.4ms 안쪽이라 Metal은 아직 필요 없다.
 - 그림은 한 장만 저장된다. 여러 장을 보관하는 서랍은 없다(내보내기로 남긴다). 커리큘럼, AI 기능은 범위 밖이다.
+
+## 언어
+
+소스의 문구는 한국어로 쓰고, 화면에 나오는 모든 문구는 `tr("…")`로 감싼다(`Jedo/Core/Localize.swift`). 다른 언어는 `Jedo/<언어>.lproj/Localizable.strings`에 한국어 문구를 열쇠로 한 번역표 하나만 두면 된다. 지금은 한국어와 영어가 있다. 새 문구를 넣으면 영어 표에도 같은 열쇠로 한 줄을 넣는다(없으면 한국어가 그대로 나온다).

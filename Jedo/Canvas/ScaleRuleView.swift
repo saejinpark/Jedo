@@ -18,7 +18,7 @@ final class ScaleRuleView: UIView, ToolDisplay {
         layer.shadowOpacity = 0.16
         layer.shadowRadius = 3
         layer.shadowOffset = CGSize(width: 0, height: 1.5)
-        accessibilityLabel = "삼각 스케일"
+        accessibilityLabel = tr("삼각 스케일")
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
