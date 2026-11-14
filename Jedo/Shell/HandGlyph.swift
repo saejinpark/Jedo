@@ -13,17 +13,20 @@ struct HandGlyph: View {
             let line = StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round)
             switch tool {
             case .cutter:
-                // A plain body and its slanted blade, lying from bottom left to top right.
-                context.translateBy(x: 3.5, y: 22.5)
-                context.rotate(by: .degrees(-45))
-                context.stroke(Path(roundedRect: CGRect(x: 0, y: -3, width: 17, height: 6), cornerRadius: 1.5), with: .foreground, style: line)
+                // The snap-off blade's end: a strip cut off at an angle to a point, scored for the next snap.
+                context.translateBy(x: 3, y: 21)
+                context.rotate(by: .degrees(-40))
                 var blade = Path()
-                blade.move(to: CGPoint(x: 17, y: -2))
-                blade.addLine(to: CGPoint(x: 23, y: -2))
-                blade.addLine(to: CGPoint(x: 26.5, y: 2))
-                blade.addLine(to: CGPoint(x: 17, y: 2))
+                blade.move(to: CGPoint(x: 0, y: -4))
+                blade.addLine(to: CGPoint(x: 26, y: -4))
+                blade.addLine(to: CGPoint(x: 19, y: 4))
+                blade.addLine(to: CGPoint(x: -7, y: 4))
                 blade.closeSubpath()
                 context.fill(blade, with: .foreground)
+                var score = Path()
+                score.move(to: CGPoint(x: 15, y: -4))
+                score.addLine(to: CGPoint(x: 8, y: 4))
+                context.stroke(score, with: .color(.white.opacity(0.9)), lineWidth: 1.1)
             case .roller:
                 // The rubber cylinder on top, its frame, and the handle below.
                 let drum = Path(roundedRect: CGRect(x: 3, y: 2.5, width: 20, height: 7), cornerRadius: 3.5)
@@ -40,12 +43,16 @@ struct HandGlyph: View {
                 context.stroke(frame, with: .foreground, style: line)
                 context.fill(Path(roundedRect: CGRect(x: 10.8, y: 15, width: 4.4, height: 9.5), cornerRadius: 2.2), with: .foreground)
             case .stylus:
-                // A slim rod with a ball at its point.
-                var rod = Path()
-                rod.move(to: CGPoint(x: 4, y: 22))
-                rod.addLine(to: CGPoint(x: 19.5, y: 6.5))
-                context.stroke(rod, with: .foreground, style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
-                context.fill(Path(ellipseIn: CGRect(x: 18.5, y: 2.5, width: 5, height: 5)), with: .foreground)
+                // An embossing stylus: a handle in the middle, a thin steel neck at each end, a ball on each, one larger.
+                context.translateBy(x: 13, y: 13)
+                context.rotate(by: .degrees(-45))
+                context.fill(Path(roundedRect: CGRect(x: -6.5, y: -2, width: 13, height: 4), cornerRadius: 2), with: .foreground)
+                var necks = Path()
+                necks.move(to: CGPoint(x: -6.5, y: 0)); necks.addLine(to: CGPoint(x: -14, y: 0))
+                necks.move(to: CGPoint(x: 6.5, y: 0)); necks.addLine(to: CGPoint(x: 13.5, y: 0))
+                context.stroke(necks, with: .foreground, style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
+                context.fill(Path(ellipseIn: CGRect(x: -16.6, y: -2, width: 4, height: 4)), with: .foreground)
+                context.fill(Path(ellipseIn: CGRect(x: 12.8, y: -1.4, width: 2.8, height: 2.8)), with: .foreground)
             }
         }
     }
