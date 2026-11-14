@@ -56,8 +56,19 @@ final class PaperLayerView: UIView {
         case .tone:
             // Clear film: only the print shows.
             body.fillColor = UIColor(white: 1, alpha: 0.06).cgColor
+        case .photo:
+            // Photo paper: opaque, unless it is being used as carbon and laid face down.
+            body.fillColor = UIColor(white: 0.98, alpha: sheet.photoCarbon ? 0.2 : 1).cgColor
         }
         layer.addSublayer(body)
+        if let photo = sheet.kind.photo {
+            let print = CALayer()
+            print.contents = PhotoStore.image(photo.id)
+            print.contentsGravity = .resize
+            // Used as carbon it lies face down: its colours show faintly through the back.
+            print.opacity = sheet.photoCarbon ? 0.55 : 1
+            layer.addSublayer(print)
+        }
         if sheet.kind == .carbon, sheet.carbonInk.isGradient {
             // A coating that runs across the sheet, as it prints.
             let gradient = CAGradientLayer()

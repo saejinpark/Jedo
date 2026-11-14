@@ -28,6 +28,11 @@ final class DrawingSession {
         let hasPrint: Bool
         /// For carbon: its coating.
         let carbonInk: CarbonInk?
+        let isPhoto: Bool
+        /// A photo used as carbon.
+        let photoCarbon: Bool
+        /// Glued to the paper.
+        let glued: Bool
         /// The sheet's symbol in the panel.
         let symbol: String
         let hidden: Bool
@@ -249,6 +254,15 @@ final class DrawingSession {
 
     func selectSheet(_ id: Int?) { canvas?.selectSheet(id) }
     func flipLayer(_ id: Int, leftRight: Bool) { canvas?.flipLayer(id, leftRight: leftRight) }
+
+    /// Lays a picture from the photo library on the desk as a print.
+    func addPhoto(_ data: Data) {
+        guard let photo = PhotoStore.add(data) else { return }
+        _ = canvas?.addPhotoLayer(photo)
+    }
+
+    func glueLayer(_ id: Int) { canvas?.glueLayer(id) }
+    func setPhotoCarbon(_ id: Int, _ on: Bool) { canvas?.setPhotoCarbon(id, on) }
     func shiftLayer(_ id: Int, up: Bool) { canvas?.shiftLayer(id, up: up) }
 
     /// Takes a sheet off the paper: with what was drawn on it, or a piece of carbon.
@@ -276,17 +290,26 @@ final class DrawingSession {
         layerRows = layers.enumerated().reversed().map { i, layer in
             LayerRow(id: layer.id, name: Self.name(of: layer, among: layers), isCarbon: layer.kind == .carbon,
                      isTone: layer.kind.isTone,
-                     canStamp: { if case .grid = layer.kind { true } else { false } }(),
+                     canStamp: layer.kind.takesPencil && !layer.glued && !layer.photoCarbon,
                      hasPrint: { if case .grid(let p) = layer.kind { !p.isPlain } else { false } }(),
                      carbonInk: layer.kind == .carbon ? layer.carbonInk : nil,
-                     symbol: layer.kind == .carbon ? "square.fill" : layer.kind.isTone ? "circle.grid.3x3.fill"
+                     isPhoto: layer.kind.photo != nil, photoCarbon: layer.photoCarbon, glued: layer.glued,
+                     symbol: layer.kind.photo != nil ? (layer.glued ? "photo.fill" : "photo") : layer.kind == .carbon ? "square.fill" : layer.kind.isTone ? "circle.grid.3x3.fill"
                         : { if case .grid(let p) = layer.kind, p.isPlain { "doc.plaintext" } else { "squareshape.split.3x3" } }(),
-                     hidden: hidden.contains(layer.id), canRaise: i < layers.count - 1, canLower: i > 0)
+                     hidden: hidden.contains(layer.id),
+                     // Glued photos stay at the bottom, part of the paper; loose sheets stay over them.
+                     canRaise: !layer.glued && i < layers.count - 1,
+                     canLower: !layer.glued && i > layers.prefix(while: \.glued).count)
         }
     }
 
     /// A sheet's pattern, numbered in the order they were laid when there are several alike.
     private static func name(of layer: PaperLayer, among layers: [PaperLayer]) -> String {
+        if layer.kind.photo != nil {
+            let photos = layers.filter { $0.kind.photo != nil }.map(\.id).sorted()
+            let n = (photos.firstIndex(of: layer.id) ?? 0) + 1
+            return layer.glued ? "사진 \(n) (붙임)" : layer.photoCarbon ? "사진 \(n) (먹지)" : "사진 \(n)"
+        }
         let alike = layers.filter { $0.kind == layer.kind }.map(\.id).sorted()
         guard alike.count > 1, let n = alike.firstIndex(of: layer.id) else { return layer.kind.name }
         return "\(layer.kind.name) \(n + 1)"

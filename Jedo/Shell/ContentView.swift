@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 struct ContentView: View {
@@ -46,7 +47,8 @@ struct ContentView: View {
                         if let row = session.selectedRow, !arranging {
                             // What can be done with the sheet picked out, right where the eye is.
                             SheetBar(session: session, row: row)
-                                .position(x: spot.midX, y: spot.minY + ShellLayout.unit / 2)
+                                .frame(width: spot.width, height: spot.height, alignment: .top)
+                                .position(x: spot.midX, y: spot.midY)
                                 .transition(.opacity)
                         }
                         if let hint = session.hint {
@@ -351,18 +353,57 @@ private struct SheetBar: View {
     let row: DrawingSession.LayerRow
 
     var body: some View {
-        ControlGroup {
-            TextFace(title: row.name, selected: false, width: 2 * ShellLayout.unit - 8)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            if row.canStamp {
-                ToolButton(icon: .symbol("arrow.down.to.line.compact"), label: "그린 것 찍기") { session.stampLayer(row.id) }
-                if row.hasPrint {
-                    ToolButton(icon: .symbol("printer"), label: "인쇄까지 찍기") {
-                        session.stampLayer(row.id, withPrint: true)
+        // One row where it fits, else two: what is done to the sheet, then how it lies.
+        ViewThatFits(in: .horizontal) {
+            ControlGroup { name; doing; lying; close }
+            VStack(spacing: 0) {
+                ControlGroup { name; doing; close }
+                ControlGroup { lying }
+            }
+        }
+    }
+
+    private var name: some View {
+        TextFace(title: row.name, selected: false, width: 2 * ShellLayout.unit - 8)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+    }
+
+    @ViewBuilder private var doing: some View {
+        if row.isPhoto, !row.glued {
+            ToolButton(icon: .symbol("pin"), label: "종이에 붙이기") { session.glueLayer(row.id) }
+            ToolButton(icon: .symbol("drop.halffull"), label: row.photoCarbon ? "사진으로 쓰기" : "먹지로 쓰기",
+                       selected: row.photoCarbon) {
+                session.setPhotoCarbon(row.id, !row.photoCarbon)
+            }
+        }
+        if row.canStamp {
+            ToolButton(icon: .symbol("arrow.down.to.line.compact"), label: "그린 것 찍기") { session.stampLayer(row.id) }
+            if row.hasPrint {
+                ToolButton(icon: .symbol("printer"), label: "인쇄까지 찍기") { session.stampLayer(row.id, withPrint: true) }
+            }
+        }
+        if !row.isCarbon && !row.isTone && !row.photoCarbon {
+            ToolButton(icon: .symbol("eraser.line.dashed"), label: "비우기") { session.clearLayer(row.id) }
+        }
+        if let ink = row.carbonInk {
+            Menu {
+                ForEach(CarbonInk.allCases, id: \.self) { choice in
+                    Button { session.setCarbonInk(row.id, choice) } label: {
+                        Label(choice.name, systemImage: choice == ink ? "checkmark" : "")
                     }
                 }
+            } label: {
+                CarbonSwatch(ink: ink, selected: false)
             }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .accessibilityLabel("먹지 색")
+        }
+    }
+
+    @ViewBuilder private var lying: some View {
+        if !row.glued {
             ToolButton(icon: .symbol("arrow.left.and.right.righttriangle.left.righttriangle.right"), label: "좌우로 뒤집기") {
                 session.flipLayer(row.id, leftRight: true)
             }
@@ -371,27 +412,13 @@ private struct SheetBar: View {
             }
             ToolButton(icon: .symbol("chevron.up"), label: "한 장 위로", enabled: row.canRaise) { session.shiftLayer(row.id, up: true) }
             ToolButton(icon: .symbol("chevron.down"), label: "한 장 아래로", enabled: row.canLower) { session.shiftLayer(row.id, up: false) }
-            if !row.isCarbon && !row.isTone {
-                ToolButton(icon: .symbol("eraser.line.dashed"), label: "비우기") { session.clearLayer(row.id) }
-            }
-            if let ink = row.carbonInk {
-                Menu {
-                    ForEach(CarbonInk.allCases, id: \.self) { choice in
-                        Button { session.setCarbonInk(row.id, choice) } label: {
-                            Label(choice.name, systemImage: choice == ink ? "checkmark" : "")
-                        }
-                    }
-                } label: {
-                    CarbonSwatch(ink: ink, selected: false)
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .accessibilityLabel("먹지 색")
-            }
-            ToolButton(icon: .symbol("eye.slash"), label: "숨기기") { session.setLayer(row.id, hidden: true) }
-            ToolButton(icon: .symbol("trash"), label: "치우기") { session.removeLayer(row.id) }
-            ToolButton(icon: .symbol("xmark"), label: "닫기") { session.selectSheet(nil) }
         }
+        ToolButton(icon: .symbol("eye.slash"), label: "숨기기") { session.setLayer(row.id, hidden: true) }
+        ToolButton(icon: .symbol("trash"), label: "치우기") { session.removeLayer(row.id) }
+    }
+
+    private var close: some View {
+        ToolButton(icon: .symbol("xmark"), label: "닫기") { session.selectSheet(nil) }
     }
 }
 
@@ -582,6 +609,7 @@ private struct SheetsButton: View {
 
 private struct SheetsPanel: View {
     @Bindable var session: DrawingSession
+    @State private var photoPick: PhotosPickerItem?
 
     var body: some View {
         // The list of what lies on the paper on top, what can be laid on below:
@@ -632,6 +660,30 @@ private struct SheetsPanel: View {
             Divider()
             PanelSection(title: "트레이싱지 얹기") {
                 chips(GridPattern.allCases.filter { $0.isPlain || $0.isGraph }.map { p in (p.name, { session.addSheet(p) }) })
+            }
+            Divider()
+            PanelSection(title: "사진 얹기") {
+                HStack {
+                    PhotosPicker(selection: $photoPick, matching: .images, photoLibrary: .shared()) {
+                        Label("사진 고르기", systemImage: "photo.on.rectangle")
+                            .font(.subheadline.weight(.medium))
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(Palette.paper, in: Capsule())
+                            .overlay(Capsule().strokeBorder(Palette.ink.opacity(0.15)))
+                    }
+                    .buttonStyle(.plain)
+                    Text("인화한 사진처럼 놓입니다. 오리고, 붙이고, 먹지로 씁니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .onChange(of: photoPick) { _, item in
+                    guard let item else { return }
+                    photoPick = nil
+                    Task {
+                        if let data = try? await item.loadTransferable(type: Data.self) { session.addPhoto(data) }
+                    }
+                }
             }
             Divider()
             PanelSection(title: "원고지·공책 얹기") {

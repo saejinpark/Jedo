@@ -93,6 +93,9 @@ enum DrawingStore {
             var carbonInk: CarbonInk?
             /// Turned over: [left-right, top-bottom].
             var flipped: [Bool]?
+            /// A photo used as carbon, and glued down.
+            var photoCarbon: Bool?
+            var glued: Bool?
         }
 
         init(_ s: DrawingState) {
@@ -112,7 +115,8 @@ enum DrawingStore {
                              tone: sheet.tone.map(Tone.init),
                              piece: sheet.layer.pieceMM.map { $0.flatMap { [Double($0.x), Double($0.y)] } },
                              carbonInk: sheet.layer.kind == .carbon ? sheet.layer.carbonInk : nil,
-                             flipped: sheet.layer.flippedX || sheet.layer.flippedY ? [sheet.layer.flippedX, sheet.layer.flippedY] : nil)
+                             flipped: sheet.layer.flippedX || sheet.layer.flippedY ? [sheet.layer.flippedX, sheet.layer.flippedY] : nil,
+                             photoCarbon: sheet.layer.photoCarbon ? true : nil, glued: sheet.layer.glued ? true : nil)
             }
             nextLayerID = s.nextLayerID
             pins = s.pins.flatMap { [Double($0.x), Double($0.y)] }
@@ -137,7 +141,8 @@ enum DrawingStore {
                     let layer = PaperLayer(id: sheet.id, kind: kind,
                                            pose: ToolPose(center: CGPoint(x: sheet.pose[0], y: sheet.pose[1]), angle: sheet.pose[2]),
                                            pieceMM: piece, carbonInk: sheet.carbonInk ?? .navy,
-                                           flippedX: sheet.flipped?.first ?? false, flippedY: sheet.flipped?.last ?? false)
+                                           flippedX: sheet.flipped?.first ?? false, flippedY: sheet.flipped?.last ?? false,
+                                           photoCarbon: sheet.photoCarbon ?? false, glued: sheet.glued ?? false)
                     let r = layer.rasterSize(pixelsPerMillimeter: pixelsPerMillimeter)
                     return DrawingState.Sheet(layer: layer, hidden: sheet.hidden,
                                               graphite: try sheet.graphite?.raster(width: r.width, height: r.height),
@@ -203,11 +208,13 @@ extension SheetKind {
         case .grid(let pattern): "grid.\(pattern)"
         case .carbon: "carbon"
         case .tone(let pattern): "tone.\(pattern)"
+        case .photo(let photo): photo.code
         }
     }
 
     init?(code: String) {
         if code == "carbon" { self = .carbon; return }
+        if let photo = PhotoRef(code: code) { self = .photo(photo); return }
         if let grid = GridPattern.allCases.first(where: { "grid.\($0)" == code }) { self = .grid(grid); return }
         if let tone = TonePattern.allCases.first(where: { "tone.\($0)" == code }) { self = .tone(tone); return }
         return nil

@@ -64,7 +64,8 @@ enum CarbonPalette {
             (0.08, 0.50, 0.24),
         ]
         for k in 0..<hueSteps { out.append(hsv(Double(k) / Double(hueSteps), 0.85, 0.82)) }
-        return out
+        // Then a cube of colours, for copies coloured by a photo.
+        return out + cube
     }()
 
     static func hsv(_ h: Double, _ s: Double, _ v: Double) -> (r: Double, g: Double, b: Double) {

@@ -89,6 +89,8 @@ final class CanvasView: UIView {
     private var nextLayerID = 1
     /// Under the tools, above the paper.
     private let sheetsView = UIView()
+    /// Photos glued to the paper.
+    private let gluedView = UIView()
     /// Surfaces the stroke in progress is marking.
     private var marking: [SurfaceID] = []
     private var markingErases = false
@@ -108,6 +110,8 @@ final class CanvasView: UIView {
         case pieces([PieceCut])
         /// Several at once, as one knife stroke cutting tone and paper.
         case group([UndoStep])
+        /// A photo glued to the paper, from where it lay in the stack.
+        case glue(id: Int, from: Int)
 
         func without(_ id: Int) -> UndoStep? {
             switch self {
@@ -123,6 +127,8 @@ final class CanvasView: UIView {
             case .group(let steps):
                 let left = steps.compactMap { $0.without(id) }
                 return left.isEmpty ? nil : .group(left)
+            case .glue(let glued, _):
+                return glued == id ? nil : self
             }
         }
     }
@@ -190,6 +196,8 @@ final class CanvasView: UIView {
         inkLayer.actions = Self.noAnimations
         layer.addSublayer(inkLayer)
         sheetsView.isUserInteractionEnabled = false
+        gluedView.isUserInteractionEnabled = false
+        addSubview(gluedView)
         addSubview(sheetsView)
         addSubview(pinsView)
         addSubview(compassView)
@@ -291,7 +299,7 @@ final class CanvasView: UIView {
             case .carbon:
                 layers.append(layer)
                 showLayer(layer, surfaces: [], sheet: sheet)
-            case .grid:
+            case .grid, .photo:
                 layGrid(layer, sheet: sheet)
                 if let g = kept.graphite { layerSurfaces[layer.id]?.sheet.load(g) }
                 if let c = kept.copies { layerCopies[layer.id]?.sheet.load(c) }
@@ -353,6 +361,8 @@ final class CanvasView: UIView {
             await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
                 Self.saveQueue.async {
                     try? DrawingStore.save(state)
+            // Pictures nothing uses any more go (kept while undo might still want them: not past this drawing's save).
+            PhotoStore.keepOnly(Set(state.sheets.compactMap { $0.layer.kind.photo?.id }))
                     done.resume()
                 }
             }
@@ -364,7 +374,10 @@ final class CanvasView: UIView {
     func discardDrawing() {
         saving = false
         saveTask?.cancel()
-        Self.saveQueue.async { DrawingStore.remove() }
+        Self.saveQueue.async {
+            DrawingStore.remove()
+            PhotoStore.removeAll()
+        }
     }
 
     override func layoutSubviews() {
@@ -372,6 +385,7 @@ final class CanvasView: UIView {
         compassView.frame = bounds
         pinsView.frame = bounds
         sheetsView.frame = bounds
+        gluedView.frame = bounds
     }
 
     /// The paper on the desk, in pixels.
@@ -506,6 +520,7 @@ final class CanvasView: UIView {
         case .tones(let changes): for (id, change) in changes { setTone(id, change.before) }
         case .pieces(let cuts): for cut in cuts.reversed() { join(cut) }
         case .group(let steps): for step in steps.reversed() { revert(step) }
+        case .glue(let id, let from): setGlued(id, false, at: from)
         }
     }
 
@@ -515,6 +530,7 @@ final class CanvasView: UIView {
         case .tones(let changes): for (id, change) in changes { setTone(id, change.after) }
         case .pieces(let cuts): for cut in cuts { part(cut) }
         case .group(let steps): for step in steps { replay(step) }
+        case .glue(let id, _): setGlued(id, true)
         }
     }
 
@@ -914,7 +930,7 @@ final class CanvasView: UIView {
                 let piece = layer.piece(id: nextLayerID, outline: parts[i])
                 nextLayerID += 1
                 var surface: GraphiteSurface?, copies: GraphiteSurface?
-                if case .grid = layer.kind, let own = layerSurfaces[layer.id] {
+                if layer.kind.takesPencil, let own = layerSurfaces[layer.id] {
                     let made = makeSurfaces(piece, sheet: sheet)
                     made.0.sheet.load(own.sheet.graphite)
                     if let c = layerCopies[layer.id] { made.1.sheet.load(c.sheet.graphite) }
@@ -1174,16 +1190,28 @@ final class CanvasView: UIView {
 
     /// The colour a copy made through carbon `carbonID` takes at each pixel of `target`.
     private func carbonColour(_ carbonID: Int, onto target: SurfaceID) -> (@Sendable (Int, Int) -> Int)? {
-        guard let sheet, let carbon = layers.first(where: { $0.id == carbonID && $0.kind == .carbon }) else { return nil }
+        guard let sheet, let carbon = layers.first(where: { $0.id == carbonID && $0.isCarbon }) else { return nil }
         let ppmm = sheet.pixelsPerMillimeter
+        let host: PaperLayer? = switch target {
+        case .sheet(let t), .sheetCopy(let t): layers.first { $0.id == t }
+        case .paper, .carbonCopy: nil
+        }
+        if let photo = carbon.kind.photo {
+            // A photo used as carbon: each spot takes the photo's colour there.
+            guard let pixels = PhotoStore.pixels(photo.id) else { return nil }
+            let (w, h) = (photo.widthMM * ppmm, photo.heightMM * ppmm)
+            return { x, y in
+                let q = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
+                let onPaper = host?.paperPoint(fromSurface: q, pixelsPerMillimeter: ppmm) ?? q
+                let s = carbon.surfacePoint(onPaper, pixelsPerMillimeter: ppmm)
+                guard let c = pixels.colour(u: Double(s.x) / w, v: Double(s.y) / h) else { return 1 }
+                return CarbonPalette.cubeIndex(c)
+            }
+        }
         let ink = carbon.carbonInk
         guard ink.isGradient else {
             let index = ink.paletteIndex(at: 0)
             return { _, _ in index }
-        }
-        let host: PaperLayer? = switch target {
-        case .sheet(let t), .sheetCopy(let t): layers.first { $0.id == t }
-        case .paper, .carbonCopy: nil
         }
         let width = carbon.kind.sizeMM.width * ppmm
         return { x, y in
@@ -1197,7 +1225,8 @@ final class CanvasView: UIView {
     private func showLayer(_ layer: PaperLayer, surfaces: [GraphiteSurface], sheet: DraftingSheet) {
         let view = PaperLayerView(layer: layer, surfaces: surfaces, scale: scale, pixelsPerMillimeter: sheet.pixelsPerMillimeter)
         layerViews[layer.id] = view
-        sheetsView.addSubview(view)
+        // Glued down, it is part of the paper: under every loose sheet, and in an export of the paper alone.
+        (layer.glued ? gluedView : sheetsView).addSubview(view)
         view.place(layer, scale: scale)
         view.showSelected(layer.id == selectedSheet)
     }
@@ -1219,10 +1248,55 @@ final class CanvasView: UIView {
     private func sheetUnder(_ p: CGPoint) -> Int? {
         guard let sheet else { return nil }
         return layers.indices.last {
-            !hiddenLayers.contains(layers[$0].id) && Polygon.contains(p, layers[$0].outline(pixelsPerMillimeter: sheet.pixelsPerMillimeter))
+            !hiddenLayers.contains(layers[$0].id) && !layers[$0].glued && Polygon.contains(p, layers[$0].outline(pixelsPerMillimeter: sheet.pixelsPerMillimeter))
                 && toneLeft($0, near: p)
         }
     }
+
+    /// Lays a photo on the desk as a print, in the middle of the screen. Returns its id.
+    func addPhotoLayer(_ photo: PhotoRef) -> Int? {
+        guard let sheet, let pose = screenPose(at: CGPoint(x: 0.5, y: 0.45)) else { return nil }
+        let layer = PaperLayer(id: nextLayerID, kind: .photo(photo), pose: pose)
+        nextLayerID += 1
+        layGrid(layer, sheet: sheet)
+        layersChanged()
+        selectSheet(layer.id)
+        return layer.id
+    }
+
+    /// Glues a photo (or a piece of one) down to the paper, where it lies: a collage. One step to undo.
+    func glueLayer(_ id: Int) {
+        guard activeTouch == nil, let i = layers.firstIndex(where: { $0.id == id }), layers[i].kind.photo != nil, !layers[i].glued else { return }
+        layerHolders[id] = nil
+        setGlued(id, true)
+        undoStack.append(.glue(id: id, from: i))
+        redoStack.removeAll()
+        notifyHistory()
+    }
+
+    private func setGlued(_ id: Int, _ glued: Bool, at index: Int? = nil) {
+        guard let i = layers.firstIndex(where: { $0.id == id }) else { return }
+        var layer = layers.remove(at: i)
+        layer.glued = glued
+        layer.photoCarbon = false
+        // Glued ones lie at the bottom, under everything loose.
+        let gluedCount = layers.prefix { $0.glued }.count
+        layers.insert(layer, at: glued ? gluedCount : min(max(index ?? gluedCount, gluedCount), layers.count))
+        if glued, selectedSheet == id { selectSheet(nil) }
+        reshow(layer)
+        layersChanged()
+    }
+
+    /// Uses a photo as carbon (face down, pressing its colours through), or as a print again.
+    func setPhotoCarbon(_ id: Int, _ on: Bool) {
+        guard let i = layers.firstIndex(where: { $0.id == id }), layers[i].kind.photo != nil, !layers[i].glued else { return }
+        layers[i].photoCarbon = on
+        reshow(layers[i])
+        layersChanged()
+    }
+
+    /// The pictures the drawing uses.
+    var photoIDs: Set<String> { Set(layers.compactMap { $0.kind.photo?.id }) }
 
     /// Turns a sheet over, about its own middle: left to right, or top to bottom.
     func flipLayer(_ id: Int, leftRight: Bool) {
@@ -1237,7 +1311,7 @@ final class CanvasView: UIView {
             selectedSheet = nil
             onSheetSelect?(nil)
         }
-        for layer in layers { if let view = layerViews[layer.id] { sheetsView.bringSubviewToFront(view) } }
+        for layer in layers { if let view = layerViews[layer.id] { view.superview?.bringSubviewToFront(view) } }
         onLayersChange?(layers, hiddenLayers)
         onOverviewChange?()
         scheduleSave()
@@ -1269,7 +1343,7 @@ final class CanvasView: UIView {
         guard let sheet else { return false }
         let ppmm = sheet.pixelsPerMillimeter
         let outer = Self.gripMarginMM * ppmm
-        let visible = layers.indices.filter { !hiddenLayers.contains(layers[$0].id) }
+        let visible = layers.indices.filter { !hiddenLayers.contains(layers[$0].id) && !layers[$0].glued }
         func onBody(_ i: Int, _ p: CGPoint) -> Bool {
             let outline = layers[i].outline(pixelsPerMillimeter: ppmm)
             return (Polygon.contains(p, outline) || Polygon.distance(p, to: outline) <= outer) && toneLeft(i, near: p)
@@ -1340,7 +1414,7 @@ final class CanvasView: UIView {
         let ppmm = sheet.pixelsPerMillimeter
         // Tone takes no pencil: the line goes onto whatever is under it.
         return LayerStack(sheets: layers.filter { !hiddenLayers.contains($0.id) && !$0.kind.isTone }.map {
-            LayerStack.Sheet(id: $0.id, outline: $0.outline(pixelsPerMillimeter: ppmm), isCarbon: $0.kind == .carbon)
+            LayerStack.Sheet(id: $0.id, outline: $0.outline(pixelsPerMillimeter: ppmm), isCarbon: $0.isCarbon)
         }, paper: paperOutline)
     }
 

@@ -154,6 +154,18 @@ enum SheetKind: Hashable, Sendable {
     /// Screen tone: printed film that is cut with the knife and peeled.
     /// The pencil passes it by; it is laid over a drawing.
     case tone(TonePattern)
+    /// A photo print: drawn on like paper, cut, glued down, or used as carbon.
+    case photo(PhotoRef)
+
+    /// Whether the pencil draws on it, so it has a surface of its own.
+    var takesPencil: Bool {
+        switch self {
+        case .grid, .photo: true
+        case .carbon, .tone: false
+        }
+    }
+
+    var photo: PhotoRef? { if case .photo(let p) = self { p } else { nil } }
 
     /// A sheet of tone, as cut from a larger one.
     static let toneSizeMM = (width: 120.0, height: 100.0)
@@ -166,6 +178,7 @@ enum SheetKind: Hashable, Sendable {
     var sizeMM: (width: Double, height: Double) {
         switch self {
         case .grid(let pattern): pattern.sizeMM
+        case .photo(let p): (p.widthMM, p.heightMM)
         case .carbon: Self.carbonSizeMM
         case .tone: Self.toneSizeMM
         }
@@ -174,6 +187,7 @@ enum SheetKind: Hashable, Sendable {
     var name: String {
         switch self {
         case .grid(let pattern): pattern.name
+        case .photo: "사진"
         case .carbon: "먹지"
         case .tone(let pattern): "톤 · \(pattern.name)"
         }
@@ -213,9 +227,18 @@ struct PaperLayer: Identifiable, Equatable, Sendable {
     var flippedX = false
     var flippedY = false
 
+    /// A photo used as carbon: what is pressed through it comes out in its colours.
+    var photoCarbon = false
+    /// Glued down to the paper (collage): it no longer moves, and is part of the paper.
+    var glued = false
+
+    /// Whether pressing through it copies onto what lies under it.
+    var isCarbon: Bool { kind == .carbon || (photoCarbon && kind.photo != nil) }
+
     /// The same sheet under another id: a piece cut from it.
     func piece(id: Int, outline: [CGPoint]) -> PaperLayer {
-        PaperLayer(id: id, kind: kind, pose: pose, pieceMM: outline, carbonInk: carbonInk, flippedX: flippedX, flippedY: flippedY)
+        PaperLayer(id: id, kind: kind, pose: pose, pieceMM: outline, carbonInk: carbonInk, flippedX: flippedX, flippedY: flippedY,
+                   photoCarbon: photoCarbon, glued: glued)
     }
 
     private var mirror: (x: Double, y: Double) { (flippedX ? -1 : 1, flippedY ? -1 : 1) }
