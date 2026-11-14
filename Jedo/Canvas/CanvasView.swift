@@ -1192,9 +1192,36 @@ final class CanvasView: UIView {
         }
         guard let first = pieces.first else { return nil }
         guard pieces.count > 1 else { return first.colour }
-        return { x, y in
+        let chooser = PieceChooser(outlines: pieces.map(\.outline))
+        let colours = pieces.map(\.colour)
+        return { x, y in colours[chooser.piece(x, y)](x, y) }
+    }
+
+    /// Which piece of carbon lies topmost at a pixel. Decided once for a whole
+    /// tile where one piece covers it, pixel by pixel only along the pieces' edges.
+    private final class PieceChooser: @unchecked Sendable {
+        let outlines: [[CGPoint]]
+        private var tile = TileCoord(x: Int.min, y: Int.min)
+        private var choice = 0
+        init(outlines: [[CGPoint]]) { self.outlines = outlines }
+
+        func piece(_ x: Int, _ y: Int) -> Int {
+            let ts = GraphiteRaster.tileSize
+            let here = TileCoord(x: x >= 0 ? x / ts : (x - ts + 1) / ts, y: y >= 0 ? y / ts : (y - ts + 1) / ts)
+            if here != tile {
+                tile = here
+                let rect = PixelRect(minX: here.x * ts, minY: here.y * ts, maxX: here.x * ts + ts, maxY: here.y * ts + ts)
+                choice = 0
+                for (i, outline) in outlines.enumerated() {
+                    let place = Polygon.classify(rect, outline)
+                    if place == .outside { continue }
+                    choice = place == .inside ? i : -1
+                    break
+                }
+            }
+            if choice >= 0 { return choice }
             let p = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
-            return (pieces.first { Polygon.contains(p, $0.outline) } ?? first).colour(x, y)
+            return outlines.firstIndex { Polygon.contains(p, $0) } ?? 0
         }
     }
 

@@ -303,9 +303,10 @@ final class DraftingSheet {
                 let bounds = InkRasterizer.bandBounds(center: dab.location, axis: axis, half: roller.radius, thickness: roller.spacing)
                 let coverage = mask.coverage(bounds)
                 guard coverage != .none else { continue }
+                // Clipped as it is laid: re-testing the whole band's box every dab is what made rolling stutter.
                 let rect = InkRasterizer.stampBand(center: dab.location, axis: axis, half: roller.radius, thickness: roller.spacing,
-                                                   into: &raster, strength: roller.strength(for: dab))
-                if coverage == .part { Self.clip(&raster, rect, to: mask) }
+                                                   into: &raster, strength: roller.strength(for: dab),
+                                                   mask: coverage == .part ? mask : nil)
                 markDirty(rect)
             }
         case .eraser(let eraser):

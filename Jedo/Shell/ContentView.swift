@@ -188,7 +188,7 @@ private struct HandGroup: View {
                        selected: session.compassOnDesk) {
                 session.compassOnDesk.toggle()
             }
-            ToolButton(icon: .symbol("scissors"), label: session.knifeInHand ? "커터 내려놓기" : "커터 들기",
+            ToolButton(icon: .hand(.cutter), label: session.knifeInHand ? "커터 내려놓기" : "커터 들기",
                        enabled: session.canCut, selected: session.knifeInHand) {
                 if session.canCut { session.knifeInHand.toggle() }
             }
@@ -220,19 +220,19 @@ private struct InstrumentGroup: View {
     var body: some View {
         ControlGroup {
             ForEach(LeadSize.allCases, id: \.self) { size in
-                TextCell(title: size.label, selected: session.instrument == .mechanical(size)) {
+                TextCell(title: size.label, selected: session.holds(.mechanical(size))) {
                     session.instrument = .mechanical(size)
                 }
                 .accessibilityLabel(Instrument.mechanical(size).name)
             }
             GroupDivider()
-            ToolButton(icon: .symbol("pencil"), label: Instrument.wood.name, selected: session.instrument == .wood) {
+            ToolButton(icon: .symbol("pencil"), label: Instrument.wood.name, selected: session.holds(.wood)) {
                 session.instrument = .wood
             }
             GroupDivider()
             TechnicalPenMenu(session: session)
             ForEach(Nib.allCases, id: \.self) { nib in
-                TextCell(title: nib.label, selected: session.instrument == .dipPen(nib), width: 44) {
+                TextCell(title: nib.label, selected: session.holds(.dipPen(nib)), width: 44) {
                     session.instrument = .dipPen(nib)
                 }
                 .accessibilityLabel(nib.name)
@@ -246,7 +246,7 @@ private struct TechnicalPenMenu: View {
     @Bindable var session: DrawingSession
 
     var body: some View {
-        let current: PenWidth? = if case .technicalPen(let w) = session.instrument { w } else { nil }
+        let current: PenWidth? = if case .technicalPen(let w) = session.instrument, !session.knifeInHand { w } else { nil }
         Menu {
             ForEach(PenWidth.allCases, id: \.self) { width in
                 Button {
@@ -447,14 +447,12 @@ private struct PapersGroup: View {
                 CarbonSwatch(ink: .navy, selected: false).frame(width: Metric.cell, height: Metric.cell)
             }
             .menuStyle(.button).buttonStyle(.plain).accessibilityLabel("먹지 얹기")
-            TextCell(title: "철필", selected: session.instrument == .stylus, width: Metric.cell) {
+            ToolButton(icon: .hand(.stylus), label: "철필", selected: session.holds(.stylus)) {
                 session.instrument = .stylus
             }
-            .accessibilityLabel("철필")
-            TextCell(title: "롤러", selected: session.instrument == .roller, width: Metric.cell) {
+            ToolButton(icon: .hand(.roller), label: "롤러", selected: session.holds(.roller)) {
                 session.instrument = .roller
             }
-            .accessibilityLabel("롤러")
         }
         .photosPicker(isPresented: $pickingPhoto, selection: $photoPick, matching: .images, photoLibrary: .shared())
         .onChange(of: photoPick) { _, item in

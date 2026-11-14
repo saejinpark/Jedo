@@ -9,6 +9,8 @@ final class DrawingSession {
     /// What holds the lead: drafting mechanical pencils for lines, a wood pencil for shading.
     var instrument: Instrument = .mechanical(.mm05) {
         didSet {
+            // Taking up a pencil, pen or roller puts the knife down: the pencil does one thing at a time.
+            if knifeInHand { knifeInHand = false }
             if instrument == .stylus, oldValue != .stylus { show(.stylus) }
             if instrument == .roller, oldValue != .roller { show(.roller) }
         }
@@ -90,6 +92,9 @@ final class DrawingSession {
         didSet { canvas?.eraserKind = eraserKind }
     }
     /// Whether the hand holds the knife, so the pencil cuts tone and a finger peels it.
+    /// Whether `tool` is what the pencil works as now: not while the knife is in hand.
+    func holds(_ tool: Instrument) -> Bool { instrument == tool && !knifeInHand }
+
     var knifeInHand = false {
         didSet {
             canvas?.knifeInHand = knifeInHand

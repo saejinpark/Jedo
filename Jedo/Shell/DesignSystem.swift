@@ -96,6 +96,8 @@ struct GroupDivider: View {
 enum ToolIcon {
     case symbol(String)
     case shape(ToolKind)
+    /// A hand tool with no system symbol, drawn here.
+    case hand(HandGlyph.Tool)
 
     init(_ kind: ToolKind) {
         self = kind == .ruler ? .symbol("ruler") : .shape(kind)
@@ -115,6 +117,8 @@ struct ToolFace: View {
                 Image(systemName: name).font(.system(size: 18, weight: .semibold))
             case .shape(let kind):
                 ToolGlyph(kind: kind).frame(width: 24, height: 24)
+            case .hand(let tool):
+                HandGlyph(tool: tool).frame(width: 26, height: 26)
             }
         }
         .frame(width: Metric.cell, height: Metric.cell)

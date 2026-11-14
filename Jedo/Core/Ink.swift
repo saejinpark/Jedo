@@ -118,8 +118,9 @@ enum InkRasterizer {
                          maxX: Int((Double(center.x) + ex).rounded(.up)), maxY: Int((Double(center.y) + ey).rounded(.up)))
     }
 
+    /// With `mask`, pixels outside it are left alone: tested only where the band lands.
     static func stampBand(center: CGPoint, axis: (x: Double, y: Double), half: Double, thickness: Double,
-                          into raster: inout GraphiteRaster, strength: Float) -> PixelRect {
+                          into raster: inout GraphiteRaster, strength: Float, mask: StrokeMask? = nil) -> PixelRect {
         let area = bandBounds(center: center, axis: axis, half: half, thickness: thickness).intersection(raster.bounds)
         guard !area.isEmpty else { return .empty }
         let cx = Double(center.x), cy = Double(center.y), size = GraphiteRaster.tileSize
@@ -149,7 +150,9 @@ enum InkRasterizer {
                         guard c > 0 else { continue }
                         let v = Float(c) * strength
                         let index = row + px
-                        if v > buffer[index] { buffer[index] = v }
+                        guard v > buffer[index] else { continue }
+                        if let mask, !mask.contains(CGPoint(x: Double(px) + 0.5, y: Double(py) + 0.5)) { continue }
+                        buffer[index] = v
                     }
                 }
             }
