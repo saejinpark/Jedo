@@ -1,7 +1,7 @@
-// Draws the app icon: five tools of the drafting desk gathered on its centre —
-// the parallel rule and two set squares at the back, a French curve (the app's
-// own outline) in front, and the compass over it with its joint on the middle.
-// `--fan` adds a bamboo curve rule and a stylus fanned behind the curve. Few filled, overlapping shapes on a plain ground, the weight in the
+// Draws the app icon: seven tools of the drafting desk gathered on its centre —
+// the parallel rule and two set squares at the back, a bamboo curve rule and a
+// stylus fanned before them, a French curve (the app's own outline) in front,
+// and the compass over it with its joint on the middle. Few filled, overlapping shapes on a plain ground, the weight in the
 // middle, as the Human Interface Guidelines ask of an app icon.
 // Run with Tools/Icon/render.sh
 
@@ -49,16 +49,17 @@ func triangle(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint, inset: Double, _ colour:
 }
 do {
     let top = 690.0
-    triangle(CGPoint(x: 96, y: top), CGPoint(x: 446, y: top), CGPoint(x: 96, y: top - 350), inset: 0.42, hex(0x7FD6C2, 0.80))
-    triangle(CGPoint(x: 928, y: top), CGPoint(x: 668, y: top), CGPoint(x: 928, y: top - 450), inset: 0.42, hex(0x8DBBF2, 0.80))
+    triangle(CGPoint(x: 96, y: top), CGPoint(x: 446, y: top), CGPoint(x: 96, y: top - 350), inset: 0.42, hex(0x7FD6C2, 0.60))
+    triangle(CGPoint(x: 928, y: top), CGPoint(x: 668, y: top), CGPoint(x: 928, y: top - 450), inset: 0.42, hex(0x8DBBF2, 0.60))
     ctx.setFillColor(hex(0xDCE6F2, 0.60))
     ctx.fill(CGRect(x: -20, y: top, width: size + 40, height: 104))
     ctx.setFillColor(hex(0xFFFFFF, 0.55))
     ctx.fill(CGRect(x: -20, y: top, width: size + 40, height: 14))
 }
 
-// Five tools read better than seven at the size of an icon: the bamboo rule and the stylus stay in the drawer.
-let fan = CommandLine.arguments.contains("--fan")
+// The bamboo curve rule stands for pattern drafting and the stylus for scratch and carbon work, so both stay;
+// they are drawn plainly so seven tools still read. `--five` leaves them out.
+let fan = !CommandLine.arguments.contains("--five")
 
 // 1. The bamboo curve rule, leaning left: a long band, bowed a little, with its joints and a few graduations.
 if fan {
@@ -67,23 +68,17 @@ if fan {
     let ss = Array(stride(from: 40.0, through: 800, by: 20))
     let band = ss.map { at($0, bow($0) - width($0) / 2, lean) } + ss.reversed().map { at($0, bow($0) + width($0) / 2, lean) }
     fill(band, hex(0xEAD9A0))
-    for s in [250.0, 520.0] {
-        fill([at(s, bow(s) - width(s) / 2, lean), at(s + 16, bow(s + 16) - width(s + 16) / 2, lean),
-              at(s + 16, bow(s + 16) + width(s + 16) / 2, lean), at(s, bow(s) + width(s) / 2, lean)], hex(0xC2A866), shadow: false)
-    }
-    for s in stride(from: 110.0, through: 760, by: 65) where !(240...290).contains(s) && !(510...560).contains(s) {
-        let w = width(s) / 2
-        fill([at(s, bow(s) - w, lean), at(s + 11, bow(s + 11) - w, lean), at(s + 11, bow(s + 11) - w + 30, lean), at(s, bow(s) - w + 30, lean)],
-             hex(0x7C6A36), shadow: false)
-    }
+    // One joint is enough to say bamboo.
+    let s = 430.0
+    fill([at(s, bow(s) - width(s) / 2, lean), at(s + 18, bow(s + 18) - width(s + 18) / 2, lean),
+          at(s + 18, bow(s + 18) + width(s + 18) / 2, lean), at(s, bow(s) + width(s) / 2, lean)], hex(0xC2A866), shadow: false)
 }
 
 // 2. The stylus, leaning right: a wooden handle, a steel shank, a ball at its tip.
 if fan {
     let lean = 0.60
     fill([at(40, -30, lean), at(470, -30, lean), at(470, 30, lean), at(40, 30, lean)], hex(0x8E3B46))
-    fill([at(470, -34, lean), at(530, -34, lean), at(530, 34, lean), at(470, 34, lean)], hex(0xF1F2F4))
-    fill([at(530, -20, lean), at(770, -9, lean), at(770, 9, lean), at(530, 20, lean)], hex(0xC5CBD6))
+    fill([at(470, -18, lean), at(770, -9, lean), at(770, 9, lean), at(470, 18, lean)], hex(0xC5CBD6))
     let tip = at(778, 0, lean)
     ctx.setFillColor(hex(0xF1F2F4))
     ctx.fillEllipse(in: CGRect(x: tip.x - 23, y: tip.y - 23, width: 46, height: 46))
