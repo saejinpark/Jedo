@@ -139,6 +139,7 @@ struct ContentView: View {
         case .hand: HandGroup(session: session)
         case .desk: DeskToolsGroup(session: session)
         case .sheets: SheetsGroup(session: session)
+        case .papers: PapersGroup(session: session)
         case .history: HistoryGroup(session: session)
         case .map: Color.clear
         case .view:
@@ -228,14 +229,6 @@ private struct InstrumentGroup: View {
             ToolButton(icon: .symbol("pencil"), label: Instrument.wood.name, selected: session.instrument == .wood) {
                 session.instrument = .wood
             }
-            TextCell(title: "철필", selected: session.instrument == .stylus, width: 40) {
-                session.instrument = .stylus
-            }
-            .accessibilityLabel("누름 막대")
-            TextCell(title: "롤러", selected: session.instrument == .roller, width: Metric.cell) {
-                session.instrument = .roller
-            }
-            .accessibilityLabel("롤러")
             GroupDivider()
             TechnicalPenMenu(session: session)
             ForEach(Nib.allCases, id: \.self) { nib in
@@ -426,6 +419,63 @@ private struct SheetBar: View {
     }
 }
 
+/// Laying sheets on the paper, one button a kind, and what carbon is used
+/// with: the stylus to press lines through, the roller to press bands.
+private struct PapersGroup: View {
+    @Bindable var session: DrawingSession
+    @State private var pickingPhoto = false
+    @State private var photoAsCarbon = false
+    @State private var photoPick: PhotosPickerItem?
+
+    var body: some View {
+        ControlGroup {
+            menu("트레이싱지", symbol: "doc.plaintext", GridPattern.allCases.filter { $0.isPlain || $0.isGraph }) { session.addSheet($0) }
+            menu("원고지·공책", symbol: "doc.text", GridPattern.allCases.filter { !$0.isPlain && !$0.isGraph }) { session.addSheet($0) }
+            Menu {
+                ForEach(TonePattern.allCases, id: \.self) { p in Button(p.name) { session.addTone(p) } }
+            } label: { ToolFace(icon: .symbol("circle.grid.3x3.fill")) }
+                .menuStyle(.button).buttonStyle(.plain).accessibilityLabel("톤 얹기")
+            ToolButton(icon: .symbol("photo"), label: "사진 얹기") {
+                photoAsCarbon = false
+                pickingPhoto = true
+            }
+            Menu {
+                ForEach(CarbonInk.allCases, id: \.self) { ink in Button("\(ink.name) 먹지") { session.addCarbon(ink) } }
+                Divider()
+                Button { photoAsCarbon = true; pickingPhoto = true } label: { Label("사진 먹지", systemImage: "photo") }
+            } label: {
+                CarbonSwatch(ink: .navy, selected: false).frame(width: Metric.cell, height: Metric.cell)
+            }
+            .menuStyle(.button).buttonStyle(.plain).accessibilityLabel("먹지 얹기")
+            TextCell(title: "철필", selected: session.instrument == .stylus, width: Metric.cell) {
+                session.instrument = .stylus
+            }
+            .accessibilityLabel("철필")
+            TextCell(title: "롤러", selected: session.instrument == .roller, width: Metric.cell) {
+                session.instrument = .roller
+            }
+            .accessibilityLabel("롤러")
+        }
+        .photosPicker(isPresented: $pickingPhoto, selection: $photoPick, matching: .images, photoLibrary: .shared())
+        .onChange(of: photoPick) { _, item in
+            guard let item else { return }
+            photoPick = nil
+            let asCarbon = photoAsCarbon
+            Task {
+                guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+                if asCarbon { session.addPhotoCarbon(data) } else { session.addPhoto(data) }
+            }
+        }
+    }
+
+    private func menu(_ title: String, symbol: String, _ patterns: [GridPattern], add: @escaping (GridPattern) -> Void) -> some View {
+        Menu {
+            ForEach(patterns, id: \.self) { p in Button(p.name) { add(p) } }
+        } label: { ToolFace(icon: .symbol(symbol)) }
+            .menuStyle(.button).buttonStyle(.plain).accessibilityLabel("\(title) 얹기")
+    }
+}
+
 /// The soft sheets: one panel to lay them on and order them.
 private struct SheetsGroup: View {
     @Bindable var session: DrawingSession
@@ -604,7 +654,7 @@ private struct SheetsButton: View {
             ToolFace(icon: .symbol("square.3.layers.3d"), selected: open || !session.layerRows.isEmpty)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("종이·시트")
+        .accessibilityLabel("레이어")
         .popover(isPresented: $open, arrowEdge: side.onTop ? .top : .bottom) {
             SheetsPanel(session: session)
         }
@@ -613,13 +663,9 @@ private struct SheetsButton: View {
 
 private struct SheetsPanel: View {
     @Bindable var session: DrawingSession
-    @State private var photoPick: PhotosPickerItem?
-    @State private var carbonPick: PhotosPickerItem?
 
     var body: some View {
-        // The list of what lies on the paper on top, what can be laid on below:
-        // the popover grows upward from its arrow, so the buttons below stay
-        // under the finger as the list lengthens.
+        // Only what lies on the paper, top first: laying new sheets is the paper group's.
         VStack(alignment: .leading, spacing: 0) {
             PanelSection(title: "레이어 (위에서부터)") {
                 VStack(spacing: 0) {
@@ -638,73 +684,9 @@ private struct SheetsPanel: View {
                     .padding(.horizontal, 16).padding(.vertical, 8)
                 }
             }
-            Divider()
-            PanelSection(title: "먹지 얹기") {
-                // One tap lays one, in that coating; a photo makes carbon of its own colours.
-                HStack(spacing: 6) {
-                    ForEach(CarbonInk.allCases, id: \.self) { ink in
-                        Button { session.addCarbon(ink) } label: { CarbonSwatch(ink: ink, selected: false) }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("\(ink.name) 먹지 얹기")
-                    }
-                    PhotosPicker(selection: $carbonPick, matching: .images, photoLibrary: .shared()) {
-                        Label("사진 먹지", systemImage: "photo")
-                            .font(.caption.weight(.medium))
-                            .padding(.horizontal, 10).padding(.vertical, 6)
-                            .background(Palette.paper, in: Capsule())
-                            .overlay(Capsule().strokeBorder(Palette.ink.opacity(0.15)))
-                    }
-                    .buttonStyle(.plain)
-                    .onChange(of: carbonPick) { _, item in
-                        guard let item else { return }
-                        carbonPick = nil
-                        Task {
-                            if let data = try? await item.loadTransferable(type: Data.self) { session.addPhotoCarbon(data) }
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-            }
-            Divider()
-            PanelSection(title: "톤 얹기") {
-                chips(TonePattern.allCases.map { p in (p.name, { session.addTone(p) }) })
-            }
-            Divider()
-            PanelSection(title: "트레이싱지 얹기") {
-                chips(GridPattern.allCases.filter { $0.isPlain || $0.isGraph }.map { p in (p.name, { session.addSheet(p) }) })
-            }
-            Divider()
-            PanelSection(title: "사진 얹기") {
-                HStack {
-                    PhotosPicker(selection: $photoPick, matching: .images, photoLibrary: .shared()) {
-                        Label("사진 고르기", systemImage: "photo.on.rectangle")
-                            .font(.subheadline.weight(.medium))
-                            .padding(.horizontal, 12).padding(.vertical, 7)
-                            .background(Palette.paper, in: Capsule())
-                            .overlay(Capsule().strokeBorder(Palette.ink.opacity(0.15)))
-                    }
-                    .buttonStyle(.plain)
-                    Text("인화한 사진처럼 놓입니다. 오리고, 붙이고, 먹지로 씁니다.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 16)
-                .onChange(of: photoPick) { _, item in
-                    guard let item else { return }
-                    photoPick = nil
-                    Task {
-                        if let data = try? await item.loadTransferable(type: Data.self) { session.addPhoto(data) }
-                    }
-                }
-            }
-            Divider()
-            PanelSection(title: "원고지·공책 얹기") {
-                chips(GridPattern.allCases.filter { !$0.isPlain && !$0.isGraph }.map { p in (p.name, { session.addSheet(p) }) },
-                      perRow: 2)
-            }
         }
         .padding(.vertical, 4)
-        .frame(width: 450)
+        .frame(width: 420)
     }
 
     private func chips(_ items: [(String, () -> Void)], perRow: Int = 3) -> some View {

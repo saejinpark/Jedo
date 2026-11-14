@@ -73,3 +73,30 @@ struct RollerTests {
         #expect(plain.graphite.value(x: 300, y: 200) == 0)
     }
 }
+
+struct RollerShapeTests {
+    @Test func aRolledBandIsSquareEndedAndAsWideAsTheRoller() {
+        let ppmm = 10.0
+        let copy = DraftingSheet(width: 800, height: 600, pixelsPerMillimeter: ppmm, isCarbonCopy: true)
+        copy.beginStroke(grade: .hb, instrument: .roller, colour: { _, _ in 2 })
+        copy.extendStroke(with: stride(from: 200.0, through: 600, by: 4).map { StrokeSample(location: CGPoint(x: $0, y: 300), pressure: 1) },
+                          predicted: [])
+        copy.endStroke()
+        let half = RollerDynamics.widthMM / 2 * ppmm
+        // Full strength right to the band's edge across the travel...
+        #expect(CarbonPalette.split(copy.graphite.value(x: 400, y: Int(300 + half - 3))).density > 0.8)
+        #expect(copy.graphite.value(x: 400, y: Int(300 + half + 3)) == 0)
+        // ...and square at the end: the corner is as full as the middle.
+        #expect(CarbonPalette.split(copy.graphite.value(x: 596, y: Int(300 - half + 3))).density > 0.8)
+        #expect(copy.graphite.value(x: 640, y: 300) == 0)
+    }
+
+    @Test func rollingBackKeepsTheAxle() {
+        var spacer = DabSpacer()
+        _ = spacer.append(StrokeSample(location: .zero), spacing: { _ in 1 })
+        spacer.steer(toward: StrokeSample(location: CGPoint(x: 10, y: 0)), keep: 0.8)
+        _ = spacer.append(StrokeSample(location: CGPoint(x: 10, y: 0)), spacing: { _ in 1 })
+        spacer.steer(toward: StrokeSample(location: CGPoint(x: 0, y: 0)), keep: 0.8)
+        #expect(abs(spacer.heading!.x) > 0.99)
+    }
+}

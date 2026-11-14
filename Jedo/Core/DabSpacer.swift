@@ -9,6 +9,24 @@ struct DabSpacer: Sendable {
     private(set) var last: StrokeSample?
     /// Distance still to travel before the next dab.
     private(set) var distanceToNextDab: Double = 0
+    /// Which way the path runs, smoothed: unit vector, nil until it has moved.
+    /// A roller's axle lies across it, and turns only slowly with the hand.
+    private(set) var heading: (x: Double, y: Double)?
+
+    /// Turns the heading toward the way `sample` lies from the last one.
+    mutating func steer(toward sample: StrokeSample, keep: Double) {
+        guard let previous = last else { return }
+        let dx = Double(sample.location.x - previous.location.x), dy = Double(sample.location.y - previous.location.y)
+        let l = (dx * dx + dy * dy).squareRoot()
+        guard l > 0.01 else { return }
+        let now = (x: dx / l, y: dy / l)
+        guard let h = heading else { heading = now; return }
+        // Rolling back the way it came keeps the axle where it is.
+        let sign = h.x * now.x + h.y * now.y < 0 ? -1.0 : 1.0
+        let x = h.x * keep + now.x * sign * (1 - keep), y = h.y * keep + now.y * sign * (1 - keep)
+        let m = (x * x + y * y).squareRoot()
+        if m > 1e-6 { heading = (x / m, y / m) }
+    }
 
     /// Adds a sample and returns the dabs it produces.
     /// `spacing` gives the gap to leave after a dab.

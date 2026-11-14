@@ -20,8 +20,10 @@ struct ShellLayout: Equatable, Codable, Sendable {
         case hand
         /// Rulers, set squares, scale, protractor, pins, templates, curves.
         case desk
-        /// The sheets panel.
+        /// The layers panel: what lies on the paper.
         case sheets
+        /// Laying sheets: tracing, writing paper, tone, photos, carbon; and the stylus and roller used with carbon.
+        case papers
         /// Undo and redo.
         case history
         /// Edge rulers, export, arrangement, new paper.
@@ -32,10 +34,11 @@ struct ShellLayout: Equatable, Codable, Sendable {
         /// Width and height in squares.
         var size: (w: Int, h: Int) {
             switch self {
-            case .pencil: (12, 2)
+            case .pencil: (11, 2)
             case .hand: (4, 1)
             case .desk: (10, 1)
             case .sheets: (1, 1)
+            case .papers: (7, 1)
             case .history: (2, 1)
             case .view: (4, 1)
             case .map: (3, 5)
@@ -73,6 +76,7 @@ struct ShellLayout: Equatable, Codable, Sendable {
             .hand: Spot(fromRight: !r, fromBottom: true, x: 2, y: 0),
             .sheets: Spot(fromRight: !r, fromBottom: true, x: 6, y: 0),
             .desk: Spot(fromRight: !r, fromBottom: true, x: 0, y: 1),
+            .papers: Spot(fromRight: !r, fromBottom: true, x: 0, y: 2),
         ], leftHanded: leftHanded)
     }
 
@@ -81,7 +85,7 @@ struct ShellLayout: Equatable, Codable, Sendable {
     /// map is left out when `withMap` is false (paper fitted to the screen).
     func cells(columns: Int, rows: Int, withMap: Bool = true) -> [Group: Cells] {
         var out: [Group: Cells] = [:]
-        let order: [Group] = [.map, .view, .pencil, .history, .hand, .sheets, .desk]
+        let order: [Group] = [.map, .view, .pencil, .history, .hand, .sheets, .desk, .papers]
         for group in order where withMap || group != .map {
             guard let spot = spots[group] else { continue }
             let (w, h) = group.size

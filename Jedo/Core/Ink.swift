@@ -110,6 +110,41 @@ enum InkRasterizer {
                          maxX: Int((Double(center.x) + r).rounded(.up)), maxY: Int((Double(center.y) + r).rounded(.up)))
     }
 
+    /// A band across the way of travel: the roller's line of contact, `half`
+    /// long each side, `thickness` deep along the heading, square-ended.
+    static func bandBounds(center: CGPoint, axis: (x: Double, y: Double), half: Double, thickness: Double) -> PixelRect {
+        let ex = abs(axis.x) * half + abs(axis.y) * thickness + 1.5, ey = abs(axis.y) * half + abs(axis.x) * thickness + 1.5
+        return PixelRect(minX: Int((Double(center.x) - ex).rounded(.down)), minY: Int((Double(center.y) - ey).rounded(.down)),
+                         maxX: Int((Double(center.x) + ex).rounded(.up)), maxY: Int((Double(center.y) + ey).rounded(.up)))
+    }
+
+    static func stampBand(center: CGPoint, axis: (x: Double, y: Double), half: Double, thickness: Double,
+                          into raster: inout GraphiteRaster, strength: Float) -> PixelRect {
+        let area = bandBounds(center: center, axis: axis, half: half, thickness: thickness).intersection(raster.bounds)
+        guard !area.isEmpty else { return .empty }
+        let cx = Double(center.x), cy = Double(center.y), size = GraphiteRaster.tileSize
+        for coord in raster.tileCoords(overlapping: area) {
+            let tileRect = raster.rect(of: coord).intersection(area)
+            let originX = coord.x * size, originY = coord.y * size
+            raster.withMutableTile(coord) { buffer in
+                for py in tileRect.minY..<tileRect.maxY {
+                    let dy = Double(py) + 0.5 - cy
+                    let row = (py - originY) * size - originX
+                    for px in tileRect.minX..<tileRect.maxX {
+                        let dx = Double(px) + 0.5 - cx
+                        let across = abs(dx * axis.x + dy * axis.y), along = abs(-dx * axis.y + dy * axis.x)
+                        let c = min(max(half + 0.5 - across, 0), 1) * min(max(thickness + 0.5 - along, 0), 1)
+                        guard c > 0 else { continue }
+                        let v = Float(c) * strength
+                        let index = row + px
+                        if v > buffer[index] { buffer[index] = v }
+                    }
+                }
+            }
+        }
+        return area
+    }
+
     /// `strength` scales the dab: the depth of a stylus press.
     static func stamp(center: CGPoint, radius: Double, into raster: inout GraphiteRaster, strength: Float = 1) -> PixelRect {
         let area = bounds(center: center, radius: radius).intersection(raster.bounds)
@@ -210,7 +245,8 @@ struct RollerDynamics: Sendable {
     static let widthMM = 30.0
 
     var radius: Double { Self.widthMM / 2 * pixelsPerMillimeter }
-    var spacing: Double { max(radius * 0.12, 0.5) }
+    /// Between lines of contact: close enough that the band is solid.
+    var spacing: Double { max(0.4 * pixelsPerMillimeter, 0.6) }
 
     /// Rolled lightly the carbon gives a little; leaned on, nearly all.
     func strength(for sample: StrokeSample) -> Float {

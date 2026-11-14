@@ -231,10 +231,24 @@ final class DraftingSheet {
                 markDirty(rect)
             }
         case .roller(let roller):
-            for dab in spacer.append(sample, spacing: { _ in roller.spacing }) {
-                let coverage = mask.coverage(InkRasterizer.bounds(center: dab.location, radius: roller.radius))
+            // A cylinder: its line of contact lies across the way it rolls, and its axle turns only slowly.
+            let was = spacer.heading
+            spacer.steer(toward: sample, keep: 0.8)
+            let dabs = spacer.append(sample, spacing: { _ in roller.spacing })
+            guard let h = spacer.heading else { break }
+            let from = was ?? h
+            for (k, dab) in dabs.enumerated() {
+                // The axle turns smoothly between samples, not in steps.
+                let t = Double(k + 1) / Double(dabs.count)
+                var hx = from.x + (h.x - from.x) * t, hy = from.y + (h.y - from.y) * t
+                let m = max((hx * hx + hy * hy).squareRoot(), 1e-9)
+                hx /= m; hy /= m
+                let axis = (x: -hy, y: hx)
+                let bounds = InkRasterizer.bandBounds(center: dab.location, axis: axis, half: roller.radius, thickness: roller.spacing)
+                let coverage = mask.coverage(bounds)
                 guard coverage != .none else { continue }
-                let rect = InkRasterizer.stamp(center: dab.location, radius: roller.radius, into: &raster, strength: roller.strength(for: dab))
+                let rect = InkRasterizer.stampBand(center: dab.location, axis: axis, half: roller.radius, thickness: roller.spacing,
+                                                   into: &raster, strength: roller.strength(for: dab))
                 if coverage == .part { Self.clip(&raster, rect, to: mask) }
                 markDirty(rect)
             }
