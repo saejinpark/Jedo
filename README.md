@@ -250,6 +250,8 @@ xcodebuild -project Jedo.xcodeproj -scheme Jedo -destination 'platform=iOS Simul
 - `Tools/Drawings/run.sh`가 시뮬레이터의 디버그 빌드에 `-JedoScript 이름`으로 넘겨, 앱의 실제 그리기 경로(`CanvasView.draw`)로 긋고 종이를 PNG로 내보낸다. 결과는 `Tools/Drawings/examples/`에 있다.
 - 필압이 획 안에서 변하는 선(G펜의 들어가고 빠지는 선)처럼 시뮬레이터 마우스로는 낼 수 없는 것을 이렇게 본다. 자·컴퍼스 같은 도구와의 맞물림은 이 길로는 시험되지 않는다.
 - `CanvasView.draw`는 기록된 획을 다시 긋는 "획 재생"의 바탕이다.
+- 실제 그림으로 시험하기: `Tools/Drawings/trace.py 그림.bmp 출력.json 용지 가로(0/1) 펜`이 선화에서 선을 뽑아(이진화 → 세선화 → 선 따라가기, 선 굵기는 필압으로) 획 대본을 만든다. 대본에 `photo`와 `tracing`을 넣으면 그 그림을 사진으로 깔고 트레이싱지를 얹은 뒤 그 위에 긋는다. 그림은 `sips -s format bmp`로 바꿔 넣는다. 시험에 쓴 그림 파일은 저장소에 넣지 않는다.
+- 2026-11-15 측정(시뮬레이터): 실제 건축 평면도와 호쿠사이 만화 한 쪽이 각각 약 1,000획·10,000점, 그리는 데 0.7초(획당 0.7ms), 내보내기 0.4–0.5초, 저장 파일 160–320KB.
 
 ## 획 기록 (손맛을 수치로 보기)
 

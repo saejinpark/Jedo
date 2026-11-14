@@ -1962,6 +1962,16 @@ final class CanvasView: UIView {
         )
     }
 
+    /// Lays a sheet with its middle at a point of the paper, in millimetres, squared to the paper.
+    func placeLayer(_ id: Int, centreMM: CGPoint, angle: Double = 0) {
+        guard let sheet, let i = layers.firstIndex(where: { $0.id == id }) else { return }
+        let ppmm = sheet.pixelsPerMillimeter
+        layers[i].pose = ToolPose(center: CGPoint(x: Double(paperRect.minX) + Double(centreMM.x) * ppmm,
+                                                  y: Double(paperRect.minY) + Double(centreMM.y) * ppmm), angle: angle)
+        layerViews[id]?.place(layers[i], scale: scale)
+        layersChanged()
+    }
+
     // MARK: Drawing from a record
 
     /// A point of a recorded stroke, in millimetres from the paper's top-left corner.

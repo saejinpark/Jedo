@@ -231,7 +231,20 @@ final class DrawingSession {
         canvas?.start(on: paper!)
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.5))
+            let at = script.photoAt.map { CGPoint(x: $0[0], y: $0[1]) }
+            if let name = script.photo, let data = try? Data(contentsOf: folder.appendingPathComponent(name)),
+               let photo = PhotoStore.add(data), let id = canvas?.addPhotoLayer(photo), let at {
+                canvas?.placeLayer(id, centreMM: at)
+            }
+            if script.tracing == true, let id = canvas?.addGridLayer(.tracing), let at {
+                canvas?.placeLayer(id, centreMM: at)
+            }
+            canvas?.selectSheet(nil)
+            let began = Date()
+            var slowest = 0.0
             for stroke in script.strokes {
+                let t = Date()
+                defer { slowest = max(slowest, Date().timeIntervalSince(t)) }
                 guard let instrument = DrawingScript.instrument(stroke.i) else { continue }
                 let grade = PencilGrade.allCases.first { $0.label == stroke.g } ?? .hb
                 canvas?.draw(stroke.pts.map {
@@ -239,7 +252,15 @@ final class DrawingSession {
                                              altitude: $0.count > 3 ? $0[3] : .pi / 2)
                 }, grade: grade, instrument: instrument)
             }
+            let drew = Date().timeIntervalSince(began)
             try? await Task.sleep(for: .seconds(0.5))
+            let exportBegan = Date()
+            let report = { (exported: Double) in
+                let text = String(format: "strokes %d, drawing %.2f s (%.2f ms a stroke, slowest %.1f ms), export %.2f s\n",
+                                  script.strokes.count, drew, drew / Double(max(script.strokes.count, 1)) * 1000, slowest * 1000, exported)
+                try? text.write(to: folder.appendingPathComponent(args[i + 1] + ".txt"), atomically: true, encoding: .utf8)
+            }
+            defer { report(Date().timeIntervalSince(exportBegan)) }
             if let image = canvas?.exportImage(includeSheets: true), let png = image.pngData() {
                 try? png.write(to: folder.appendingPathComponent(args[i + 1] + ".png"))
             }
@@ -258,6 +279,10 @@ final class DrawingSession {
         var paper: String
         var landscape: Bool
         var strokes: [Stroke]
+        /// A picture in Documents to lay as a print, centred at `photoAt` (mm), and tracing paper over it.
+        var photo: String?
+        var photoAt: [Double]?
+        var tracing: Bool?
 
         static func instrument(_ code: String) -> Instrument? {
             switch code {
