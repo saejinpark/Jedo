@@ -3,54 +3,65 @@ import Testing
 @testable import Jedo
 
 struct ShellLayoutTests {
+    // An 11-inch iPad upright: about 15 by 22 squares.
+    let columns = 15, rows = 22
+
     @Test func rightHandedPutsThePencilTopRightAndTheOffHandBottomLeft() {
-        let layout = ShellLayout.standard(leftHanded: false)
-        #expect(layout.slot(of: .pencil) == .topTrailing)
-        #expect(layout.slot(of: .history) == .bottomLeading)
-        #expect(layout.groups(in: .bottomLeading).first == .history)
-        #expect(!layout.mapOnTrailing)
-        #expect(layout.isComplete)
+        let cells = ShellLayout.standard(leftHanded: false).cells(columns: columns, rows: rows)
+        #expect(cells[.pencil]!.x + cells[.pencil]!.w == columns && cells[.pencil]!.y == 1)
+        #expect(cells[.view]!.x + cells[.view]!.w == columns && cells[.view]!.y == 0)
+        #expect(cells[.history]!.x == 0 && cells[.history]!.y == rows - 1)
+        #expect(cells[.map]!.x == 0 && cells[.map]!.y == 0)
+        #expect(ShellLayout.standard(leftHanded: false).isComplete)
+    }
+
+    @Test func nothingOverlapsOnAnyIPad() {
+        for (c, r) in [(15, 22), (22, 15), (13, 19), (19, 13), (19, 25), (25, 19)] {
+            for left in [false, true] {
+                let cells = Array(ShellLayout.standard(leftHanded: left).cells(columns: c, rows: r).values)
+                for i in cells.indices {
+                    for j in cells.indices where j > i { #expect(!cells[i].overlaps(cells[j]), "\(c)x\(r)") }
+                    #expect(cells[i].x >= 0 && cells[i].x + cells[i].w <= c && cells[i].y + cells[i].h <= r)
+                }
+            }
+        }
     }
 
     @Test func leftHandedIsTheMirror() {
-        let layout = ShellLayout.standard(leftHanded: true)
-        #expect(layout.slot(of: .pencil) == .topLeading)
-        #expect(layout.slot(of: .desk) == .bottomTrailing)
-        #expect(layout.mapOnTrailing)
-        #expect(ShellLayout.standard(leftHanded: false).mirrored == layout)
+        let cells = ShellLayout.standard(leftHanded: true).cells(columns: columns, rows: rows)
+        #expect(cells[.pencil]!.x == 0)
+        #expect(cells[.map]!.x + cells[.map]!.w == columns)
+        #expect(ShellLayout.standard(leftHanded: false).mirrored == ShellLayout.standard(leftHanded: true))
     }
 
-    @Test func aMovedGroupLeavesItsPlaceAndJoinsTheEndOfTheNew() {
+    @Test func aGroupDroppedOnFreeSquaresStaysByItsNearestCorner() {
         var layout = ShellLayout.standard(leftHanded: false)
-        layout.move(.history, to: .bottomTrailing)
-        layout.move(.desk, to: .bottomTrailing)
-        #expect(layout.groups(in: .bottomTrailing) == [.history, .desk])
-        #expect(!layout.groups(in: .bottomLeading).contains(.history))
-        #expect(layout.isComplete)
-        layout.move(.history, to: .bottomTrailing)
-        #expect(layout.groups(in: .bottomTrailing) == [.desk, .history])
+        let placed = layout.place(.history, at: .init(x: 13, y: 10, w: 2, h: 1), columns: columns, rows: rows)
+        #expect(placed)
+        #expect(layout.cells(columns: columns, rows: rows)[.history] == .init(x: 13, y: 10, w: 2, h: 1))
+        // Turned to landscape it keeps 0 squares from the right.
+        let turned = layout.cells(columns: 22, rows: 15)[.history]!
+        #expect(turned.x + turned.w == 22)
     }
 
-    @Test func aDropFindsTheNearestPlace() {
-        let size = CGSize(width: 900, height: 1200)
-        #expect(ShellLayout.Slot.at(CGPoint(x: 10, y: 10), in: size) == .topLeading)
-        #expect(ShellLayout.Slot.at(CGPoint(x: 450, y: 1100), in: size) == .bottom)
-        #expect(ShellLayout.Slot.at(CGPoint(x: 880, y: 700), in: size) == .bottomTrailing)
+    @Test func aGroupIsNotDroppedOnAnother() {
+        var layout = ShellLayout.standard(leftHanded: false)
+        let pencil = layout.cells(columns: columns, rows: rows)[.pencil]!
+        let onPencil = layout.place(.sheets, at: .init(x: pencil.x, y: pencil.y, w: 1, h: 1), columns: columns, rows: rows)
+        let offGrid = layout.place(.sheets, at: .init(x: -1, y: 3, w: 1, h: 1), columns: columns, rows: rows)
+        #expect(!onPencil && !offGrid)
     }
 
     @Test func itIsRememberedAndABrokenRecordIsRefused() {
         var layout = ShellLayout.standard(leftHanded: true)
-        layout.move(.view, to: .top)
+        layout.place(.view, at: .init(x: 5, y: 8, w: 4, h: 1), columns: columns, rows: rows)
         #expect(ShellLayout(encoded: layout.encoded) == layout)
         #expect(ShellLayout(encoded: "") == nil)
-        #expect(ShellLayout(encoded: #"{"leftHanded":false,"slots":[]}"#) == nil)
+        #expect(ShellLayout(encoded: #"{"leftHanded":false,"spots":[]}"#) == nil)
     }
 
-    @Test func theMapGoesToTheEmptierTopCorner() {
-        var layout = ShellLayout.standard(leftHanded: false)
-        layout.move(.desk, to: .topLeading)
-        layout.move(.hand, to: .topLeading)
-        layout.move(.sheets, to: .topLeading)
-        #expect(layout.mapOnTrailing)
+    @Test func controlsTakeWholeSquares() {
+        #expect(UnitRow.units(Metric.cell) == 1)
+        #expect(UnitRow.units(62) == 2)
     }
 }

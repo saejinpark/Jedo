@@ -46,7 +46,8 @@ final class PaperDeskView: UIView {
         didSet { setNeedsLayout() }
     }
     /// The map and stick sit in the top right instead of the top left (left-handed, or groups there).
-    var mapOnTrailing = false {
+    /// The top-left of the map's place on the screen's grid, where the shell puts it.
+    var mapOrigin: CGPoint? {
         didSet { setNeedsLayout() }
     }
     /// Where the sheet's centre sits from the screen's centre, in screen points.
@@ -94,10 +95,11 @@ final class PaperDeskView: UIView {
         leftRuler.frame = CGRect(x: 0, y: 0, width: t, height: bounds.height)
         let clear: CGFloat = ruled ? t : 0
         let inset = max(safeAreaInsets.top, 20) + clear
-        let mapX = mapOnTrailing ? bounds.width - max(safeAreaInsets.right, 20) - Self.minimapSide
-                                 : max(safeAreaInsets.left, 20) + clear
-        minimap.frame = CGRect(x: mapX, y: inset, width: Self.minimapSide, height: Self.minimapSide)
-        stick.frame = CGRect(x: minimap.frame.midX - PanStick.side / 2, y: minimap.frame.maxY + 14,
+        // Three grid squares wide: the map with the stick below it.
+        let place = mapOrigin ?? CGPoint(x: max(safeAreaInsets.left, 20) + clear, y: inset)
+        let pad = (ShellLayout.unit * 3 - Self.minimapSide) / 2
+        minimap.frame = CGRect(x: place.x + pad, y: place.y + pad, width: Self.minimapSide, height: Self.minimapSide)
+        stick.frame = CGRect(x: minimap.frame.midX - PanStick.side / 2, y: minimap.frame.maxY + 8,
                              width: PanStick.side, height: PanStick.side)
         // Nothing to map or move until the paper is laid.
         // Paper fitted to the screen never moves, so it needs neither.

@@ -47,8 +47,9 @@ final class DrawingSession {
         }
     }
     /// Whether the paper's map sits top right rather than top left.
-    var mapOnTrailing = false {
-        didSet { desk?.mapOnTrailing = mapOnTrailing }
+    /// Where the map's grid squares start on the screen, as the arrangement puts them.
+    var mapOrigin: CGPoint? {
+        didSet { if mapOrigin != oldValue { desk?.mapOrigin = mapOrigin } }
     }
     /// Millimetre scales of the paper along the screen's edges.
     var edgeRulers = true {

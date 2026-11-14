@@ -6,7 +6,8 @@ struct PencilGrades: View {
     @Binding var selection: PencilGrade
 
     var body: some View {
-        HStack(spacing: Metric.cellGap) {
+        // One grid square each: no stack of its own, so the group's row lays them out.
+        Group {
             ForEach(PencilGrade.allCases) { grade in
                 let selected = grade == selection
                 Button {
@@ -20,7 +21,7 @@ struct PencilGrades: View {
                         Text(grade.label)
                             .font(.system(size: 13, weight: selected ? .bold : .medium, design: .rounded))
                     }
-                    .frame(width: 38, height: Metric.cell)
+                    .frame(width: Metric.cell, height: Metric.cell)
                     .foregroundStyle(selected ? Color.white : Palette.ink.opacity(0.8))
                     .background(selected ? AnyShapeStyle(Palette.ink) : AnyShapeStyle(Color.clear),
                                 in: RoundedRectangle(cornerRadius: Metric.cellRadius))

@@ -20,7 +20,7 @@ struct CanvasRepresentable: UIViewControllerRepresentable {
         view.onToolSpotTaken = { [weak session] kind in session?.toolSpotTaken(kind) }
         session.canvas = view
         session.desk = controller.desk
-        controller.desk.mapOnTrailing = session.mapOnTrailing
+        controller.desk.mapOrigin = session.mapOrigin
         session.resumeSaved()
         return controller
     }

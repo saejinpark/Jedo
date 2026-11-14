@@ -1,121 +1,102 @@
 import SwiftUI
 
+/// Which side of the screen a group sits on, so it can line its rows up
+/// with the edge and open its popups away from it.
+struct ShellSide: Equatable {
+    var fromRight = false
+    var onTop = false
+}
+
 extension EnvironmentValues {
-    /// Where around the screen the group being drawn sits, so it can open
-    /// its menus and popups away from the edge.
-    @Entry var shellSlot: ShellLayout.Slot = .bottomLeading
+    @Entry var shellSide = ShellSide()
 }
 
-extension ShellLayout.Slot {
-    var alignment: Alignment {
-        switch self {
-        case .topLeading: .topLeading
-        case .top: .top
-        case .topTrailing: .topTrailing
-        case .bottomLeading: .bottomLeading
-        case .bottom: .bottom
-        case .bottomTrailing: .bottomTrailing
-        }
-    }
-
-    var horizontalAlignment: HorizontalAlignment {
-        side < 0 ? .leading : side > 0 ? .trailing : .center
-    }
-}
-
-/// Lays groups out from a corner: the first sits in the corner, the rest
-/// follow along the edge and wrap into rows growing away from it.
-struct CornerFlow: Layout {
-    let slot: ShellLayout.Slot
-    var spacing: CGFloat = Metric.groupGap
-
-    private func rows(_ subviews: Subviews, width: CGFloat) -> [[(index: Int, size: CGSize)]] {
-        var rows: [[(Int, CGSize)]] = []
-        var row: [(Int, CGSize)] = []
-        var used: CGFloat = 0
-        for (i, view) in subviews.enumerated() {
-            let size = view.sizeThatFits(.unspecified)
-            let wanted = row.isEmpty ? size.width : used + spacing + size.width
-            if !row.isEmpty, wanted > width {
-                rows.append(row)
-                row = [(i, size)]
-                used = size.width
-            } else {
-                row.append((i, size))
-                used = wanted
-            }
-        }
-        if !row.isEmpty { rows.append(row) }
-        return rows
-    }
-
-    private func width(of row: [(index: Int, size: CGSize)]) -> CGFloat {
-        row.map(\.size.width).reduce(0, +) + spacing * CGFloat(max(row.count - 1, 0))
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let rows = rows(subviews, width: proposal.width ?? .infinity)
-        let heights = rows.map { $0.map(\.size.height).max() ?? 0 }
-        return CGSize(width: rows.map(width(of:)).max() ?? 0,
-                      height: heights.reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0)))
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var y = slot.isTop ? bounds.minY : bounds.maxY
-        for row in rows(subviews, width: bounds.width) {
-            let height = row.map(\.size.height).max() ?? 0
-            var x: CGFloat = switch slot.side {
-            case ..<0: bounds.minX
-            case 1...: bounds.maxX
-            default: bounds.midX - width(of: row) / 2
-            }
-            for (i, size) in row {
-                let left: CGFloat
-                if slot.side > 0 {
-                    x -= size.width
-                    left = x
-                    x -= spacing
-                } else {
-                    left = x
-                    x += size.width + spacing
-                }
-                subviews[i].place(at: CGPoint(x: left, y: slot.isTop ? y : y - size.height),
-                                  anchor: .topLeading, proposal: ProposedViewSize(size))
-            }
-            y += slot.isTop ? height + spacing : -(height + spacing)
-        }
-    }
-}
-
-/// While arranging: the six places as outlines, the one under the dragged
-/// group lit, and a card to finish or start over from a hand's arrangement.
-struct ArrangeBoard: View {
+/// The screen's grid of squares, `ShellLayout.unit` on a side, inside the
+/// margins and clear of the edge rulers, centred so the slack is shared.
+struct ShellGrid {
+    let columns: Int
+    let rows: Int
+    let origin: CGPoint
     let size: CGSize
-    let insets: EdgeInsets
-    let target: ShellLayout.Slot?
+
+    init(size: CGSize, insets: EdgeInsets, edgeRulers: Bool) {
+        let u = ShellLayout.unit
+        let ruler = edgeRulers ? EdgeRulerView.thickness + 6 : 10
+        let left = max(insets.leading, 0) + ruler, top = max(insets.top, 0) + ruler
+        let right = max(insets.trailing, 0) + 10, bottom = max(insets.bottom, 0) + 8
+        let width = max(size.width - left - right, 0), height = max(size.height - top - bottom, 0)
+        columns = max(Int(width / u), 1)
+        rows = max(Int(height / u), 1)
+        origin = CGPoint(x: left + (width - CGFloat(columns) * u) / 2, y: top + (height - CGFloat(rows) * u) / 2)
+        self.size = size
+    }
+
+    func rect(_ c: ShellLayout.Cells) -> CGRect {
+        let u = ShellLayout.unit
+        return CGRect(x: origin.x + CGFloat(c.x) * u, y: origin.y + CGFloat(c.y) * u, width: CGFloat(c.w) * u, height: CGFloat(c.h) * u)
+    }
+
+    /// Where a passing hint sits: the widest run of free squares in the
+    /// highest two free rows, so it never covers a group or the map.
+    func hintSpot(avoiding taken: [ShellLayout.Cells]) -> CGRect {
+        let u = ShellLayout.unit
+        for r in 0..<max(rows - 1, 1) {
+            var best: (x: Int, w: Int) = (0, 0), run = 0
+            for c in 0..<columns {
+                let free = !taken.contains { $0.overlaps(ShellLayout.Cells(x: c, y: r, w: 1, h: 2)) }
+                run = free ? run + 1 : 0
+                if run > best.w { best = (c - run + 1, run) }
+            }
+            if best.w >= min(8, columns) {
+                return CGRect(x: origin.x + CGFloat(best.x) * u, y: origin.y + CGFloat(r) * u, width: CGFloat(best.w) * u, height: 2 * u)
+            }
+        }
+        return CGRect(x: origin.x, y: origin.y + CGFloat(rows / 3) * u, width: CGFloat(columns) * u, height: 2 * u)
+    }
+}
+
+/// While arranging: the grid over the whole screen, the squares a dragged
+/// group would land on (green when free, red when taken), and a card to
+/// finish or start again from a hand's arrangement.
+struct ArrangeBoard: View {
+    let grid: ShellGrid
+    let cells: [ShellLayout.Group: ShellLayout.Cells]
+    let dragging: ShellLayout.Group?
+    let dragOffset: CGSize
     let leftHanded: Bool
     let reset: (Bool) -> Void
     let done: () -> Void
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.16)
-                .ignoresSafeArea()
+        ZStack(alignment: .topLeading) {
+            Color.black.opacity(0.14)
                 .contentShape(Rectangle())
-            ForEach(ShellLayout.Slot.allCases, id: \.self) { slot in
-                let lit = slot == target
-                RoundedRectangle(cornerRadius: 18)
-                    .strokeBorder(Palette.ink.opacity(lit ? 0.7 : 0.25), style: StrokeStyle(lineWidth: lit ? 2.5 : 1.5, dash: [7, 6]))
-                    .background(lit ? Palette.paper.opacity(0.35) : .clear, in: RoundedRectangle(cornerRadius: 18))
-                    .overlay(alignment: slot.isTop ? .bottom : .top) {
-                        Text(slot.name).font(.caption.weight(.semibold)).foregroundStyle(Palette.ink.opacity(0.6)).padding(10)
-                    }
-                    .frame(width: size.width / 3 - 12, height: size.height / 2 - 12)
-                    .position(x: size.width / 6 * CGFloat(2 * (slot.side + 1) + 1), y: slot.isTop ? size.height / 4 : size.height * 3 / 4)
+            Canvas { context, _ in
+                let u = ShellLayout.unit
+                var lines = Path()
+                for c in 0...grid.columns {
+                    let x = grid.origin.x + CGFloat(c) * u
+                    lines.move(to: CGPoint(x: x, y: grid.origin.y))
+                    lines.addLine(to: CGPoint(x: x, y: grid.origin.y + CGFloat(grid.rows) * u))
+                }
+                for r in 0...grid.rows {
+                    let y = grid.origin.y + CGFloat(r) * u
+                    lines.move(to: CGPoint(x: grid.origin.x, y: y))
+                    lines.addLine(to: CGPoint(x: grid.origin.x + CGFloat(grid.columns) * u, y: y))
+                }
+                context.stroke(lines, with: .color(Palette.ink.opacity(0.18)), lineWidth: 0.5)
+                if let group = dragging, let from = cells[group] {
+                    let to = ShellLayout.Cells(x: from.x + Int((dragOffset.width / u).rounded()),
+                                               y: from.y + Int((dragOffset.height / u).rounded()), w: from.w, h: from.h)
+                    let inside = to.x >= 0 && to.y >= 0 && to.x + to.w <= grid.columns && to.y + to.h <= grid.rows
+                    let free = inside && !cells.contains { $0.key != group && $0.value.overlaps(to) }
+                    let colour = free ? Color(red: 0.2, green: 0.6, blue: 0.35) : Color(red: 0.85, green: 0.25, blue: 0.2)
+                    context.fill(Path(roundedRect: grid.rect(to), cornerRadius: Metric.groupRadius), with: .color(colour.opacity(0.22)))
+                }
             }
             VStack(spacing: 14) {
                 Text("배치 바꾸기").font(.headline)
-                Text("묶음을 끌어 놓을 자리에 내려놓으세요.\n같은 자리에 놓으면 모서리에서부터 차례로 붙습니다.")
+                Text("묶음을 끌어 모눈 위에 놓으세요. 다른 묶음이 있는 칸에는 놓이지 않습니다.\n가까운 모서리에서 몇 칸인지로 기억해서, 아이패드를 돌려도 그 모서리에 남습니다.")
                     .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 HStack(spacing: 8) {
                     Chip(title: "오른손잡이 기본", selected: !leftHanded) { reset(false) }
@@ -126,9 +107,11 @@ struct ArrangeBoard: View {
                     .tint(Palette.ink)
             }
             .padding(22)
+            .frame(width: 400)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
             .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
-            .position(x: size.width / 2, y: size.height / 2)
+            .position(x: grid.size.width / 2, y: grid.size.height / 2)
         }
+        .frame(width: grid.size.width, height: grid.size.height)
     }
 }

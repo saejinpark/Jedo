@@ -3,21 +3,16 @@ import SwiftUI
 struct ContentView: View {
     @State private var session = DrawingSession()
     /// The arrangement of the control groups, kept between launches.
-    @AppStorage("shellLayout") private var savedLayout = ""
+    @AppStorage("shellLayout2") private var savedLayout = ""
     @State private var arranging = false
     /// Whether the guide has been through once.
     @AppStorage("guideSeen") private var guideSeen = false
     @State private var showingGuide = false
     @State private var dragging: ShellLayout.Group?
     @State private var dragOffset = CGSize.zero
-    @State private var dragTarget: ShellLayout.Slot?
 
     private var layout: ShellLayout { ShellLayout(encoded: savedLayout) ?? .standard(leftHanded: false) }
-
-    private func setLayout(_ new: ShellLayout) {
-        savedLayout = new.encoded
-        session.mapOnTrailing = new.mapOnTrailing
-    }
+    private var mapShown: Bool { session.paper.map { !$0.fitsScreen } ?? false }
 
     var body: some View {
         ZStack {
@@ -29,28 +24,40 @@ struct ContentView: View {
                 PaperPicker { session.start(on: $0) }
             } else {
                 GeometryReader { geo in
-                    ZStack {
+                    let grid = ShellGrid(size: geo.size, insets: geo.safeAreaInsets, edgeRulers: session.edgeRulers)
+                    let cells = layout.cells(columns: grid.columns, rows: grid.rows, withMap: mapShown)
+                    ZStack(alignment: .topLeading) {
                         if arranging {
-                            ArrangeBoard(size: geo.size, insets: geo.safeAreaInsets, target: dragTarget,
+                            ArrangeBoard(grid: grid, cells: cells, dragging: dragging, dragOffset: dragOffset,
                                          leftHanded: layout.leftHanded,
-                                         reset: { setLayout(.standard(leftHanded: $0)) },
+                                         reset: { savedLayout = ShellLayout.standard(leftHanded: $0).encoded },
                                          done: { arranging = false })
                         }
-                        ForEach(ShellLayout.Slot.allCases, id: \.self) { slot in
-                            slotView(slot, size: geo.size)
-                                .zIndex(dragging.map { layout.slot(of: $0) == slot } == true ? 2 : 1)
+                        ForEach(ShellLayout.Group.allCases, id: \.self) { group in
+                            if let c = cells[group], group != .map {
+                                placed(group, at: c, grid: grid, cells: cells)
+                            }
+                        }
+                        if arranging, let c = cells[.map] {
+                            // The map is drawn by the desk; while arranging, a card stands in for it to drag.
+                            placed(.map, at: c, grid: grid, cells: cells)
                         }
                         if let hint = session.hint {
+                            let spot = grid.hintSpot(avoiding: Array(cells.values))
                             HintBubble(hint: hint)
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                                // Below whatever sits along the top edge.
-                                .padding(.top, [.topLeading, .top, .topTrailing].allSatisfy { layout.groups(in: $0).isEmpty } ? 34 : 220)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                                .frame(maxWidth: min(spot.width - 8, 560))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .position(x: spot.midX, y: spot.midY)
+                                .transition(.opacity)
                                 .allowsHitTesting(false)
                         }
                     }
-                    .coordinateSpace(.named("shell"))
+                    .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                    .onChange(of: cells[.map].map { grid.rect($0).origin }, initial: true) { _, origin in
+                        session.mapOrigin = origin
+                    }
                 }
+                .ignoresSafeArea()
                 .animation(.spring(duration: 0.35), value: session.hint)
                 .animation(.snappy(duration: 0.25), value: savedLayout)
             }
@@ -58,7 +65,7 @@ struct ContentView: View {
         .overlay {
             if showingGuide || !guideSeen {
                 GuideCards(leftHanded: layout.leftHanded,
-                           chooseHand: { setLayout(.standard(leftHanded: $0)) },
+                           chooseHand: { savedLayout = ShellLayout.standard(leftHanded: $0).encoded },
                            done: {
                                guideSeen = true
                                showingGuide = false
@@ -68,60 +75,52 @@ struct ContentView: View {
         }
         .animation(.snappy(duration: 0.25), value: showingGuide)
         .animation(.snappy(duration: 0.25), value: guideSeen)
-        .onAppear { session.mapOnTrailing = layout.mapOnTrailing }
         .preferredColorScheme(.light)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .defersSystemGestures(on: .all)
     }
 
-    /// One place around the edge with its groups.
-    private func slotView(_ slot: ShellLayout.Slot, size: CGSize) -> some View {
-        CornerFlow(slot: slot) {
-            ForEach(layout.groups(in: slot), id: \.self) { group in
-                placed(group, in: slot, size: size)
-            }
-        }
-        .frame(maxWidth: maxWidth(slot, size: size), alignment: slot.alignment)
-        .padding(.top, slot.isTop ? topInset(slot) : 0)
-        // Clear of the edge ruler down the left side.
-        .padding(.leading, session.edgeRulers ? EdgeRulerView.thickness + 8 : Metric.margin)
-        .padding(.trailing, Metric.margin)
-        .padding(.bottom, slot.isTop ? 0 : Metric.margin)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: slot.alignment)
-    }
-
-    /// A group in its place; while arranging, it is picked up and dropped instead of used.
-    private func placed(_ group: ShellLayout.Group, in slot: ShellLayout.Slot, size: CGSize) -> some View {
-        groupView(group)
-            .environment(\.shellSlot, slot)
+    /// A group on its squares; while arranging, it is picked up and dropped on the grid instead of used.
+    private func placed(_ group: ShellLayout.Group, at c: ShellLayout.Cells, grid: ShellGrid, cells: [ShellLayout.Group: ShellLayout.Cells]) -> some View {
+        let rect = grid.rect(c)
+        let fromRight = layout.leftHanded ? c.x + c.w / 2 > grid.columns / 2 : c.x + c.w / 2 > grid.columns / 2
+        return groupView(group)
+            .environment(\.shellSide, ShellSide(fromRight: fromRight, onTop: c.y + c.h / 2 < grid.rows / 2))
+            .frame(width: rect.width, height: rect.height, alignment: fromRight ? .topTrailing : .topLeading)
             .allowsHitTesting(!arranging)
             .overlay {
                 if arranging {
-                    RoundedRectangle(cornerRadius: Metric.groupRadius + 3)
-                        .strokeBorder(Palette.ink.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                        .padding(-3)
+                    RoundedRectangle(cornerRadius: Metric.groupRadius)
+                        .strokeBorder(Palette.ink.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                        .background(group == .map ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Color.clear),
+                                    in: RoundedRectangle(cornerRadius: Metric.groupRadius))
+                        .overlay { if group == .map { Label("지도", systemImage: "map").font(.caption.weight(.semibold)) } }
                         .contentShape(Rectangle())
                         .gesture(
-                            DragGesture(minimumDistance: 0, coordinateSpace: .named("shell"))
+                            DragGesture(minimumDistance: 0)
                                 .onChanged { value in
                                     dragging = group
                                     dragOffset = value.translation
-                                    dragTarget = .at(value.location, in: size)
                                 }
                                 .onEnded { value in
                                     var new = layout
-                                    new.move(group, to: .at(value.location, in: size))
+                                    let moved = ShellLayout.Cells(x: c.x + Int((value.translation.width / ShellLayout.unit).rounded()),
+                                                                  y: c.y + Int((value.translation.height / ShellLayout.unit).rounded()),
+                                                                  w: c.w, h: c.h)
+                                    // Where another group already sits it goes back where it was.
+                                    if new.place(group, at: moved, columns: grid.columns, rows: grid.rows, withMap: mapShown) {
+                                        savedLayout = new.encoded
+                                    }
                                     dragging = nil
                                     dragOffset = .zero
-                                    dragTarget = nil
-                                    setLayout(new)
                                 }
                         )
                 }
             }
-            .offset(dragging == group ? dragOffset : .zero)
-            .scaleEffect(dragging == group ? 1.04 : 1)
+            .offset(x: rect.minX + (dragging == group ? dragOffset.width : 0),
+                    y: rect.minY + (dragging == group ? dragOffset.height : 0))
+            .zIndex(dragging == group ? 2 : 1)
     }
 
     @ViewBuilder
@@ -132,90 +131,56 @@ struct ContentView: View {
         case .desk: DeskToolsGroup(session: session)
         case .sheets: SheetsGroup(session: session)
         case .history: HistoryGroup(session: session)
+        case .map: Color.clear
         case .view:
             ViewGroup(session: session, leftHanded: layout.leftHanded,
                       newPaper: {
                           session.throwAwayPaper()
                           session = DrawingSession()
-                          session.mapOnTrailing = layout.mapOnTrailing
                       },
-                      hand: { setLayout(.standard(leftHanded: $0)) },
+                      hand: { savedLayout = ShellLayout.standard(leftHanded: $0).encoded },
                       arrange: { arranging = true },
                       guide: { showingGuide = true })
         }
     }
-
-    /// How wide a place may grow before its groups wrap: sharing its edge with the places beside it.
-    private func maxWidth(_ slot: ShellLayout.Slot, size: CGSize) -> CGFloat {
-        let full = max(size.width - 2 * Metric.margin, 0)
-        let row: [ShellLayout.Slot] = slot.isTop ? [.topLeading, .top, .topTrailing] : [.bottomLeading, .bottom, .bottomTrailing]
-        let used = { (s: ShellLayout.Slot) in !layout.groups(in: s).isEmpty }
-        if slot.side == 0 { return row.filter { $0.side != 0 }.contains(where: used) ? full / 3 : full }
-        if used(row[1]) { return full / 3 - Metric.groupGap }
-        let opposite = row.first { $0.side == -slot.side }!
-        if used(opposite) { return full / 2 - Metric.groupGap }
-        // The map takes the other top corner when it is shown.
-        if slot.isTop, mapShown, opposite == mapCorner { return full - PaperDeskView.minimapSide - 2 * Metric.groupGap }
-        return full
-    }
-
-    private var mapCorner: ShellLayout.Slot { layout.mapOnTrailing ? .topTrailing : .topLeading }
-    private var mapShown: Bool { session.paper.map { !$0.fitsScreen } ?? false }
-
-    /// Below the edge ruler, and below the map and stick in their corner.
-    private func topInset(_ slot: ShellLayout.Slot) -> CGFloat {
-        let ruler: CGFloat = 34
-        guard mapShown, slot == mapCorner else { return ruler }
-        return ruler + PaperDeskView.minimapSide + 14 + PanStick.side + 14
-    }
 }
 
-/// What the off hand holds: the eraser, the compass, and the knife when
-/// there is tone to cut.
+/// What the off hand holds: the eraser and which one, the compass, the knife.
+/// Always four squares: what can't be used now is dimmed, not taken away.
 private struct HandGroup: View {
     @Bindable var session: DrawingSession
-    @Environment(\.shellSlot) private var slot
 
     var body: some View {
-        VStack(alignment: slot.horizontalAlignment, spacing: Metric.groupGap) {
-            if slot.isTop { tools }
-            if session.eraserInHand {
-                // Which eraser, while one is in hand: a small group beside the hand, away from the edge.
-                ControlGroup {
-                    ForEach(EraserKind.allCases, id: \.self) { kind in
-                        TextCell(title: kind.name, selected: session.eraserKind == kind) { session.eraserKind = kind }
-                            .accessibilityLabel("\(kind.name)지우개")
-                    }
-                    GroupDivider()
-                    let shieldOut = session.toolsOnDesk.contains(.erasingShield)
-                    ToolButton(icon: .shape(.erasingShield), label: shieldOut ? "지움판 치우기" : "지움판 꺼내기", selected: shieldOut) {
-                        session.toggle(.erasingShield)
-                    }
-                }
-                .transition(.move(edge: slot.isTop ? .top : .bottom).combined(with: .opacity))
-            }
-            if !slot.isTop { tools }
-        }
-        .animation(.snappy(duration: 0.2), value: session.eraserInHand)
-        .animation(.snappy(duration: 0.2), value: session.canCut)
-    }
-
-    private var tools: some View {
         ControlGroup {
             ToolButton(icon: .symbol("eraser"), label: session.eraserInHand ? "지우개 내려놓기" : "지우개 들기",
                        selected: session.eraserInHand) {
                 session.eraserInHand.toggle()
             }
+            Menu {
+                ForEach(EraserKind.allCases, id: \.self) { kind in
+                    Button {
+                        session.eraserKind = kind
+                        if !session.eraserInHand { session.eraserInHand = true }
+                    } label: {
+                        Label("\(kind.name)지우개", systemImage: session.eraserKind == kind ? "checkmark" : "")
+                    }
+                }
+                Divider()
+                let shieldOut = session.toolsOnDesk.contains(.erasingShield)
+                Button(shieldOut ? "지움판 치우기" : "지움판 꺼내기") { session.toggle(.erasingShield) }
+            } label: {
+                TextFace(title: session.eraserKind.name, selected: false, width: Metric.cell)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .accessibilityLabel("지우개 종류")
             ToolButton(icon: .symbol("compass.drawing"), label: session.compassOnDesk ? "컴퍼스 치우기" : "컴퍼스 꺼내기",
                        selected: session.compassOnDesk) {
                 session.compassOnDesk.toggle()
             }
-            if session.canCut {
-                ToolButton(icon: .symbol("scissors"), label: session.knifeInHand ? "커터 내려놓기" : "커터 들기",
-                           selected: session.knifeInHand) {
-                    session.knifeInHand.toggle()
-                }
-                .transition(.scale.combined(with: .opacity))
+            ToolButton(icon: .symbol("scissors"), label: session.knifeInHand ? "커터 내려놓기" : "커터 들기",
+                       enabled: session.canCut, selected: session.knifeInHand) {
+                if session.canCut { session.knifeInHand.toggle() }
             }
         }
     }
@@ -224,10 +189,10 @@ private struct HandGroup: View {
 /// The pencil hand's choices: what holds the lead, and the lead's grade.
 private struct PencilGroup: View {
     @Bindable var session: DrawingSession
-    @Environment(\.shellSlot) private var slot
+    @Environment(\.shellSide) private var side
 
     var body: some View {
-        VStack(alignment: slot.horizontalAlignment, spacing: Metric.groupGap) {
+        VStack(alignment: side.fromRight ? .trailing : .leading, spacing: 0) {
             InstrumentGroup(session: session)
             // Only lead has a grade: with ink or the stylus in hand the grades can't be chosen.
             ControlGroup { PencilGrades(selection: $session.grade) }
@@ -542,7 +507,7 @@ private struct PaperPicker: View {
 /// and see them as they lie over the paper, top first.
 private struct SheetsButton: View {
     @Bindable var session: DrawingSession
-    @Environment(\.shellSlot) private var slot
+    @Environment(\.shellSide) private var side
     @State private var open = false
 
     var body: some View {
@@ -551,7 +516,7 @@ private struct SheetsButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("종이·시트")
-        .popover(isPresented: $open, arrowEdge: slot.isTop ? .top : .bottom) {
+        .popover(isPresented: $open, arrowEdge: side.onTop ? .top : .bottom) {
             SheetsPanel(session: session)
         }
     }
@@ -838,9 +803,10 @@ private struct HintBubble: View {
         Label(hint.text, systemImage: hint.symbol)
             .font(.callout.weight(.medium))
             .foregroundStyle(Palette.ink)
+            .lineLimit(3)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(.regularMaterial, in: Capsule())
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
             .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
     }
 }

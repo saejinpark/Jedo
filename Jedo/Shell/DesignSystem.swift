@@ -44,30 +44,52 @@ enum Metric {
     static let groupGap: CGFloat = 10
     /// From the screen's edge.
     static let margin: CGFloat = 20
+    /// A group's card sits this far inside its grid squares, so neighbours stand apart.
+    static let cardInset: CGFloat = 2
 }
 
-/// A group of controls on a frosted card.
+/// A group of controls on a frosted card, laid on the screen's grid: every
+/// control takes whole grid squares (`ShellLayout.unit`), so groups line up
+/// with each other and with the grid they are arranged on.
 struct ControlGroup<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        HStack(spacing: Metric.cellGap) { content }
-            .padding(Metric.groupInset)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Metric.groupRadius))
-            .overlay(RoundedRectangle(cornerRadius: Metric.groupRadius).strokeBorder(Palette.ink.opacity(0.08)))
-            .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
+        UnitRow { content }
+            .background {
+                RoundedRectangle(cornerRadius: Metric.groupRadius)
+                    .fill(.regularMaterial)
+                    .overlay(RoundedRectangle(cornerRadius: Metric.groupRadius).strokeBorder(Palette.ink.opacity(0.08)))
+                    .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
+                    .padding(Metric.cardInset)
+            }
             .fixedSize()
     }
 }
 
-/// A hairline between kinds of control within one group.
-struct GroupDivider: View {
-    var body: some View {
-        Rectangle()
-            .fill(Palette.ink.opacity(0.12))
-            .frame(width: 1, height: Metric.cell - 16)
-            .padding(.horizontal, 4)
+/// Lays controls side by side, each centred in as many grid squares as it needs.
+struct UnitRow: Layout {
+    static func units(_ width: CGFloat) -> Int { max(Int(((width + 4) / ShellLayout.unit).rounded(.up)), 1) }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let n = subviews.reduce(0) { $0 + Self.units($1.sizeThatFits(.unspecified).width) }
+        return CGSize(width: CGFloat(n) * ShellLayout.unit, height: ShellLayout.unit)
     }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            let w = CGFloat(Self.units(size.width)) * ShellLayout.unit
+            view.place(at: CGPoint(x: x + w / 2, y: bounds.midY), anchor: .center, proposal: ProposedViewSize(size))
+            x += w
+        }
+    }
+}
+
+/// Kept so groups read in kinds; on the grid the squares themselves part them.
+struct GroupDivider: View {
+    var body: some View { EmptyView() }
 }
 
 /// What a control cell shows.
