@@ -103,13 +103,16 @@ enum CarbonPalette {
         density <= 0 ? 0 : Float(2 * index) + min(density, 1)
     }
 
-    /// A copy laid over an earlier one: densities build as graphite does,
-    /// and the colour is whichever lays more.
+    /// A copy laid over an earlier one: densities build as graphite does, and
+    /// what is pressed later lies on top, so it takes the colour. Only a faint
+    /// fringe (the soft edge of a line) leaves the colour under it showing.
+    static let coversAbove: Float = 0.3
+
     @inline(__always)
     static func lay(base: Float, stroke: Float, index: Int) -> Float {
         let (old, d) = split(base)
         let laid = GraphiteMath.composite(base: d, stroke: stroke, maxDensity: 1)
-        return join(stroke >= d ? index : old, laid)
+        return join(stroke >= coversAbove || stroke >= d ? index : old, laid)
     }
 
     /// Rubbing a copy out lifts its density, the colour stays what it was.
