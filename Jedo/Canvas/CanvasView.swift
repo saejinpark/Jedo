@@ -1183,6 +1183,21 @@ final class CanvasView: UIView {
         layersChanged()
     }
 
+    /// The colour a copy takes at each pixel of `target` when pressed through
+    /// carbon: that of the topmost piece of carbon over it there.
+    private func carbonColours(onto target: SurfaceID) -> (@Sendable (Int, Int) -> Int)? {
+        let stack = layerStack()
+        let pieces = stack.carbonsTopFirst.compactMap { piece -> (outline: [CGPoint], colour: @Sendable (Int, Int) -> Int)? in
+            carbonColour(piece.id, onto: target).map { (piece.outline.map(onSurface(target).0), $0) }
+        }
+        guard let first = pieces.first else { return nil }
+        guard pieces.count > 1 else { return first.colour }
+        return { x, y in
+            let p = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
+            return (pieces.first { Polygon.contains(p, $0.outline) } ?? first).colour(x, y)
+        }
+    }
+
     /// The colour a copy made through carbon `carbonID` takes at each pixel of `target`.
     private func carbonColour(_ carbonID: Int, onto target: SurfaceID) -> (@Sendable (Int, Int) -> Int)? {
         guard let sheet, let carbon = layers.first(where: { $0.id == carbonID && $0.isCarbon }) else { return nil }
@@ -1601,7 +1616,7 @@ final class CanvasView: UIView {
             } else if id.isCarbonCopy {
                 // Pressed through the carbon: a line in its colour.
                 target.beginStroke(grade: grade, instrument: instrument, mask: local,
-                                   colour: layerStack().pressingCarbon.flatMap { carbonColour($0, onto: id) })
+                                   colour: carbonColours(onto: id))
             } else {
                 target.beginStroke(grade: grade, instrument: instrument, mask: local)
             }

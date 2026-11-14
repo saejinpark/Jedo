@@ -293,7 +293,7 @@ final class DrawingSession {
     /// Whether any tone lies on the paper.
     var hasTone: Bool { layerRows.contains(where: \.isTone) }
     /// Whether anything lies on the paper for the knife: tone, or a sheet of paper to cut in pieces.
-    var canCut: Bool { layerRows.contains { $0.isTone || $0.canStamp } }
+    var canCut: Bool { !layerRows.filter { !$0.glued }.isEmpty }
 
     func layersChanged(_ layers: [PaperLayer], hidden: Set<Int>) {
         defer { if !canCut, knifeInHand { knifeInHand = false } }

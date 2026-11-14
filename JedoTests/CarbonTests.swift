@@ -100,3 +100,24 @@ struct RollerShapeTests {
         #expect(abs(spacer.heading!.x) > 0.99)
     }
 }
+
+struct CarbonPieceTests {
+    private func square(_ x0: Double, _ y0: Double, _ x1: Double, _ y1: Double) -> [CGPoint] {
+        [CGPoint(x: x0, y: y0), CGPoint(x: x1, y: y0), CGPoint(x: x1, y: y1), CGPoint(x: x0, y: y1)]
+    }
+
+    @Test func everyPieceOfCarbonCopiesWhereItLies() {
+        let paper = square(0, 0, 1000, 1000)
+        let stack = LayerStack(sheets: [
+            .init(id: 5, outline: square(100, 100, 300, 300), isCarbon: true),
+            .init(id: 6, outline: square(500, 500, 700, 700), isCarbon: true),
+            .init(id: 7, outline: square(0, 0, 1000, 1000), isCarbon: false),
+        ], paper: paper)
+        let copy = Dictionary(uniqueKeysWithValues: stack.targets(erasing: false).map { ($0.surface, $0.mask) })[.carbonCopy]!
+        #expect(copy.contains(CGPoint(x: 200, y: 200)))
+        #expect(copy.contains(CGPoint(x: 600, y: 600)))
+        #expect(!copy.contains(CGPoint(x: 400, y: 400)), "bare between the pieces")
+        #expect(copy.coverage(PixelRect(minX: 350, minY: 350, maxX: 450, maxY: 450)) == .none)
+        #expect(stack.carbonsTopFirst.map(\.id) == [6, 5])
+    }
+}

@@ -386,6 +386,9 @@ struct LayerStack: Sendable {
     /// The carbon a pencil pressing through copies with: the topmost one.
     var pressingCarbon: Int? { sheets.last(where: \.isCarbon)?.id }
 
+    /// Every piece of carbon, topmost first: at each point the topmost one there gives the colour.
+    var carbonsTopFirst: [Sheet] { sheets.filter(\.isCarbon).reversed() }
+
     /// Every surface the stroke may mark, and where on the paper it may.
     func targets(erasing: Bool) -> [(surface: SurfaceID, mask: StrokeMask)] {
         var out: [(SurfaceID, StrokeMask)] = []
@@ -401,14 +404,18 @@ struct LayerStack: Sendable {
         out.append((.paper, bare))
         if erasing {
             out.append((.carbonCopy, bare))
-        } else if let c = sheets.lastIndex(where: \.isCarbon) {
-            // Pressing through the topmost carbon copies onto what lies just under it.
-            let carbon = sheets[c].outline
-            for i in sheets.indices where i < c && !sheets[i].isCarbon {
+        } else if let top = sheets.lastIndex(where: \.isCarbon) {
+            // Pressing through any piece of carbon copies onto what lies just under it.
+            let carbons = sheets.indices.filter { sheets[$0].isCarbon }
+            for i in sheets.indices where i < top && !sheets[i].isCarbon {
+                let over = carbons.filter { $0 > i }
+                let highest = over.max() ?? i
+                let between = sheets.indices.filter { $0 > i && $0 < highest && !sheets[$0].isCarbon }.map { sheets[$0].outline }
                 out.append((.sheetCopy(sheets[i].id),
-                            StrokeMask(inside: [carbon, sheets[i].outline], outside: sheets[(i + 1)..<c].map(\.outline))))
+                            StrokeMask(inside: [sheets[i].outline], outside: between, anyOf: over.map { sheets[$0].outline })))
             }
-            out.append((.carbonCopy, StrokeMask(inside: [carbon] + onPaper, outside: sheets[..<c].map(\.outline))))
+            let under = sheets.indices.filter { $0 < top && !sheets[$0].isCarbon }.map { sheets[$0].outline }
+            out.append((.carbonCopy, StrokeMask(inside: onPaper, outside: under, anyOf: carbons.map { sheets[$0].outline })))
         }
         return out
     }
@@ -423,6 +430,8 @@ struct StrokeMask: Sendable {
     /// Plates lying over the surface with openings in them (the erasing
     /// shield): under a plate, only its openings can be reached.
     var shields: [Shield] = []
+    /// Within at least one of these, when there are any: pieces of carbon side by side.
+    var anyOf: [[CGPoint]] = []
 
     struct Shield: Sendable {
         var outline: [CGPoint]
@@ -433,21 +442,23 @@ struct StrokeMask: Sendable {
         }
     }
 
-    init(inside: [[CGPoint]], outside: [[CGPoint]], shields: [Shield] = []) {
+    init(inside: [[CGPoint]], outside: [[CGPoint]], shields: [Shield] = [], anyOf: [[CGPoint]] = []) {
         self.inside = inside
         self.outside = outside
         self.shields = shields
+        self.anyOf = anyOf
     }
 
     static let everywhere = StrokeMask(inside: [], outside: [])
 
-    var isEverywhere: Bool { inside.isEmpty && outside.isEmpty && shields.isEmpty }
+    var isEverywhere: Bool { inside.isEmpty && outside.isEmpty && shields.isEmpty && anyOf.isEmpty }
 
     enum Coverage: Equatable { case none, all, part }
 
     func contains(_ p: CGPoint) -> Bool {
         inside.allSatisfy { Polygon.contains(p, $0) } && !outside.contains { Polygon.contains(p, $0) }
             && shields.allSatisfy { $0.allows(p) }
+            && (anyOf.isEmpty || anyOf.contains { Polygon.contains(p, $0) })
     }
 
     /// How much of a pixel rectangle the stroke may mark.
@@ -468,6 +479,11 @@ struct StrokeMask: Sendable {
             case .outside: break
             }
         }
+        if !anyOf.isEmpty {
+            let places = anyOf.map { Polygon.classify(rect, $0) }
+            if places.allSatisfy({ $0 == .outside }) { return .none }
+            if !places.contains(.inside) { all = false }
+        }
         for shield in shields {
             switch Polygon.classify(rect, shield.outline) {
             case .outside: break
@@ -485,7 +501,8 @@ struct StrokeMask: Sendable {
     /// The mask in another frame, as when moving onto a sheet's own surface.
     func mapped(_ transform: (CGPoint) -> CGPoint) -> StrokeMask {
         StrokeMask(inside: inside.map { $0.map(transform) }, outside: outside.map { $0.map(transform) },
-                   shields: shields.map { Shield(outline: $0.outline.map(transform), openings: $0.openings.map { $0.map(transform) }) })
+                   shields: shields.map { Shield(outline: $0.outline.map(transform), openings: $0.openings.map { $0.map(transform) }) },
+                   anyOf: anyOf.map { $0.map(transform) })
     }
 }
 
