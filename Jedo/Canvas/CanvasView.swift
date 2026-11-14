@@ -722,6 +722,15 @@ final class CanvasView: UIView {
             toolShapes[$0].outlineContains(point, margin: margin) && holders[tools[$0].kind, default: []].count < 2
         }) else { return grabLayer(touch, at: point) }
         let kind = tools[i].kind
+        if kind == .erasingShield, eraserInHand, holders[kind, default: []].isEmpty {
+            // With the eraser in hand a finger on the shield rubs through it, and the shield
+            // stays where it lies. Two fingers on it take hold of it to move it.
+            guard let other = presses.still().first(where: {
+                $0.0 != touch && $0.0.phase != .ended && $0.0.phase != .cancelled && toolShapes[i].outlineContains($0.1, margin: margin)
+            }) else { return false }
+            presses.cancel(other.0)
+            holders[kind] = [(other.0, pixelLocation(other.0))]
+        }
         if holders[kind, default: []].isEmpty {
             stacked[kind] = overlapping(kind)
             // Already resting on a pin: one finger swings it about the pin from the start.

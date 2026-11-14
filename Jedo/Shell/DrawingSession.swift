@@ -76,7 +76,7 @@ final class DrawingSession {
             canvas?.eraserInHand = eraserInHand
             if eraserInHand {
                 if knifeInHand { knifeInHand = false }
-                show(.eraser)
+                show(toolsOnDesk.contains(.erasingShield) ? .shield : .eraser)
             }
         }
     }
@@ -125,6 +125,8 @@ final class DrawingSession {
         case eraser
         /// The knife was picked up.
         case knife
+        /// The eraser was picked up with the erasing shield out.
+        case shield
         /// The stylus was picked up.
         case stylus
         /// The roller was picked up.
@@ -139,6 +141,7 @@ final class DrawingSession {
             case .pencil: "선은 Apple Pencil로 긋습니다. 손가락으로는 자를 잡고 컴퍼스 바늘을 꽂습니다."
             case .compass: "손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다."
             case .eraser: "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
+            case .shield: "지움판 위를 문지르면 구멍 안쪽만 지워지고, 지움판은 밀리지 않습니다. 옮기려면 두 손가락으로 잡으세요."
             case .place(let kind): "\(kind.name): 놓을 자리를 손가락으로 누르세요. 누른 채 끌어 맞춥니다."
             case .roller: "롤러는 먹지 위를 굴릴 때만 찍힙니다. 굴린 폭 30mm만큼 먹지 색이 밑으로 옮겨지고, 세게 누를수록 진합니다."
             case .stylus: "철필은 흑연 없이 홈만 냅니다. 그 위를 연필로 칠하면 홈이 하얗게 남습니다. 홈은 지우개로 문지르면 펴집니다."
@@ -151,7 +154,7 @@ final class DrawingSession {
             switch self {
             case .pencil: "applepencil.tip"
             case .compass: "compass.drawing"
-            case .eraser: "eraser"
+            case .eraser, .shield: "eraser"
             case .knife: "scissors.badge.ellipsis"
             case .place: "hand.point.down"
             case .roller: "paintbrush.pointed"
