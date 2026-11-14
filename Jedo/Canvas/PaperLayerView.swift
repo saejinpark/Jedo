@@ -40,6 +40,7 @@ final class PaperLayerView: UIView {
 
         let body = CAShapeLayer()
         body.path = outline
+        body.fillRule = .evenOdd
         switch sheet.kind {
         case .carbon where sheet.carbonInk.isGradient:
             body.fillColor = nil
@@ -80,6 +81,7 @@ final class PaperLayerView: UIView {
             gradient.endPoint = CGPoint(x: 1, y: 0.5)
             let clip = CAShapeLayer()
             clip.path = outline
+            clip.fillRule = .evenOdd
             gradient.mask = clip
             layer.addSublayer(gradient)
         }
@@ -149,6 +151,7 @@ final class PaperLayerView: UIView {
             // A piece cut from the sheet: its print and drawing end at the cut.
             let clip = CAShapeLayer()
             clip.path = outline
+            clip.fillRule = .evenOdd
             clip.frame = bounds
             clip.actions = CanvasView.noAnimations
             layer.mask = clip

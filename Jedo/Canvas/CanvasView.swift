@@ -1398,7 +1398,12 @@ final class CanvasView: UIView {
         }
         // By the edge.
         // (With the knife in hand a finger on tone peels it; two fingers still move it.)
+        // The margin outside a sheet's edge is its own only where no other sheet lies:
+        // beside a neighbouring piece, the finger is on that piece.
+        func strictlyOn(_ i: Int) -> Bool { Polygon.contains(point, layers[i].outline(pixelsPerMillimeter: ppmm)) }
+        let covered = visible.contains(where: strictlyOn)
         if let i = visible.last(where: {
+            (strictlyOn($0) || !covered) &&
             layers[$0].edgeBandContains(point, inner: Self.sheetGripMM * ppmm, outer: outer, pixelsPerMillimeter: ppmm)
                 && layerHolders[layers[$0].id, default: []].isEmpty
                 && toneLeft($0, near: point) && !(knifeInHand && layers[$0].kind.isTone)

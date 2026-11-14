@@ -641,6 +641,18 @@ struct KnifeCutTests {
         #expect(Polygon.contains(.zero, piece))
         #expect(!Polygon.contains(.zero, rest))
         #expect(Polygon.contains(CGPoint(x: 30, y: 30), rest))
+        // The hole winds against the rim: the areas cancel, whichever way the knife went round.
+        #expect(abs(abs(Polygon.signedArea(rest)) / 2 - (10000 - abs(Polygon.signedArea(piece)) / 2)) < 1)
+        let back = try #require(Polygon.cut(sheet, along: loop.reversed()))
+        #expect(abs(abs(Polygon.signedArea(back[0])) / 2 - (10000 - abs(Polygon.signedArea(back[1])) / 2)) < 1)
+    }
+
+    @Test func aRingCutFromADiscLeavesARingAndASmallerDisc() throws {
+        func circle(_ r: Double) -> [CGPoint] { (0..<24).map { CGPoint(x: r * cos(Double($0) / 24 * 2 * .pi), y: r * sin(Double($0) / 24 * 2 * .pi)) } }
+        let big = try #require(Polygon.cut(sheet, along: circle(40) + [circle(40)[0]]))[1]
+        let parts = try #require(Polygon.cut(big, along: circle(20) + [circle(20)[0]]))
+        #expect(Polygon.contains(CGPoint(x: 30, y: 0), parts[0]) && !Polygon.contains(.zero, parts[0]))
+        #expect(Polygon.contains(.zero, parts[1]))
     }
 
     @Test func aHoledSheetIsNotWhollyInsideATileOverItsHole() {

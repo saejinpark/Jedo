@@ -607,7 +607,9 @@ enum Polygon {
                 if d < best.d { best = (r, h, d) }
             }
         }
-        let around = Array(loop[best.hole...]) + Array(loop[...best.hole])
+        // The hole runs the other way round from the rim, so it is a hole by any fill rule.
+        var around = Array(loop[best.hole...]) + Array(loop[...best.hole])
+        if (signedArea(loop) > 0) == (signedArea(polygon) > 0) { around.reverse() }
         let rest = Array(polygon[...best.rim]) + around + Array(polygon[best.rim...])
         return [rest, loop]
     }
