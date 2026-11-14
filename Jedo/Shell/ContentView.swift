@@ -232,6 +232,10 @@ private struct InstrumentGroup: View {
                 session.instrument = .stylus
             }
             .accessibilityLabel("누름 막대")
+            TextCell(title: "롤러", selected: session.instrument == .roller, width: Metric.cell) {
+                session.instrument = .roller
+            }
+            .accessibilityLabel("롤러")
             GroupDivider()
             TechnicalPenMenu(session: session)
             ForEach(Nib.allCases, id: \.self) { nib in
@@ -610,6 +614,7 @@ private struct SheetsButton: View {
 private struct SheetsPanel: View {
     @Bindable var session: DrawingSession
     @State private var photoPick: PhotosPickerItem?
+    @State private var carbonPick: PhotosPickerItem?
 
     var body: some View {
         // The list of what lies on the paper on top, what can be laid on below:
@@ -634,20 +639,27 @@ private struct SheetsPanel: View {
                 }
             }
             Divider()
-            PanelSection(title: "먹지") {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Chip(title: session.carbonOnDesk ? "먹지 치우기" : "먹지 깔기", selected: session.carbonOnDesk) {
-                            session.carbonOnDesk.toggle()
-                        }
-                        Spacer()
+            PanelSection(title: "먹지 얹기") {
+                // One tap lays one, in that coating; a photo makes carbon of its own colours.
+                HStack(spacing: 6) {
+                    ForEach(CarbonInk.allCases, id: \.self) { ink in
+                        Button { session.addCarbon(ink) } label: { CarbonSwatch(ink: ink, selected: false) }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(ink.name) 먹지 얹기")
                     }
-                    // The coating of the next carbon laid; a carbon in the list above is recoated from its own row.
-                    HStack(spacing: 6) {
-                        ForEach(CarbonInk.allCases, id: \.self) { ink in
-                            Button { session.carbonInk = ink } label: { CarbonSwatch(ink: ink, selected: session.carbonInk == ink) }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("먹지 \(ink.name)")
+                    PhotosPicker(selection: $carbonPick, matching: .images, photoLibrary: .shared()) {
+                        Label("사진 먹지", systemImage: "photo")
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(Palette.paper, in: Capsule())
+                            .overlay(Capsule().strokeBorder(Palette.ink.opacity(0.15)))
+                    }
+                    .buttonStyle(.plain)
+                    .onChange(of: carbonPick) { _, item in
+                        guard let item else { return }
+                        carbonPick = nil
+                        Task {
+                            if let data = try? await item.loadTransferable(type: Data.self) { session.addPhotoCarbon(data) }
                         }
                     }
                 }

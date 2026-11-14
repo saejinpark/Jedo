@@ -81,14 +81,6 @@ enum CarbonPalette {
         }
     }
 
-    /// Premultiplied pixels per colour and density step.
-    static let lookups: [[UInt32]] = colours.map { c in
-        (0..<GraphiteShading.levels).map { level in
-            let d = Double(level) / Double(GraphiteShading.levels - 1)
-            return GraphiteShading.pack(r: c.r * d, g: c.g * d, b: c.b * d, a: d)
-        }
-    }
-
     @inline(__always)
     static func split(_ value: Float) -> (index: Int, density: Float) {
         guard value > 0 else { return (0, 0) }

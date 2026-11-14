@@ -62,6 +62,9 @@ enum Instrument: Hashable, Sendable {
     case dipPen(Nib)
     /// The embossing stylus: presses a groove and leaves nothing.
     case stylus
+    /// A brayer: a broad rubber roller that leaves nothing itself, but rolled
+    /// over carbon presses its whole width through.
+    case roller
 
     var name: String {
         switch self {
@@ -70,6 +73,7 @@ enum Instrument: Hashable, Sendable {
         case .technicalPen(let width): "제도펜 \(width.label)mm"
         case .dipPen(let nib): nib.name
         case .stylus: "누름 막대"
+        case .roller: "롤러"
         }
     }
 
@@ -78,7 +82,7 @@ enum Instrument: Hashable, Sendable {
         switch self {
         case .technicalPen(let width): .technical(width)
         case .dipPen(let nib): .dip(nib)
-        case .wood, .mechanical, .stylus: nil
+        case .wood, .mechanical, .stylus, .roller: nil
         }
     }
 
@@ -88,7 +92,7 @@ enum Instrument: Hashable, Sendable {
     var hasGrade: Bool {
         switch self {
         case .wood, .mechanical: true
-        case .technicalPen, .dipPen, .stylus: false
+        case .technicalPen, .dipPen, .stylus, .roller: false
         }
     }
 }
@@ -136,6 +140,7 @@ struct PencilDynamics: Sendable {
         case .technicalPen(let width): width.mm
         case .dipPen(let nib): InkDynamics.widthMM(.dip(nib), pressure: 0.5)
         case .stylus: StylusDynamics.ballMM
+        case .roller: RollerDynamics.widthMM
         }
     }
 

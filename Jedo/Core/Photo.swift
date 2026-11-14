@@ -50,7 +50,7 @@ struct PhotoPixels: Sendable {
 
 extension CarbonPalette {
     /// Steps per channel of the colour cube a photo's colours are matched to.
-    static let cubeSteps = 8
+    static let cubeSteps = 16
     static var firstCube: Int { firstHue + hueSteps }
 
     /// The palette entry nearest a colour.

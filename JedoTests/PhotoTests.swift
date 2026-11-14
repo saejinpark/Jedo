@@ -18,7 +18,7 @@ struct PhotoTests {
         let red = CarbonPalette.cubeIndex((1, 0, 0)), white = CarbonPalette.cubeIndex((1, 1, 1))
         #expect(CarbonPalette.colours[red] == (1, 0, 0))
         #expect(CarbonPalette.colours[white] == (1, 1, 1))
-        #expect(CarbonPalette.colours.count == CarbonPalette.firstCube + 512)
+        #expect(CarbonPalette.colours.count == CarbonPalette.firstCube + 4096)
         // A copy in a cube colour keeps it, with density beside it.
         let v = CarbonPalette.lay(base: 0, stroke: 0.7, index: red)
         #expect(CarbonPalette.split(v).index == red)

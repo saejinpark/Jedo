@@ -204,6 +204,21 @@ struct StylusDynamics: Sendable {
     func spacing(for sample: StrokeSample) -> Double { max(radius(for: sample) * 0.3, 0.4) }
 }
 
+/// The brayer: 30 mm of rubber. It lays down only what is pressed through carbon.
+struct RollerDynamics: Sendable {
+    let pixelsPerMillimeter: Double
+    static let widthMM = 30.0
+
+    var radius: Double { Self.widthMM / 2 * pixelsPerMillimeter }
+    var spacing: Double { max(radius * 0.12, 0.5) }
+
+    /// Rolled lightly the carbon gives a little; leaned on, nearly all.
+    func strength(for sample: StrokeSample) -> Float {
+        let p = min(max(sample.pressure.isFinite ? sample.pressure : 0, 0), 1)
+        return Float(0.3 + 0.65 * p)
+    }
+}
+
 extension GraphiteShading {
     /// A dent catches a little shadow on its far wall: faint, but there to see.
     static let dentLookup: [UInt32] = (0..<levels).map { level in

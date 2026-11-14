@@ -32,7 +32,7 @@ struct ShellLayout: Equatable, Codable, Sendable {
         /// Width and height in squares.
         var size: (w: Int, h: Int) {
             switch self {
-            case .pencil: (11, 2)
+            case .pencil: (12, 2)
             case .hand: (4, 1)
             case .desk: (10, 1)
             case .sheets: (1, 1)

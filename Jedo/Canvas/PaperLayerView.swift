@@ -66,7 +66,7 @@ final class PaperLayerView: UIView {
             print.contents = PhotoStore.image(photo.id)
             print.contentsGravity = .resize
             // Used as carbon it lies face down: its colours show faintly through the back.
-            print.opacity = sheet.photoCarbon ? 0.55 : 1
+            print.opacity = sheet.photoCarbon ? 0.3 : 1
             layer.addSublayer(print)
         }
         if sheet.kind == .carbon, sheet.carbonInk.isGradient {

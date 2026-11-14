@@ -26,6 +26,7 @@ final class DraftingSheet {
         case pencil(PencilDynamics)
         case ink(InkDynamics)
         case stylus(StylusDynamics)
+        case roller(RollerDynamics)
         case eraser(EraserDynamics)
     }
 
@@ -64,6 +65,7 @@ final class DraftingSheet {
                 base > 1 || base < 0 ? base : GraphiteMath.composite(base: base, stroke: stroke, maxDensity: maxDensity)
             case .ink: GraphiteMath.ink(base: base, coverage: stroke)
             case .stylus: GraphiteMath.dent(base: base, depth: stroke)
+            case .roller: base
             case .eraser(let eraser): GraphiteMath.erase(base: base, lift: stroke, inkLift: eraser.kind.inkLift, dentLift: eraser.kind.dentLift)
             }
         }
@@ -116,6 +118,14 @@ final class DraftingSheet {
                      colour: (@Sendable (Int, Int) -> Int)? = nil) {
         if stroke != nil { cancelStroke() }
         strokeCounter &+= 1
+        // On anything but a carbon copy the roller rolls over and leaves nothing.
+        if instrument == .roller {
+            stroke = ActiveStroke(lead: .roller(RollerDynamics(pixelsPerMillimeter: pixelsPerMillimeter)),
+                                  buffer: GraphiteRaster(width: width, height: height),
+                                  seed: strokeCounter &* 0x9E37_79B9, maxDensity: 1, mask: mask,
+                                  colour: isCarbonCopy ? (colour ?? plainColour) : nil)
+            return
+        }
         if isCarbonCopy {
             // Whatever presses through carbon leaves a carbon line: a point's width, in the carbon's colour.
             let point: Instrument = instrument.hasGrade ? instrument : .mechanical(.mm05)
@@ -217,6 +227,14 @@ final class DraftingSheet {
                 let coverage = mask.coverage(InkRasterizer.bounds(center: dab.location, radius: radius))
                 guard coverage != .none else { continue }
                 let rect = InkRasterizer.stamp(center: dab.location, radius: radius, into: &raster, strength: stylus.depth(for: dab))
+                if coverage == .part { Self.clip(&raster, rect, to: mask) }
+                markDirty(rect)
+            }
+        case .roller(let roller):
+            for dab in spacer.append(sample, spacing: { _ in roller.spacing }) {
+                let coverage = mask.coverage(InkRasterizer.bounds(center: dab.location, radius: roller.radius))
+                guard coverage != .none else { continue }
+                let rect = InkRasterizer.stamp(center: dab.location, radius: roller.radius, into: &raster, strength: roller.strength(for: dab))
                 if coverage == .part { Self.clip(&raster, rect, to: mask) }
                 markDirty(rect)
             }
@@ -495,7 +513,8 @@ final class DraftingSheet {
                 if s > 0, let active { d = active.laid(d, s, x: px, y: py) }
                 if isCarbonCopy {
                     let (index, density) = CarbonPalette.split(d)
-                    pixels[i] = CarbonPalette.lookups[index][min(Int(density * Float(top) + 0.5), top)]
+                    let c = CarbonPalette.colours[index], a = Double(density)
+                    pixels[i] = GraphiteShading.pack(r: c.r * a, g: c.g * a, b: c.b * a, a: a)
                 } else if d < 0 {
                     pixels[i] = GraphiteShading.dentLookup[min(Int(-d * Float(top) + 0.5), top)]
                 } else if d > 1, let inkShading {

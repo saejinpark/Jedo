@@ -1092,7 +1092,7 @@ final class CanvasView: UIView {
     @discardableResult
     func stampLayer(_ id: Int, withPrint: Bool = false) -> Bool {
         guard activeTouch == nil, let sheet, let source = layerSurfaces[id]?.sheet,
-              let layer = layers.first(where: { $0.id == id }), !layer.kind.isTone, layer.kind != .carbon else { return false }
+              let layer = layers.first(where: { $0.id == id }), !layer.kind.isTone, !layer.isCarbon else { return false }
         // With its print: the rulings laid as graphite under what is drawn.
         var drawing = source.graphite
         if withPrint, case .grid(let pattern) = layer.kind {
@@ -1154,27 +1154,22 @@ final class CanvasView: UIView {
         notifyHistory()
     }
 
-    /// Slips the carbon under everything on the paper, or takes it out.
-    /// Once out it is a sheet like any other: it can be moved up over grid sheets.
-    func setCarbon(onDesk: Bool) {
-        guard let sheet else { return }
-        let id = Self.carbonID
-        guard onDesk else {
-            // Every piece of it.
-            for carbon in layers where carbon.kind == .carbon {
-                layerViews.removeValue(forKey: carbon.id)?.removeFromSuperview()
-                layerHolders[carbon.id] = nil
-                hiddenLayers.remove(carbon.id)
-            }
-            layers.removeAll { $0.kind == .carbon }
-            layersChanged()
-            return
-        }
-        guard !layers.contains(where: { $0.kind == .carbon }), let pose = screenPose(at: CGPoint(x: 0.5, y: 0.5)) else { return }
-        let layer = PaperLayer(id: id, kind: .carbon, pose: pose, carbonInk: carbonInk)
-        layers.insert(layer, at: 0)
+    /// Lays a sheet of carbon in a coating, under the loose sheets (it is slipped
+    /// under what it copies onto). As many as wanted, like any other sheet. Returns its id.
+    @discardableResult
+    func addCarbonLayer(_ ink: CarbonInk) -> Int? {
+        guard let sheet, var pose = screenPose(at: CGPoint(x: 0.5, y: 0.5)) else { return nil }
+        let count = layers.filter(\.isCarbon).count
+        let step = Self.sheetCascadeMM * sheet.pixelsPerMillimeter * Double(count % 6)
+        pose.center.x += step
+        pose.center.y -= step
+        let layer = PaperLayer(id: nextLayerID, kind: .carbon, pose: pose, carbonInk: ink)
+        nextLayerID += 1
+        layers.insert(layer, at: layers.prefix(while: \.glued).count)
         showLayer(layer, surfaces: [], sheet: sheet)
         layersChanged()
+        selectSheet(layer.id)
+        return layer.id
     }
 
     /// What the next carbon laid is coated with.
@@ -1254,11 +1249,16 @@ final class CanvasView: UIView {
     }
 
     /// Lays a photo on the desk as a print, in the middle of the screen. Returns its id.
-    func addPhotoLayer(_ photo: PhotoRef) -> Int? {
+    func addPhotoLayer(_ photo: PhotoRef, asCarbon: Bool = false) -> Int? {
         guard let sheet, let pose = screenPose(at: CGPoint(x: 0.5, y: 0.45)) else { return nil }
-        let layer = PaperLayer(id: nextLayerID, kind: .photo(photo), pose: pose)
+        let layer = PaperLayer(id: nextLayerID, kind: .photo(photo), pose: pose, photoCarbon: asCarbon)
         nextLayerID += 1
         layGrid(layer, sheet: sheet)
+        if asCarbon {
+            // Carbon is slipped under the loose sheets.
+            layers.removeLast()
+            layers.insert(layer, at: layers.prefix(while: \.glued).count)
+        }
         layersChanged()
         selectSheet(layer.id)
         return layer.id
@@ -1381,7 +1381,7 @@ final class CanvasView: UIView {
         selectSheet(id)
         layerHolders[id] = fingers
         // A grid sheet comes up over the others; the carbon keeps its place, as it is slid about under things.
-        if activeTouch == nil, layers[i].kind != .carbon {
+        if activeTouch == nil, !layers[i].isCarbon {
             layers.append(layers.remove(at: i))
             layersChanged()
         }
@@ -1594,6 +1594,8 @@ final class CanvasView: UIView {
             var mask = sheetMask
             if erasing, let shield = erasingShield() { mask.shields.append(shield) }
             let local = mask.mapped(onSurface(id).0)
+            // The roller leaves nothing of its own: it only presses carbon through.
+            if !erasing, instrument == .roller, !id.isCarbonCopy { continue }
             if erasing {
                 target.beginErasing(mask: local, kind: eraserKind)
             } else if id.isCarbonCopy {

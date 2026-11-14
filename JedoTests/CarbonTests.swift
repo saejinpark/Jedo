@@ -53,3 +53,23 @@ struct CarbonTests {
         #expect(plain.mask.contains(CGPoint(x: 75, y: 50)) && !copy.mask.contains(CGPoint(x: 75, y: 50)))
     }
 }
+
+struct RollerTests {
+    @Test func theRollerLaysABroadBandOnlyOnCarbonCopies() {
+        let copy = DraftingSheet(width: 600, height: 400, pixelsPerMillimeter: 10, isCarbonCopy: true)
+        copy.beginStroke(grade: .hb, instrument: .roller, colour: { _, _ in 3 })
+        copy.extendStroke(with: stride(from: 100.0, through: 500, by: 5).map { StrokeSample(location: CGPoint(x: $0, y: 200), pressure: 0.8) },
+                          predicted: [])
+        copy.endStroke()
+        // 30 mm wide: 12 mm off the line is still rolled.
+        let (index, density) = CarbonPalette.split(copy.graphite.value(x: 300, y: 320))
+        #expect(index == 3 && density > 0.7)
+        #expect(copy.graphite.value(x: 300, y: 370) == 0)
+
+        let plain = DraftingSheet(width: 600, height: 400, pixelsPerMillimeter: 10)
+        plain.beginStroke(grade: .hb, instrument: .roller)
+        plain.extendStroke(with: [StrokeSample(location: CGPoint(x: 300, y: 200), pressure: 1)], predicted: [])
+        plain.endStroke()
+        #expect(plain.graphite.value(x: 300, y: 200) == 0)
+    }
+}
