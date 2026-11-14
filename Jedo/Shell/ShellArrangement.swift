@@ -9,6 +9,8 @@ struct ShellSide: Equatable {
 
 extension EnvironmentValues {
     @Entry var shellSide = ShellSide()
+    /// Whether the group a control is in stands upright: its buttons in a column.
+    @Entry var shellUpright = false
 }
 
 /// The screen's grid of squares, `ShellLayout.unit` on a side, inside the
@@ -115,7 +117,7 @@ struct ArrangeBoard: View {
             }
             VStack(spacing: 14) {
                 Text("배치 바꾸기").font(.headline)
-                Text("묶음을 끌어 모눈 위에 놓으세요. 다른 묶음이 있는 칸에는 놓이지 않습니다.\n가까운 모서리에서 몇 칸인지로 기억해서, 아이패드를 돌려도 그 모서리에 남습니다.")
+                Text("묶음을 끌어 모눈 위에 놓으세요. 다른 묶음이 있는 칸에는 놓이지 않습니다.\n묶음을 톡 치면 세로로 서고, 다시 치면 눕습니다.\n가까운 모서리에서 몇 칸인지로 기억해서, 아이패드를 돌려도 그 모서리에 남습니다.")
                     .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 HStack(spacing: 8) {
                     Chip(title: "오른손잡이 기본", selected: !leftHanded) { reset(false) }

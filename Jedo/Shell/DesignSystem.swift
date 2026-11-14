@@ -74,10 +74,11 @@ extension View {
 /// control takes whole grid squares (`ShellLayout.unit`), so groups line up
 /// with each other and with the grid they are arranged on.
 struct ControlGroup<Content: View>: View {
+    @Environment(\.shellUpright) private var upright
     @ViewBuilder var content: Content
 
     var body: some View {
-        UnitRow { content }
+        UnitRow(upright: upright) { content }
             .background {
                 RoundedRectangle(cornerRadius: Metric.groupRadius)
                     .fill(.regularMaterial)
@@ -89,16 +90,27 @@ struct ControlGroup<Content: View>: View {
     }
 }
 
-/// Lays controls side by side, each centred in as many grid squares as it needs.
+/// Lays controls side by side, each centred in as many grid squares as it needs;
+/// or, upright, one under another, a square each.
 struct UnitRow: Layout {
+    var upright = false
+
     static func units(_ width: CGFloat) -> Int { max(Int(((width + 4) / ShellLayout.unit).rounded(.up)), 1) }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        if upright { return CGSize(width: ShellLayout.unit, height: CGFloat(subviews.count) * ShellLayout.unit) }
         let n = subviews.reduce(0) { $0 + Self.units($1.sizeThatFits(.unspecified).width) }
         return CGSize(width: CGFloat(n) * ShellLayout.unit, height: ShellLayout.unit)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        if upright {
+            for (i, view) in subviews.enumerated() {
+                view.place(at: CGPoint(x: bounds.midX, y: bounds.minY + (CGFloat(i) + 0.5) * ShellLayout.unit), anchor: .center,
+                           proposal: ProposedViewSize(view.sizeThatFits(.unspecified)))
+            }
+            return
+        }
         var x = bounds.minX
         for view in subviews {
             let size = view.sizeThatFits(.unspecified)
@@ -200,6 +212,26 @@ struct TextFace: View {
             .background(selected ? AnyShapeStyle(Palette.ink.opacity(0.75)) : AnyShapeStyle(Color.clear),
                         in: RoundedRectangle(cornerRadius: Metric.cellRadius))
             .contentShape(RoundedRectangle(cornerRadius: Metric.cellRadius))
+    }
+}
+
+/// The face of a cell that shows which of a kind is chosen and opens the choice: a small
+/// tinted lozenge with a mark that it opens, unlike a button that does one thing.
+struct ValueFace: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Text(title).font(.system(size: 11, weight: .semibold, design: .rounded)).lineLimit(1).minimumScaleFactor(0.7)
+            Image(systemName: "chevron.down").font(.system(size: 6.5, weight: .bold))
+        }
+        .padding(.horizontal, 5)
+        .frame(width: 42, height: 24)
+        .foregroundStyle(Palette.ink.opacity(0.8))
+        .background(Palette.ink.opacity(0.09), in: Capsule())
+        .overlay(Capsule().strokeBorder(Palette.ink.opacity(0.16), lineWidth: 0.5))
+        .frame(width: Metric.cell, height: Metric.cell)
+        .contentShape(RoundedRectangle(cornerRadius: Metric.cellRadius))
     }
 }
 

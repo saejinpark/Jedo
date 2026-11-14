@@ -31,6 +31,15 @@ struct ShellLayout: Equatable, Codable, Sendable {
         /// The map of the paper and the stick that moves the view.
         case map
 
+        /// Whether the group can stand upright, as a column of its buttons.
+        var turns: Bool { self != .map && self != .sheets }
+
+        /// Width and height in squares, lying or standing upright.
+        func size(upright: Bool) -> (w: Int, h: Int) {
+            let lying = size
+            return upright && turns ? (lying.h, lying.w) : lying
+        }
+
         /// Width and height in squares.
         var size: (w: Int, h: Int) {
             switch self {
@@ -52,6 +61,8 @@ struct ShellLayout: Equatable, Codable, Sendable {
         var fromBottom: Bool
         var x: Int
         var y: Int
+        /// Standing upright: its buttons in a column instead of a row.
+        var upright: Bool? = nil
     }
 
     /// A rectangle of squares, from the grid's top-left.
@@ -91,7 +102,7 @@ struct ShellLayout: Equatable, Codable, Sendable {
         let order: [Group] = [.map, .view, .pencil, .history, .hand, .sheets, .desk, .papers]
         for group in order where withMap || group != .map {
             guard let spot = spots[group] else { continue }
-            let (w, h) = group.size
+            let (w, h) = group.size(upright: spot.upright ?? false)
             var want = Self.cells(spot, w: w, h: h, columns: columns, rows: rows)
             want.x = min(max(want.x, 0), max(columns - w, 0))
             want.y = min(max(want.y, 0), max(rows - h, 0))
@@ -130,13 +141,39 @@ struct ShellLayout: Equatable, Codable, Sendable {
         let fromBottom = cells.y + cells.h / 2 > rows / 2
         spots[group] = Spot(fromRight: fromRight, fromBottom: fromBottom,
                             x: fromRight ? columns - cells.x - cells.w : cells.x,
-                            y: fromBottom ? rows - cells.y - cells.h : cells.y)
+                            y: fromBottom ? rows - cells.y - cells.h : cells.y,
+                            upright: spots[group]?.upright)
+        return true
+    }
+
+    func isUpright(_ group: Group) -> Bool { spots[group]?.upright ?? false }
+
+    /// Turns a group between lying and standing, about the corner it is counted from, moving it to the
+    /// nearest free squares if it no longer fits there. Refused (returns false) when there is no room.
+    @discardableResult
+    mutating func turn(_ group: Group, columns: Int, rows: Int, withMap: Bool = true) -> Bool {
+        guard group.turns, let spot = spots[group] else { return false }
+        let upright = !(spot.upright ?? false)
+        let (w, h) = group.size(upright: upright)
+        guard w <= columns, h <= rows else { return false }
+        let others = cells(columns: columns, rows: rows, withMap: withMap).filter { $0.key != group }.map(\.value)
+        var want = Self.cells(spot, w: w, h: h, columns: columns, rows: rows)
+        want.x = min(max(want.x, 0), columns - w)
+        want.y = min(max(want.y, 0), rows - h)
+        let free = Self.nearestFree(want, avoiding: others, columns: columns, rows: rows)
+        guard !others.contains(where: free.overlaps) else { return false }
+        let before = spots[group]
+        spots[group]?.upright = upright
+        guard place(group, at: free, columns: columns, rows: rows, withMap: withMap) else {
+            spots[group] = before
+            return false
+        }
         return true
     }
 
     /// The same arrangement for the other hand.
     var mirrored: ShellLayout {
-        ShellLayout(spots: spots.mapValues { Spot(fromRight: !$0.fromRight, fromBottom: $0.fromBottom, x: $0.x, y: $0.y) },
+        ShellLayout(spots: spots.mapValues { Spot(fromRight: !$0.fromRight, fromBottom: $0.fromBottom, x: $0.x, y: $0.y, upright: $0.upright) },
                     leftHanded: !leftHanded)
     }
 

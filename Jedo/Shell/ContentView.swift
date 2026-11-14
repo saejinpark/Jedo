@@ -114,6 +114,7 @@ struct ContentView: View {
         let fromRight = layout.leftHanded ? c.x + c.w / 2 > grid.columns / 2 : c.x + c.w / 2 > grid.columns / 2
         return groupView(group)
             .environment(\.shellSide, ShellSide(fromRight: fromRight, onTop: c.y + c.h / 2 < grid.rows / 2))
+            .environment(\.shellUpright, layout.isUpright(group))
             .frame(width: rect.width, height: rect.height, alignment: fromRight ? .topTrailing : .topLeading)
             .allowsHitTesting(!arranging)
             .overlay {
@@ -132,6 +133,15 @@ struct ContentView: View {
                                 }
                                 .onEnded { value in
                                     var new = layout
+                                    // A tap, not a drag: the group turns between lying and standing.
+                                    if hypot(value.translation.width, value.translation.height) < 8 {
+                                        if new.turn(group, columns: grid.columns, rows: grid.rows, withMap: mapShown) {
+                                            withAnimation(.snappy(duration: 0.2)) { savedLayout = new.encoded }
+                                        }
+                                        dragging = nil
+                                        dragOffset = .zero
+                                        return
+                                    }
                                     let moved = ShellLayout.Cells(x: c.x + Int((value.translation.width / ShellLayout.unit).rounded()),
                                                                   y: c.y + Int((value.translation.height / ShellLayout.unit).rounded()),
                                                                   w: c.w, h: c.h)
@@ -197,7 +207,7 @@ private struct HandGroup: View {
                 let shieldOut = session.toolsOnDesk.contains(.erasingShield)
                 Button(shieldOut ? "지움판 치우기" : "지움판 꺼내기") { session.toggle(.erasingShield) }
             } label: {
-                TextFace(title: session.eraserKind.name, selected: false, width: Metric.cell)
+                ValueFace(title: session.eraserKind.name)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
@@ -218,9 +228,13 @@ private struct HandGroup: View {
 private struct PencilGroup: View {
     @Bindable var session: DrawingSession
     @Environment(\.shellSide) private var side
+    @Environment(\.shellUpright) private var upright
 
     var body: some View {
-        VStack(alignment: side.fromRight ? .trailing : .leading, spacing: 0) {
+        // Lying: holders over grades. Standing: holders beside grades, each a column.
+        let stack = upright ? AnyLayout(HStackLayout(alignment: side.onTop ? .top : .bottom, spacing: 0))
+                            : AnyLayout(VStackLayout(alignment: side.fromRight ? .trailing : .leading, spacing: 0))
+        stack {
             InstrumentGroup(session: session)
             // Only lead has a grade: with ink or the stylus in hand the grades can't be chosen.
             ControlGroup { PencilGrades(selection: $session.grade) }
@@ -250,10 +264,9 @@ private struct InstrumentGroup: View {
             GroupDivider()
             TechnicalPenMenu(session: session)
             ForEach(Nib.allCases, id: \.self) { nib in
-                TextCell(title: nib.label, selected: session.holds(.dipPen(nib)), width: 44) {
+                ToolButton(icon: .hand(nib == .gPen ? .gPen : .maruPen), label: nib.name, selected: session.holds(.dipPen(nib))) {
                     session.instrument = .dipPen(nib)
                 }
-                .accessibilityLabel(nib.name)
             }
         }
     }
@@ -274,7 +287,14 @@ private struct TechnicalPenMenu: View {
                 }
             }
         } label: {
-            TextFace(title: current.map { "펜 \($0.label)" } ?? "제도펜", selected: current != nil, width: 62)
+            // The pen, and the width in hand written small beside its tip.
+            ToolFace(icon: .hand(.technicalPen), selected: current != nil)
+                .overlay(alignment: .bottomTrailing) {
+                    if let current {
+                        Text(current.label).font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.white).padding(.trailing, 4).padding(.bottom, 3)
+                    }
+                }
         }
         .menuStyle(.button)
         .buttonStyle(.plain)

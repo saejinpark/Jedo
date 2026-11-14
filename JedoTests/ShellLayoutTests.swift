@@ -54,6 +54,34 @@ struct ShellLayoutTests {
         #expect(turned.x + turned.w == 22)
     }
 
+    @Test func aGroupStandsUprightAndLiesDownAgain() {
+        var layout = ShellLayout.standard(leftHanded: false)
+        let lying = layout.cells(columns: 22, rows: 15)[.hand]!
+        let stood = layout.turn(.hand, columns: 22, rows: 15)
+        #expect(stood)
+        let standing = layout.cells(columns: 22, rows: 15)[.hand]!
+        #expect(standing.w == lying.h && standing.h == lying.w && layout.isUpright(.hand))
+        // Nothing overlaps after the turn, and it is remembered.
+        let cells = Array(layout.cells(columns: 22, rows: 15).values)
+        for i in cells.indices { for j in cells.indices where j > i { #expect(!cells[i].overlaps(cells[j])) } }
+        #expect(ShellLayout(encoded: layout.encoded)?.isUpright(.hand) == true)
+        let laid = layout.turn(.hand, columns: 22, rows: 15)
+        #expect(laid && !layout.isUpright(.hand))
+        // The map and the single layers button have one shape only.
+        let map = layout.turn(.map, columns: 22, rows: 15), sheets = layout.turn(.sheets, columns: 22, rows: 15)
+        #expect(!map && !sheets)
+        // The pencil's two rows become two columns.
+        let pencilStood = layout.turn(.pencil, columns: 22, rows: 15)
+        #expect(pencilStood)
+        let pencil = layout.cells(columns: 22, rows: 15)[.pencil]!
+        #expect(pencil.w == 2 && pencil.h == 11)
+    }
+
+    @Test func anArrangementSavedBeforeGroupsCouldStandStillLoads() {
+        let old = ShellLayout.standard(leftHanded: false).encoded.replacingOccurrences(of: #","upright":null"#, with: "")
+        #expect(ShellLayout(encoded: old)?.isComplete == true)
+    }
+
     @Test func aGroupIsNotDroppedOnAnother() {
         var layout = ShellLayout.standard(leftHanded: false)
         let pencil = layout.cells(columns: columns, rows: rows)[.pencil]!
