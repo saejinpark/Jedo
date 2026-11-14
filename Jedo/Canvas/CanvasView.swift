@@ -1191,15 +1191,20 @@ final class CanvasView: UIView {
         case .sheet(let t), .sheetCopy(let t): layers.first { $0.id == t }
         case .paper, .carbonCopy: nil
         }
+        // Target pixel to carbon surface is a fixed affine map: work it out once from three points.
+        func onCarbon(_ q: CGPoint) -> CGPoint {
+            carbon.surfacePoint(host?.paperPoint(fromSurface: q, pixelsPerMillimeter: ppmm) ?? q, pixelsPerMillimeter: ppmm)
+        }
+        let o = onCarbon(CGPoint(x: 0.5, y: 0.5)), ex = onCarbon(CGPoint(x: 1.5, y: 0.5)), ey = onCarbon(CGPoint(x: 0.5, y: 1.5))
+        let (ox, oy) = (Double(o.x), Double(o.y))
+        let (ax, ay) = (Double(ex.x) - ox, Double(ex.y) - oy), (bx, by) = (Double(ey.x) - ox, Double(ey.y) - oy)
         if let photo = carbon.kind.photo {
             // A photo used as carbon: each spot takes the photo's colour there.
             guard let pixels = PhotoStore.pixels(photo.id) else { return nil }
             let (w, h) = (photo.widthMM * ppmm, photo.heightMM * ppmm)
             return { x, y in
-                let q = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
-                let onPaper = host?.paperPoint(fromSurface: q, pixelsPerMillimeter: ppmm) ?? q
-                let s = carbon.surfacePoint(onPaper, pixelsPerMillimeter: ppmm)
-                guard let c = pixels.colour(u: Double(s.x) / w, v: Double(s.y) / h) else { return 1 }
+                let u = ox + ax * Double(x) + bx * Double(y), v = oy + ay * Double(x) + by * Double(y)
+                guard let c = pixels.colour(u: u / w, v: v / h) else { return 1 }
                 return CarbonPalette.cubeIndex(c)
             }
         }
@@ -1209,12 +1214,7 @@ final class CanvasView: UIView {
             return { _, _ in index }
         }
         let width = carbon.kind.sizeMM.width * ppmm
-        return { x, y in
-            let q = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
-            let onPaper = host?.paperPoint(fromSurface: q, pixelsPerMillimeter: ppmm) ?? q
-            let t = Double(carbon.surfacePoint(onPaper, pixelsPerMillimeter: ppmm).x) / width
-            return ink.paletteIndex(at: t)
-        }
+        return { x, y in ink.paletteIndex(at: (ox + ax * Double(x) + bx * Double(y)) / width) }
     }
 
     private func showLayer(_ layer: PaperLayer, surfaces: [GraphiteSurface], sheet: DraftingSheet) {

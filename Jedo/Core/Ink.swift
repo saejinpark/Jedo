@@ -130,7 +130,19 @@ enum InkRasterizer {
                 for py in tileRect.minY..<tileRect.maxY {
                     let dy = Double(py) + 0.5 - cy
                     let row = (py - originY) * size - originX
-                    for px in tileRect.minX..<tileRect.maxX {
+                    // Only the stretch of this row the band crosses: where both slabs hold.
+                    var lo = Double(tileRect.minX), hi = Double(tileRect.maxX)
+                    for (nx, ny, w) in [(axis.x, axis.y, half + 0.5), (-axis.y, axis.x, thickness + 0.5)] {
+                        if abs(nx) < 1e-9 {
+                            if abs(ny * dy) > w { lo = 1; hi = 0 }
+                        } else {
+                            let a = (-w - ny * dy) / nx, b = (w - ny * dy) / nx
+                            lo = max(lo, cx + min(a, b) - 0.5)
+                            hi = min(hi, cx + max(a, b) + 0.5)
+                        }
+                    }
+                    guard hi > lo else { continue }
+                    for px in max(Int(lo.rounded(.down)), tileRect.minX)..<min(Int(hi.rounded(.up)), tileRect.maxX) {
                         let dx = Double(px) + 0.5 - cx
                         let across = abs(dx * axis.x + dy * axis.y), along = abs(-dx * axis.y + dy * axis.x)
                         let c = min(max(half + 0.5 - across, 0), 1) * min(max(thickness + 0.5 - along, 0), 1)

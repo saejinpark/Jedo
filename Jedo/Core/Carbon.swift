@@ -81,6 +81,16 @@ enum CarbonPalette {
         }
     }
 
+    /// Each colour as 0…255 channels, for packing pixels fast.
+    private static let bytes: [(r: Float, g: Float, b: Float)] = colours.map { (Float($0.r) * 255, Float($0.g) * 255, Float($0.b) * 255) }
+
+    /// A premultiplied pixel of colour `index` at `density`.
+    @inline(__always)
+    static func pixel(_ index: Int, _ density: Float) -> UInt32 {
+        let c = bytes[index], a = min(max(density, 0), 1)
+        return UInt32(a * 255 + 0.5) << 24 | UInt32(c.r * a + 0.5) << 16 | UInt32(c.g * a + 0.5) << 8 | UInt32(c.b * a + 0.5)
+    }
+
     @inline(__always)
     static func split(_ value: Float) -> (index: Int, density: Float) {
         guard value > 0 else { return (0, 0) }

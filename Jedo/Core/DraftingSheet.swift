@@ -30,6 +30,42 @@ final class DraftingSheet {
         case eraser(EraserDynamics)
     }
 
+    /// A carbon colour per pixel, filled a tile at a time as the stroke reaches it.
+    final class ColourTiles {
+        private let colour: (Int, Int) -> Int
+        private var tiles: [TileCoord: [UInt16]] = [:]
+        private var lastCoord = TileCoord(x: Int.min, y: Int.min)
+        private var lastTile: [UInt16] = []
+
+        init(_ colour: @escaping (Int, Int) -> Int) { self.colour = colour }
+
+        /// A whole tile's colours.
+        func tile(_ coord: TileCoord) -> [UInt16] {
+            let ts = GraphiteRaster.tileSize
+            _ = index(coord.x * ts, coord.y * ts)
+            return lastTile
+        }
+
+        @inline(__always)
+        func index(_ x: Int, _ y: Int) -> Int {
+            let ts = GraphiteRaster.tileSize
+            let coord = TileCoord(x: x >= 0 ? x / ts : (x - ts + 1) / ts, y: y >= 0 ? y / ts : (y - ts + 1) / ts)
+            if coord != lastCoord {
+                if let tile = tiles[coord] {
+                    lastTile = tile
+                } else {
+                    var tile = [UInt16](repeating: 0, count: GraphiteRaster.tileArea)
+                    let ox = coord.x * ts, oy = coord.y * ts
+                    for j in 0..<ts { for i in 0..<ts { tile[j * ts + i] = UInt16(clamping: colour(ox + i, oy + j)) } }
+                    tiles[coord] = tile
+                    lastTile = tile
+                }
+                lastCoord = coord
+            }
+            return Int(lastTile[(y - coord.y * ts) * ts + (x - coord.x * ts)])
+        }
+    }
+
     private struct ActiveStroke {
         var lead: Lead
         var spacer = DabSpacer()
@@ -41,7 +77,22 @@ final class DraftingSheet {
         /// Tiles as they were before the stroke, kept once an earlier pass has been laid down.
         var before: [TileCoord: [Float]?] = [:]
         /// On a carbon copy: the palette colour at each pixel, from the carbon pressed through.
-        var colour: (@Sendable (Int, Int) -> Int)? = nil
+        var colour: (@Sendable (Int, Int) -> Int)? = nil {
+            didSet { colours = colour.map(ColourTiles.init) }
+        }
+        /// The colour, worked out once per tile and kept: it is read for every pixel every frame.
+        var colours: ColourTiles?
+
+        init(lead: Lead, buffer: GraphiteRaster, seed: UInt32, maxDensity: Float, mask: StrokeMask = .everywhere,
+             colour: (@Sendable (Int, Int) -> Int)? = nil) {
+            self.lead = lead
+            self.buffer = buffer
+            self.seed = seed
+            self.maxDensity = maxDensity
+            self.mask = mask
+            self.colour = colour
+            colours = colour.map(ColourTiles.init)
+        }
 
         var erases: Bool {
             if case .eraser = lead { true } else { false }
@@ -50,9 +101,9 @@ final class DraftingSheet {
         /// What `stroke` of this lead makes of `base` at pixel (x, y).
         @inline(__always)
         func laid(_ base: Float, _ stroke: Float, x: Int, y: Int) -> Float {
-            if let colour {
+            if let colours {
                 if case .eraser = lead { return CarbonPalette.erase(base: base, lift: stroke) }
-                return CarbonPalette.lay(base: base, stroke: min(stroke, 1), index: colour(x, y))
+                return CarbonPalette.lay(base: base, stroke: min(stroke, 1), index: colours.index(x, y))
             }
             return laid(base, stroke)
         }
@@ -193,6 +244,11 @@ final class DraftingSheet {
         }
 
         clearPrediction()
+        // A roller is broad and slow: drawing ahead of it costs more than the lag it hides.
+        if case .roller = active.lead {
+            stroke = active
+            return
+        }
         var lookahead = active.spacer
         for sample in predicted {
             stamp(sample, spacer: &lookahead, lead: active.lead, mask: active.mask, into: &prediction, seed: active.seed)
@@ -518,6 +574,10 @@ final class DraftingSheet {
         let active = stroke
         let top = GraphiteShading.levels - 1
 
+        if isCarbonCopy {
+            renderCopy(coord: coord, area: area, into: pixels, base: base, stroke: strokeTile, predicted: predictedTile, active: active)
+            return
+        }
         for py in area.minY..<area.maxY {
             let row = (py - originY) * size - originX
             for px in area.minX..<area.maxX {
@@ -527,14 +587,43 @@ final class DraftingSheet {
                 if s > 0, let active { d = active.laid(d, s, x: px, y: py) }
                 if isCarbonCopy {
                     let (index, density) = CarbonPalette.split(d)
-                    let c = CarbonPalette.colours[index], a = Double(density)
-                    pixels[i] = GraphiteShading.pack(r: c.r * a, g: c.g * a, b: c.b * a, a: a)
+                    pixels[i] = CarbonPalette.pixel(index, density)
                 } else if d < 0 {
                     pixels[i] = GraphiteShading.dentLookup[min(Int(-d * Float(top) + 0.5), top)]
                 } else if d > 1, let inkShading {
                     pixels[i] = inkShading[min(Int((d - 1) * Float(top) + 0.5), top)]
                 } else {
                     pixels[i] = lut[min(Int(min(d, 1) * Float(top) + 0.5), top)]
+                }
+            }
+        }
+    }
+
+    /// The carbon-copy render, kept tight: it runs over broad rolled bands every frame.
+    private func renderCopy(coord: TileCoord, area: PixelRect, into pixels: UnsafeMutableBufferPointer<UInt32>,
+                            base: [Float]?, stroke strokeTile: [Float]?, predicted: [Float]?, active: ActiveStroke?) {
+        let size = GraphiteRaster.tileSize
+        let originX = coord.x * size, originY = coord.y * size
+        let colourTile = active?.colours?.tile(coord)
+        let erases = active?.erases ?? false
+        let empty = [Float](repeating: 0, count: 0)
+        (base ?? empty).withUnsafeBufferPointer { b in
+            (strokeTile ?? empty).withUnsafeBufferPointer { st in
+                (predicted ?? empty).withUnsafeBufferPointer { pr in
+                    for py in area.minY..<area.maxY {
+                        let row = (py - originY) * size - originX
+                        for px in area.minX..<area.maxX {
+                            let i = row + px
+                            var d = b.isEmpty ? 0 : b[i]
+                            let s = max(st.isEmpty ? 0 : st[i], pr.isEmpty ? 0 : pr[i])
+                            if s > 0, let colourTile {
+                                d = erases ? CarbonPalette.erase(base: d, lift: s)
+                                    : CarbonPalette.lay(base: d, stroke: min(s, 1), index: Int(colourTile[i]))
+                            }
+                            let (index, density) = CarbonPalette.split(d)
+                            pixels[i] = CarbonPalette.pixel(index, density)
+                        }
+                    }
                 }
             }
         }
