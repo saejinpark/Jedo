@@ -9,11 +9,20 @@ struct ShellLayoutTests {
 
     @Test func rightHandedPutsThePencilTopRightAndTheOffHandBottomLeft() {
         let cells = ShellLayout.standard(leftHanded: false).cells(columns: columns, rows: rows)
-        #expect(cells[.pencil]!.x + cells[.pencil]!.w == columns && cells[.pencil]!.y == 1)
-        #expect(cells[.view]!.x + cells[.view]!.w == columns && cells[.view]!.y == 0)
+        #expect(cells[.pencil]!.x + cells[.pencil]!.w == columns && cells[.pencil]!.y == 0)
+        #expect(cells[.view]!.x == 0 && cells[.view]!.y == 0)
         #expect(cells[.history]!.x == 0 && cells[.history]!.y == rows - 1)
-        #expect(cells[.map]!.x == 0 && cells[.map]!.y == 0)
+        // The map stands on the bottom row, its stick under the other hand's thumb.
+        #expect(cells[.map]!.x == 0 && cells[.map]!.y + cells[.map]!.h == rows - 1)
         #expect(ShellLayout.standard(leftHanded: false).isComplete)
+    }
+
+    @Test func turnedOnItsSideTheOtherHandsThingsShareOneRow() {
+        let cells = ShellLayout.standard(leftHanded: false).cells(columns: 22, rows: 15)
+        for group in [ShellLayout.Group.history, .hand, .sheets, .desk] { #expect(cells[group]!.y == 14) }
+        #expect(cells[.papers]!.y == 13)
+        // The drawing palm's corner stays clear.
+        #expect(!cells.values.contains { $0.x + $0.w > 17 && $0.y + $0.h > 10 })
     }
 
     @Test func nothingOverlapsOnAnyIPad() {

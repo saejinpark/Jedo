@@ -8,7 +8,7 @@ import Foundation
 ///
 /// Right-handed, the pencil's choices sit top right, out from under the
 /// drawing palm, and what the other hand reaches for (undo, the eraser, the
-/// sheets, the tools) sits bottom left. Left-handed is the mirror.
+/// sheets, the tools, the map's stick) sits bottom left. Left-handed is the mirror.
 struct ShellLayout: Equatable, Codable, Sendable {
     /// Side of a grid square in points.
     static let unit: CGFloat = 52
@@ -68,15 +68,18 @@ struct ShellLayout: Equatable, Codable, Sendable {
 
     static func standard(leftHanded: Bool) -> ShellLayout {
         let r = !leftHanded
+        // Two bands, nothing in between: what the pencil chooses along the top, on its
+        // side; what the other hand reaches for along the bottom, from its corner out.
+        // The map and its stick stand on that row, under the other hand's thumb.
         return ShellLayout(spots: [
-            .view: Spot(fromRight: r, fromBottom: false, x: 0, y: 0),
-            .pencil: Spot(fromRight: r, fromBottom: false, x: 0, y: 1),
-            .map: Spot(fromRight: !r, fromBottom: false, x: 0, y: 0),
+            .pencil: Spot(fromRight: r, fromBottom: false, x: 0, y: 0),
+            .view: Spot(fromRight: !r, fromBottom: false, x: 0, y: 0),
             .history: Spot(fromRight: !r, fromBottom: true, x: 0, y: 0),
             .hand: Spot(fromRight: !r, fromBottom: true, x: 2, y: 0),
             .sheets: Spot(fromRight: !r, fromBottom: true, x: 6, y: 0),
-            .desk: Spot(fromRight: !r, fromBottom: true, x: 0, y: 1),
-            .papers: Spot(fromRight: !r, fromBottom: true, x: 0, y: 2),
+            .desk: Spot(fromRight: !r, fromBottom: true, x: 7, y: 0),
+            .map: Spot(fromRight: !r, fromBottom: true, x: 0, y: 1),
+            .papers: Spot(fromRight: !r, fromBottom: true, x: 3, y: 1),
         ], leftHanded: leftHanded)
     }
 

@@ -5,7 +5,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var session = DrawingSession()
     /// The arrangement of the control groups, kept between launches.
-    @AppStorage("shellLayout2") private var savedLayout = ""
+    @AppStorage("shellLayout3") private var savedLayout = ""
     @State private var arranging = false
     /// Whether the guide has been through once.
     @AppStorage("guideSeen") private var guideSeen = false
