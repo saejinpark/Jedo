@@ -50,7 +50,9 @@ And
 • The drawing saves itself and exports as a PNG.
 • Turn the iPad and the drawing stays under your hand.
 
-Made for students of architectural and engineering drawing, for people who draw perspectives and manuscripts by hand, for pattern drafting and fashion sketches, and for anyone who wants to keep the feel of the drawing board on an iPad. Tell me where it doesn't fit your hand; I keep fixing it.
+Made for students of architectural and engineering drawing, for people who draw perspectives and manuscripts by hand, for pattern drafting and fashion sketches, and for anyone who wants to keep the feel of the drawing board on an iPad.
+
+I am not a drafting professional, so there is surely much that falls short. I would be grateful for feedback from people who really draft, draw manga or cut patterns: where a tool looks or works differently from the real one, which tools are missing, where it doesn't fit your hand. I will keep fixing it.
 
 No personal data is collected. Your drawings and the photos you choose stay on your iPad.
 
