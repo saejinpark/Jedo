@@ -247,6 +247,31 @@ final class DrawingSession {
             for stroke in script.strokes {
                 let t = Date()
                 defer { slowest = max(slowest, Date().timeIntervalSince(t)) }
+                if let op = stroke.op {
+                    // What the other hand does: pins, tools, tone, the knife.
+                    let at = stroke.pts.map { CGPoint(x: $0[0], y: $0[1]) }
+                    if pace != nil, let first = at.first, op != "pins" { desk?.follow(mm: first) }
+                    switch op {
+                    case "pins": canvas?.scriptPins(at)
+                    case "tool":
+                        if let kind = ToolKind(rawValue: stroke.k ?? ""), let p = stroke.pts.first {
+                            canvas?.scriptTool(kind, centreMM: at[0], angle: p.count > 2 ? p[2] : 0)
+                        }
+                    case "untool": if let kind = ToolKind(rawValue: stroke.k ?? "") { canvas?.setTool(kind, onDesk: false) }
+                    case "tone":
+                        let pattern = TonePattern.allCases.first { "\($0)" == stroke.k } ?? .dots30
+                        if let id = canvas?.addToneLayer(pattern), let p = stroke.pts.first {
+                            canvas?.placeLayer(id, centreMM: at[0], angle: p.count > 2 ? p[2] : 0)
+                            canvas?.selectSheet(nil)
+                        }
+                    case "cut": canvas?.scriptKnife(at, scrape: false)
+                    case "scrape": canvas?.scriptKnife(at, scrape: true, pressure: stroke.pts[0].count > 2 ? stroke.pts[0][2] : 0.6)
+                    case "peel": if let p = at.first, canvas?.scriptPeel(atMM: p) != true { print("script: nothing to peel at", p) }
+                    default: break
+                    }
+                    if let pace { try? await Task.sleep(for: .seconds(pace * (op == "tool" ? 5 : 12))) }
+                    continue
+                }
                 guard let instrument = DrawingScript.instrument(stroke.i) else { continue }
                 if let pace, let first = stroke.pts.first {
                     // Slowly, for watching: the view follows the pen.
@@ -280,6 +305,10 @@ final class DrawingSession {
             /// m03 m05 m07 m09 wood g maru p013 p018 p025 p035 p05 p07 p10
             var i: String
             var g: String?
+            /// Not a stroke but a step of the other hand: pins, tool [x, y, angle], untool, tone [x, y, angle],
+            /// cut, scrape, peel. `k` names the tool or the tone.
+            var op: String?
+            var k: String?
             /// [x mm, y mm, pressure?, altitude?]
             var pts: [[Double]]
         }

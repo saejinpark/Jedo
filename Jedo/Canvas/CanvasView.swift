@@ -1983,6 +1983,55 @@ final class CanvasView: UIView {
         var altitude: Double = .pi / 2
     }
 
+    #if DEBUG
+    // MARK: Scripted hands (debug): what fingers and the knife do, by paper millimetres.
+
+    private func pixels(_ mm: CGPoint) -> CGPoint {
+        let ppmm = sheet?.pixelsPerMillimeter ?? 1
+        return CGPoint(x: Double(paperRect.minX) + Double(mm.x) * ppmm, y: Double(paperRect.minY) + Double(mm.y) * ppmm)
+    }
+
+    func scriptPins(_ mm: [CGPoint]) {
+        pins = mm.prefix(Self.maxPins).map(pixels)
+        pinsChanged()
+    }
+
+    /// Lays a tool, or moves the one lying, to a centre and angle.
+    func scriptTool(_ kind: ToolKind, centreMM: CGPoint, angle: Double) {
+        guard let sheet else { return }
+        let pose = ToolPose(center: pixels(centreMM), angle: angle)
+        if let i = tools.firstIndex(where: { $0.kind == kind }) { tools[i].pose = pose } else { tools.append(DeskTool(kind: kind, pose: pose)) }
+        toolViews[kind]?.isHidden = false
+        showTool(tools.first { $0.kind == kind }!, sheet: sheet)
+        toolsChanged()
+    }
+
+    /// The knife drawn along a path through every sheet of tone under it: upright it cuts, laid flat it scrapes.
+    func scriptKnife(_ mm: [CGPoint], scrape: Bool, pressure: Double = 0.6) {
+        var changes: [Int: (before: ToneCut, after: ToneCut)] = [:]
+        for layer in layers where layer.kind.isTone && !hiddenLayers.contains(layer.id) {
+            guard var tone = toneCuts[layer.id] else { continue }
+            let before = tone
+            var pass = ToneCut.ScrapePass(tone)
+            var changed = false
+            for (a, b) in zip(mm, mm.dropFirst()) {
+                let p = sheetMillimetres(layer, pixels(a)), q = sheetMillimetres(layer, pixels(b))
+                changed = (scrape ? tone.scrape(from: p, to: q, pressure: pressure, pass: &pass) : tone.cut(from: p, to: q)) || changed
+            }
+            guard changed else { continue }
+            setTone(layer.id, tone)
+            changes[layer.id] = (before, tone)
+        }
+        guard !changes.isEmpty else { return }
+        undoStack.append(.tones(changes))
+        redoStack.removeAll()
+        notifyHistory()
+    }
+
+    @discardableResult
+    func scriptPeel(atMM mm: CGPoint) -> Bool { peel(at: pixels(mm)) }
+    #endif
+
     /// Where a point of the paper (mm from its top-left) is in this view.
     func viewPoint(mm: CGPoint) -> CGPoint? {
         guard let sheet else { return nil }
