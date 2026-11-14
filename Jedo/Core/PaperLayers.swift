@@ -597,7 +597,8 @@ enum Polygon {
         // A closed loop wholly inside lifts out what it went round.
         guard closed, path.count >= 4, abs(signedArea(path)) / 2 > 20,
               path.allSatisfy({ contains($0, polygon) }) else { return nil }
-        let loop = path
+        // The loop's end meeting its start exactly is one corner, not two.
+        let loop = path.count > 3 && path[0] == path[path.count - 1] ? Array(path.dropLast()) : path
         // Keep the rest as one sheet with a hole: the rim, a hairline in to the
         // hole, round it, and back out the same way.
         var best = (rim: 0, hole: 0, d: Double.infinity)
@@ -684,6 +685,8 @@ enum Polygon {
         for i in polygon.indices {
             let a = polygon[i], b = polygon[(i + 1) % polygon.count]
             let nx = Double(b.y - a.y), ny = -Double(b.x - a.x)
+            // A doubled point makes an edge of no length, which has no side to be outside of.
+            guard nx != 0 || ny != 0 else { continue }
             let project = { (q: CGPoint) in Double(q.x) * nx + Double(q.y) * ny }
             var lo = Double.infinity, hi = -Double.infinity
             for q in polygon { let v = project(q); lo = min(lo, v); hi = max(hi, v) }

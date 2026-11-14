@@ -244,9 +244,16 @@ final class DrawingSession {
             let pace = args.firstIndex(of: "-JedoPace").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }
             let began = Date()
             var slowest = 0.0
+            var slowestStep = ""
+            var notes: [String] = []
+            var asleep = 0.0
             for stroke in script.strokes {
                 let t = Date()
-                defer { slowest = max(slowest, Date().timeIntervalSince(t)) }
+                let sleptBefore = asleep
+                defer {
+                    let took = Date().timeIntervalSince(t) - (asleep - sleptBefore)
+                    if took > slowest { (slowest, slowestStep) = (took, stroke.op ?? stroke.i) }
+                }
                 if let op = stroke.op {
                     // What the other hand does: pins, tools, tone, the knife.
                     let at = stroke.pts.map { CGPoint(x: $0[0], y: $0[1]) }
@@ -264,19 +271,40 @@ final class DrawingSession {
                             canvas?.placeLayer(id, centreMM: at[0], angle: p.count > 2 ? p[2] : 0)
                             canvas?.selectSheet(nil)
                         }
+                    case "carbon":
+                        let ink = CarbonInk(rawValue: stroke.k ?? "") ?? .navy
+                        if let id = canvas?.addCarbonLayer(ink), let p = stroke.pts.first {
+                            canvas?.placeLayer(id, centreMM: at[0], angle: p.count > 2 ? p[2] : 0)
+                            canvas?.selectSheet(nil)
+                        }
+                    case "photo", "photocarbon":
+                        if let data = try? Data(contentsOf: folder.appendingPathComponent(stroke.k ?? "")), let photo = PhotoStore.add(data),
+                           let id = canvas?.addPhotoLayer(photo, asCarbon: op == "photocarbon"), let p = stroke.pts.first {
+                            canvas?.placeLayer(id, centreMM: at[0], angle: p.count > 2 ? p[2] : 0)
+                            canvas?.selectSheet(nil)
+                        } else { notes.append("no photo \(stroke.k ?? "")") }
+                    case "slice": if canvas?.scriptSlice(at) == 0 { notes.append("nothing sliced from \(at[0])") }
+                    case "lift": if canvas?.scriptLift(atMM: at[0]) != true { notes.append("nothing to lift at \(at[0])") }
+                    case "glue": if canvas?.scriptGlue(atMM: at[0]) != true { notes.append("nothing to glue at \(at[0])") }
                     case "cut": canvas?.scriptKnife(at, scrape: false)
                     case "scrape": canvas?.scriptKnife(at, scrape: true, pressure: stroke.pts[0].count > 2 ? stroke.pts[0][2] : 0.6)
-                    case "peel": if let p = at.first, canvas?.scriptPeel(atMM: p) != true { print("script: nothing to peel at", p) }
+                    case "peel": if let p = at.first, canvas?.scriptPeel(atMM: p) != true { notes.append("nothing to peel at \(p)") }
                     default: break
                     }
-                    if let pace { try? await Task.sleep(for: .seconds(pace * (op == "tool" ? 5 : 12))) }
+                    if let pace {
+                        let nap = pace * (op == "tool" ? 5 : 12)
+                        try? await Task.sleep(for: .seconds(nap))
+                        asleep += nap
+                    }
                     continue
                 }
                 guard let instrument = DrawingScript.instrument(stroke.i) else { continue }
                 if let pace, let first = stroke.pts.first {
                     // Slowly, for watching: the view follows the pen.
                     desk?.follow(mm: CGPoint(x: first[0], y: first[1]))
-                    try? await Task.sleep(for: .seconds(pace * (1 + Double(stroke.pts.count) / 10)))
+                    let nap = pace * (1 + Double(stroke.pts.count) / 10)
+                    try? await Task.sleep(for: .seconds(nap))
+                    asleep += nap
                 }
                 let grade = PencilGrade.allCases.first { $0.label == stroke.g } ?? .hb
                 canvas?.draw(stroke.pts.map {
@@ -284,12 +312,13 @@ final class DrawingSession {
                                              altitude: $0.count > 3 ? $0[3] : .pi / 2)
                 }, grade: grade, instrument: instrument)
             }
-            let drew = Date().timeIntervalSince(began)
+            let drew = Date().timeIntervalSince(began) - asleep
             try? await Task.sleep(for: .seconds(0.5))
             let exportBegan = Date()
             let report = { (exported: Double) in
-                let text = String(format: "strokes %d, drawing %.2f s (%.2f ms a stroke, slowest %.1f ms), export %.2f s\n",
-                                  script.strokes.count, drew, drew / Double(max(script.strokes.count, 1)) * 1000, slowest * 1000, exported)
+let text = String(format: "strokes %d, drawing %.2f s (%.2f ms a stroke, slowest %.1f ms: %@), export %.2f s\n",
+                                  script.strokes.count, drew, drew / Double(max(script.strokes.count, 1)) * 1000, slowest * 1000, slowestStep, exported)
+                    + notes.map { $0 + "\n" }.joined()
                 try? text.write(to: folder.appendingPathComponent(args[i + 1] + ".txt"), atomically: true, encoding: .utf8)
             }
             defer { report(Date().timeIntervalSince(exportBegan)) }
@@ -306,7 +335,8 @@ final class DrawingSession {
             var i: String
             var g: String?
             /// Not a stroke but a step of the other hand: pins, tool [x, y, angle], untool, tone [x, y, angle],
-            /// cut, scrape, peel. `k` names the tool or the tone.
+            /// cut, scrape, peel (tone); carbon, photo, photocarbon [x, y, angle]; slice, lift, glue (loose sheets).
+            /// `k` names the tool, the tone, the carbon's ink or the picture's file.
             var op: String?
             var k: String?
             /// [x mm, y mm, pressure?, altitude?]
@@ -327,6 +357,8 @@ final class DrawingSession {
             case "m07": .mechanical(.mm07)
             case "m09": .mechanical(.mm09)
             case "wood": .wood
+            case "stylus": .stylus
+            case "roller": .roller
             case "g": .dipPen(.gPen)
             case "maru": .dipPen(.maru)
             case "p013": .technicalPen(.w013)

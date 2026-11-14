@@ -2030,6 +2030,33 @@ final class CanvasView: UIView {
 
     @discardableResult
     func scriptPeel(atMM mm: CGPoint) -> Bool { peel(at: pixels(mm)) }
+
+    /// The knife through the loose sheets (tracing, carbon, photos): each parts where it is cut.
+    @discardableResult
+    func scriptSlice(_ mm: [CGPoint]) -> Int {
+        let cuts = cutSheets(along: mm.map(pixels))
+        guard !cuts.isEmpty else { return 0 }
+        undoStack.append(.pieces(cuts))
+        redoStack.removeAll()
+        notifyHistory()
+        return cuts.reduce(0) { $0 + $1.pieces.count }
+    }
+
+    /// Takes away the loose sheet lying topmost at a point.
+    @discardableResult
+    func scriptLift(atMM mm: CGPoint) -> Bool {
+        guard let i = sheetUnder(pixels(mm)) else { return false }
+        removeGridLayer(layers[i].id)
+        return true
+    }
+
+    /// Glues down the loose print lying topmost at a point.
+    @discardableResult
+    func scriptGlue(atMM mm: CGPoint) -> Bool {
+        guard let i = sheetUnder(pixels(mm)), layers[i].kind.photo != nil else { return false }
+        glueLayer(layers[i].id)
+        return true
+    }
     #endif
 
     /// Where a point of the paper (mm from its top-left) is in this view.

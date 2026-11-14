@@ -88,7 +88,7 @@ final class PaperLayerView: UIView {
 
         if case .tone(let pattern) = sheet.kind {
             let print = CALayer()
-            print.contents = Self.toneImage(pattern, size: bounds.size, pointsPerMM: pt)?.cgImage
+            print.contents = Self.tonePrint(pattern, size: bounds.size, pointsPerMM: pt)
             layer.addSublayer(print)
         }
 
@@ -215,10 +215,22 @@ final class PaperLayerView: UIView {
                         ctx.addEllipse(in: CGRect(x: CGFloat(x - r) * pt, y: CGFloat(y - r) * pt,
                                                   width: CGFloat(2 * r) * pt, height: CGFloat(2 * r) * pt))
                     }
+                    // A row at a time: one path of every dot on the sheet takes seconds to fill.
+                    ctx.fillPath()
                 }
-                ctx.fillPath()
             }
         }
+    }
+
+    /// The prints already drawn: every sheet of one tone is the same print.
+    private static var tonePrints: [String: CGImage] = [:]
+
+    private static func tonePrint(_ pattern: TonePattern, size: CGSize, pointsPerMM pt: CGFloat) -> CGImage? {
+        let key = "\(pattern) \(Int(size.width.rounded())) \(Int(size.height.rounded())) \(pt)"
+        if let made = tonePrints[key] { return made }
+        let image = toneImage(pattern, size: size, pointsPerMM: pt)?.cgImage
+        tonePrints[key] = image
+        return image
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }

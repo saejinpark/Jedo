@@ -660,6 +660,21 @@ struct KnifeCutTests {
                      CGPoint(x: 40, y: 40), CGPoint(x: 60, y: 40), CGPoint(x: 60, y: 60), CGPoint(x: 40, y: 60), CGPoint(x: 40, y: 40)]
         #expect(Polygon.classify(PixelRect(minX: 20, minY: 20, maxX: 80, maxY: 80), holed) == .part)
     }
+
+    @Test func aPieceWithADoubledCornerStillMeetsATileItLiesIn() {
+        // A narrow piece of carbon under the roller: the roller's band is wider than the piece.
+        let piece = [CGPoint(x: 40, y: 40), CGPoint(x: 60, y: 40), CGPoint(x: 60, y: 60), CGPoint(x: 40, y: 60), CGPoint(x: 40, y: 40)]
+        #expect(Polygon.classify(PixelRect(minX: 48, minY: 0, maxX: 52, maxY: 100), piece) == .part)
+        #expect(Polygon.classify(PixelRect(minX: 70, minY: 0, maxX: 74, maxY: 100), piece) == .outside)
+    }
+
+    @Test func aLoopClosedExactlyLiftsAPieceWithNoDoubledCorner() {
+        let sheet = [CGPoint(x: -50, y: -50), CGPoint(x: 50, y: -50), CGPoint(x: 50, y: 50), CGPoint(x: -50, y: 50)]
+        let loop = [CGPoint(x: -10, y: -10), CGPoint(x: 10, y: -10), CGPoint(x: 10, y: 10), CGPoint(x: -10, y: 10), CGPoint(x: -10, y: -10)]
+        let parts = Polygon.cut(sheet, along: loop)
+        #expect(parts?.count == 2)
+        #expect(parts?[1].count == 4)
+    }
 }
 
 struct PrintStampTests {
