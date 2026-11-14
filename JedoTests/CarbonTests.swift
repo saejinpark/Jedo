@@ -28,6 +28,28 @@ struct CarbonTests {
         }
     }
 
+    @Test func clothPrintsRepeatAndHoldMoreThanOneColour() {
+        for ink in CarbonInk.allCases where ink.isPattern {
+            var seen: Set<Int> = []
+            for x in stride(from: 0.25, to: 40, by: 0.5) {
+                for y in stride(from: 0.25, to: 40, by: 0.5) { seen.insert(ink.printIndex(atMM: x, y)) }
+            }
+            #expect(seen.count >= 2, "\(ink)")
+            // Every print here repeats within 120 mm each way.
+            #expect(ink.printIndex(atMM: 3.3, 7.7) == ink.printIndex(atMM: 123.3, 127.7), "\(ink)")
+            #expect(!ink.isPlain && !ink.isGradient)
+        }
+        #expect(CarbonInk.red.isPlain && !CarbonInk.sea.isPlain)
+    }
+
+    @Test func houndstoothIsATwoOverTwoTwillOfFourAndFour() {
+        // Along the diagonal of the dark square everything is dark; of the light square, light.
+        let dark = CarbonInk.houndstooth.printIndex(atMM: 0.7, 0.7), light = CarbonInk.houndstooth.printIndex(atMM: 6.7, 6.7)
+        #expect(dark != light)
+        #expect(CarbonInk.houndstooth.printIndex(atMM: 2.2, 3.7) == dark)
+        #expect(CarbonInk.houndstooth.printIndex(atMM: 8.2, 9.7) == light)
+    }
+
     @Test func pressingThroughCarbonLaysItsColour() {
         let sheet = DraftingSheet(width: 200, height: 100, pixelsPerMillimeter: 10, isCarbonCopy: true)
         sheet.beginStroke(grade: .b6, instrument: .dipPen(.gPen), colour: { x, _ in x < 100 ? 2 : 3 })

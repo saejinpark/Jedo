@@ -42,7 +42,7 @@ final class PaperLayerView: UIView {
         body.path = outline
         body.fillRule = .evenOdd
         switch sheet.kind {
-        case .carbon where sheet.carbonInk.isGradient:
+        case .carbon where !sheet.carbonInk.isPlain:
             body.fillColor = nil
         case .carbon:
             // Dark but see-through, so the drawing under it still shows faintly. Pitch black was tried and set aside.
@@ -68,6 +68,28 @@ final class PaperLayerView: UIView {
             print.contentsGravity = .resize
             // Used as carbon it lies face down: its colours show faintly through the back.
             print.opacity = sheet.photoCarbon ? 0.3 : 1
+            layer.addSublayer(print)
+        }
+        if sheet.kind == .carbon, sheet.carbonInk.isPattern {
+            // A cloth print shows on the sheet as it will press: two samples to the millimetre is plenty to see it by.
+            let ink = sheet.carbonInk, perMM = 2.0
+            let cols = Int((w * perMM).rounded(.up)), rows = Int((h * perMM).rounded(.up))
+            var pixels = [UInt32](repeating: 0, count: cols * rows)
+            for y in 0..<rows {
+                for x in 0..<cols {
+                    let c = Self.coating(ink.printColour(atMM: (Double(x) + 0.5) / perMM, (Double(y) + 0.5) / perMM)), a = 0.66
+                    let (r, g, b) = (UInt32(c.r * a * 255), UInt32(c.g * a * 255), UInt32(c.b * a * 255))
+                    pixels[y * cols + x] = UInt32(a * 255) << 24 | r << 16 | g << 8 | b
+                }
+            }
+            let print = CALayer()
+            print.frame = bounds
+            print.contents = CanvasView.makeImage(pixels: pixels, width: cols, height: rows)
+            print.magnificationFilter = .nearest
+            let clip = CAShapeLayer()
+            clip.path = outline
+            clip.fillRule = .evenOdd
+            print.mask = clip
             layer.addSublayer(print)
         }
         if sheet.kind == .carbon, sheet.carbonInk.isGradient {

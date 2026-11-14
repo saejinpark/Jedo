@@ -1264,6 +1264,12 @@ final class CanvasView: UIView {
             }
         }
         let ink = carbon.carbonInk
+        if ink.isPattern {
+            // A cloth print: each spot takes the print's colour there.
+            return { x, y in
+                ink.printIndex(atMM: (ox + ax * Double(x) + bx * Double(y)) / ppmm, (oy + ay * Double(x) + by * Double(y)) / ppmm)
+            }
+        }
         guard ink.isGradient else {
             let index = ink.paletteIndex(at: 0)
             return { _, _ in index }

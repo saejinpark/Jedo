@@ -782,11 +782,19 @@ private struct CarbonSwatch: View {
     let selected: Bool
 
     var body: some View {
-        RoundedRectangle(cornerRadius: Metric.swatchRadius)
-            .fill(LinearGradient(colors: stride(from: 0.0, through: 1.0, by: 0.25).map { t in
-                let c = ink.colour(at: t)
-                return Color(red: c.r, green: c.g, blue: c.b)
-            }, startPoint: .leading, endPoint: .trailing))
+        Canvas { context, size in
+            // The coating in small: a plain colour, a run of colours, or a patch of the cloth print.
+            let n = 13, m = 10
+            for i in 0..<n {
+                for j in 0..<m {
+                    let c = ink.isPattern ? ink.printColour(atMM: Double(i) * 1.5 + 0.5, Double(j) * 1.5 + 0.5) : ink.colour(at: Double(i) / Double(n - 1))
+                    context.fill(Path(CGRect(x: size.width * CGFloat(i) / CGFloat(n), y: size.height * CGFloat(j) / CGFloat(m),
+                                             width: size.width / CGFloat(n) + 0.5, height: size.height / CGFloat(m) + 0.5)),
+                                 with: .color(Color(red: c.r, green: c.g, blue: c.b)))
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: Metric.swatchRadius))
             .frame(width: 26, height: 20)
             .overlay(RoundedRectangle(cornerRadius: Metric.swatchRadius).strokeBorder(Palette.ink.opacity(selected ? 0.9 : 0.15), lineWidth: selected ? 2 : 0.5))
             .padding(2)

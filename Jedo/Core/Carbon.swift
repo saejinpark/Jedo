@@ -6,6 +6,8 @@ import Foundation
 enum CarbonInk: String, CaseIterable, Hashable, Codable, Sendable {
     case navy, black, red, blue, green
     case rainbow, sunset, sea
+    /// Coated in a cloth's print, for laying a fabric into a fashion drawing.
+    case stripe, gingham, dots, tartan, houndstooth
 
     var name: String {
         switch self {
@@ -17,10 +19,55 @@ enum CarbonInk: String, CaseIterable, Hashable, Codable, Sendable {
         case .rainbow: "무지개"
         case .sunset: "노을"
         case .sea: "바다"
+        case .stripe: "줄무늬"
+        case .gingham: "깅엄 체크"
+        case .dots: "물방울"
+        case .tartan: "타탄 체크"
+        case .houndstooth: "하운드투스"
         }
     }
 
     var isGradient: Bool { self == .rainbow || self == .sunset || self == .sea }
+    var isPattern: Bool { [.stripe, .gingham, .dots, .tartan, .houndstooth].contains(self) }
+    /// Whether the coating is one colour all over.
+    var isPlain: Bool { !isGradient && !isPattern }
+
+    /// The colour of a cloth print at a point of the carbon, in millimetres from its top-left corner.
+    func printColour(atMM x: Double, _ y: Double) -> (r: Double, g: Double, b: Double) {
+        func wrap(_ v: Double, _ period: Double) -> Double { let m = v.truncatingRemainder(dividingBy: period); return m < 0 ? m + period : m }
+        let white = (r: 1.0, g: 1.0, b: 0.93), navy = (r: 0.11, g: 0.16, b: 0.36)
+        switch self {
+        case .stripe:
+            return wrap(x, 8) < 4 ? navy : white
+        case .gingham:
+            let a = wrap(x, 10) < 5, b = wrap(y, 10) < 5
+            return a && b ? (0.14, 0.32, 0.72) : a || b ? (0.56, 0.69, 0.90) : white
+        case .dots:
+            // Rows of dots, every other row set half a step along.
+            let row = (y / 8).rounded(.down)
+            let dx = wrap(x + (Int(row) % 2 == 0 ? 0 : 5), 10) - 5, dy = wrap(y, 8) - 4
+            return dx * dx + dy * dy < 2.4 * 2.4 ? white : (0.80, 0.16, 0.20)
+        case .tartan:
+            // Each way: red ground, a broad green band, a navy stripe, a yellow thread. Where two cross they mix, as weaving does.
+            func thread(_ v: Double) -> (r: Double, g: Double, b: Double) {
+                let t = wrap(v, 40)
+                return t < 12 ? (0.08, 0.36, 0.22) : (18..<22).contains(t) ? navy : (30..<31.2).contains(t) ? (0.93, 0.78, 0.25) : (0.74, 0.12, 0.14)
+            }
+            let a = thread(x), b = thread(y)
+            return ((a.r + b.r) / 2, (a.g + b.g) / 2, (a.b + b.b) / 2)
+        case .houndstooth:
+            // Four dark threads, four light, both ways, in a two-over-two twill.
+            let i = Int((x / 1.5).rounded(.down)), j = Int((y / 1.5).rounded(.down))
+            let dark = { (k: Int) in ((k % 8) + 8) % 8 < 4 }
+            let warpOver = (((i + j) % 4) + 4) % 4 < 2
+            return (warpOver ? dark(i) : dark(j)) ? (0.07, 0.07, 0.08) : white
+        default:
+            return colour(at: 0)
+        }
+    }
+
+    /// The palette entry a cloth print presses at a point of the carbon.
+    func printIndex(atMM x: Double, _ y: Double) -> Int { CarbonPalette.cubeIndex(printColour(atMM: x, y)) }
 
     /// The palette entry at `t`, 0…1 across the carbon from its left edge.
     func paletteIndex(at t: Double) -> Int {
@@ -39,6 +86,7 @@ enum CarbonInk: String, CaseIterable, Hashable, Codable, Sendable {
         case .rainbow: return hue(0, 300)
         case .sunset: return hue(345, 410)
         case .sea: return hue(160, 250)
+        case .stripe, .gingham, .dots, .tartan, .houndstooth: return printIndex(atMM: t * 40, 2)
         }
     }
 

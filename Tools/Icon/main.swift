@@ -1,5 +1,7 @@
-// Draws the app icon: a French curve printed with screen tone, lying on a
-// parallel rule, on drawing paper. The curve is the app's own outline.
+// Draws the app icon: three tools of the drafting desk fanned from one point —
+// a bamboo curve rule, a stylus, and in front a French curve (the app's own
+// outline). Few filled, overlapping shapes on a plain ground, the weight in the
+// middle, as the Human Interface Guidelines ask of an app icon.
 // Run with Tools/Icon/render.sh
 
 import CoreGraphics
@@ -8,81 +10,75 @@ import ImageIO
 import UniformTypeIdentifiers
 
 let size = 1024.0
+let space = CGColorSpace(name: CGColorSpace.sRGB)!
 let ctx = CGContext(data: nil, width: Int(size), height: Int(size), bitsPerComponent: 8, bytesPerRow: 0,
-                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                    space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
 // Top-left origin, y down, like the paper.
 ctx.translateBy(x: 0, y: size)
 ctx.scaleBy(x: 1, y: -1)
 func rgb(_ r: Double, _ g: Double, _ b: Double, _ a: Double = 1) -> CGColor { CGColor(srgbRed: r, green: g, blue: b, alpha: a) }
-let paper = rgb(0.965, 0.953, 0.925), ink = rgb(0.11, 0.115, 0.14)
+func hex(_ v: Int, _ a: Double = 1) -> CGColor { rgb(Double(v >> 16 & 255) / 255, Double(v >> 8 & 255) / 255, Double(v & 255) / 255, a) }
 
-ctx.setFillColor(paper)
-ctx.fill(CGRect(x: 0, y: 0, width: size, height: size))
+// The ground: ink blue, lighter toward the top.
+let ground = CGGradient(colorsSpace: space, colors: [hex(0x34436B), hex(0x161B2C)] as CFArray, locations: [0, 1])!
+ctx.drawLinearGradient(ground, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: size), options: [])
 
-// The parallel rule: a clear bar across the board, graduated along its upper edge.
-let rule = CGRect(x: -40, y: 660, width: size + 80, height: 150)
-ctx.setFillColor(rgb(0.80, 0.82, 0.84, 0.55))
-ctx.fill(rule)
-ctx.setFillColor(rgb(1, 1, 1, 0.35))
-ctx.fill(CGRect(x: rule.minX, y: rule.minY + 22, width: rule.width, height: 16))
-ctx.setStrokeColor(ink)
-ctx.setLineWidth(7)
-for y in [rule.minY, rule.maxY] {
-    ctx.move(to: CGPoint(x: rule.minX, y: y)); ctx.addLine(to: CGPoint(x: rule.maxX, y: y))
+/// A point `along` a tool from the fan's pivot and `across` it, with the tool leaning `angle` from upright.
+let pivot = CGPoint(x: 512, y: 905)
+func at(_ along: Double, _ across: Double, _ angle: Double) -> CGPoint {
+    CGPoint(x: pivot.x + across * cos(angle) + along * sin(angle), y: pivot.y + across * sin(angle) - along * cos(angle))
 }
-ctx.strokePath()
-ctx.setLineWidth(5)
-var k = 0
-for x in stride(from: 46.0, to: size, by: 46.6) {
-    let long = k % 5 == 0
-    ctx.move(to: CGPoint(x: x, y: rule.minY)); ctx.addLine(to: CGPoint(x: x, y: rule.minY + (long ? 58 : 32)))
-    k += 1
+func fill(_ points: [CGPoint], _ colour: CGColor, shadow: Bool = true) {
+    let path = CGMutablePath(); path.addLines(between: points); path.closeSubpath()
+    if shadow {
+        ctx.saveGState(); ctx.translateBy(x: 0, y: 14); ctx.addPath(path); ctx.setFillColor(rgb(0, 0, 0, 0.22)); ctx.fillPath(); ctx.restoreGState()
+    }
+    ctx.addPath(path); ctx.setFillColor(colour); ctx.fillPath()
 }
-ctx.strokePath()
 
-// The French curve, turned to rest on the rule.
-func placed(_ raw: [(Double, Double)], _ box: CGRect, scale: Double, angle: Double, at centre: CGPoint) -> [CGPoint] {
-    raw.map { p in
-        let x = (p.0 - box.midX) * scale, y = (p.1 - box.midY) * scale
-        return CGPoint(x: centre.x + x * cos(angle) - y * sin(angle), y: centre.y + x * sin(angle) + y * cos(angle))
+// 1. The bamboo curve rule, leaning left: a long band, bowed a little, with its joints and a few graduations.
+do {
+    let lean = -0.60, bow = { (s: Double) in 0.00016 * s * s }
+    let width = { (s: Double) in 94 - 0.03 * s }
+    let ss = Array(stride(from: 40.0, through: 800, by: 20))
+    let band = ss.map { at($0, bow($0) - width($0) / 2, lean) } + ss.reversed().map { at($0, bow($0) + width($0) / 2, lean) }
+    fill(band, hex(0xE3B96B))
+    for s in [250.0, 520.0] {
+        fill([at(s, bow(s) - width(s) / 2, lean), at(s + 16, bow(s + 16) - width(s + 16) / 2, lean),
+              at(s + 16, bow(s + 16) + width(s + 16) / 2, lean), at(s, bow(s) + width(s) / 2, lean)], hex(0xB98A45), shadow: false)
+    }
+    for s in stride(from: 110.0, through: 760, by: 65) where !(240...290).contains(s) && !(510...560).contains(s) {
+        let w = width(s) / 2
+        fill([at(s, bow(s) - w, lean), at(s + 11, bow(s + 11) - w, lean), at(s + 11, bow(s + 11) - w + 30, lean), at(s, bow(s) - w + 30, lean)],
+             hex(0x7A5522), shadow: false)
     }
 }
-let outline = FrenchCurveData.largeOutline, cutout = FrenchCurveData.largeCutout
-let xs = outline.map(\.0), ys = outline.map(\.1)
-let box = CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
-let angle = CommandLine.arguments.count > 2 ? Double(CommandLine.arguments[2])! : -0.5
-let scale = 930 / max(box.width, box.height)
-let centre = CGPoint(x: 500, y: 452)
-let path = CGMutablePath()
-path.addLines(between: placed(outline, box, scale: scale, angle: angle, at: centre)); path.closeSubpath()
-path.addLines(between: placed(cutout, box, scale: scale, angle: angle, at: centre)); path.closeSubpath()
 
-ctx.saveGState()
-ctx.addPath(path)
-ctx.clip(using: .evenOdd)
-ctx.setFillColor(rgb(0.985, 0.98, 0.965))
-ctx.fill(CGRect(x: 0, y: 0, width: size, height: size))
-// Screen tone: dots on a grid turned 45 degrees, growing from light to dark across the curve.
-let pitch = 30.0
-ctx.setFillColor(ink)
-for i in -50...50 {
-    for j in -50...50 {
-        let u = Double(i) * pitch, v = Double(j) * pitch
-        let x = 512 + (u - v) * 0.7071, y = 512 + (u + v) * 0.7071
-        guard x > -pitch, y > -pitch, x < size + pitch, y < size + pitch else { continue }
-        // Dark where it rests on the rule, fading to almost nothing at its tip.
-        let t = min(max((y - 90) / 720, 0), 1)
-        let coverage = 0.04 + 0.66 * t * t
-        let r = pitch * (coverage / Double.pi).squareRoot()
-        ctx.fillEllipse(in: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r))
-    }
+// 2. The stylus, leaning right: a wooden handle, a steel shank, a ball at its tip.
+do {
+    let lean = 0.60
+    fill([at(40, -30, lean), at(470, -30, lean), at(470, 30, lean), at(40, 30, lean)], hex(0xD9573F))
+    fill([at(470, -34, lean), at(530, -34, lean), at(530, 34, lean), at(470, 34, lean)], hex(0xF1F2F4))
+    fill([at(530, -20, lean), at(770, -9, lean), at(770, 9, lean), at(530, 20, lean)], hex(0xC5CBD6))
+    let tip = at(778, 0, lean)
+    ctx.setFillColor(hex(0xF1F2F4))
+    ctx.fillEllipse(in: CGRect(x: tip.x - 23, y: tip.y - 23, width: 46, height: 46))
 }
-ctx.restoreGState()
-ctx.addPath(path)
-ctx.setStrokeColor(ink)
-ctx.setLineWidth(11)
-ctx.setLineJoin(.round)
-ctx.strokePath()
+
+// 3. In front, upright in the middle: the French curve.
+do {
+    let outline = FrenchCurveData.smallOutline
+    let xs = outline.map(\.0), ys = outline.map(\.1)
+    let scale = 720 / (ys.max()! - ys.min()!)
+    let midX = (xs.max()! + xs.min()!) / 2
+    let place = { (p: (Double, Double)) in CGPoint(x: 512 + (p.0 - midX) * scale, y: 150 + (p.1 - ys.min()!) * scale) }
+    let path = CGMutablePath()
+    path.addLines(between: outline.map(place)); path.closeSubpath()
+    // Its inner scroll is cut clean through, so the tools behind show in it.
+    path.addLines(between: FrenchCurveData.smallCutout.map(place)); path.closeSubpath()
+    ctx.saveGState(); ctx.translateBy(x: 0, y: 14); ctx.addPath(path); ctx.setFillColor(rgb(0, 0, 0, 0.22)); ctx.fillPath(using: .evenOdd); ctx.restoreGState()
+    ctx.addPath(path); ctx.setFillColor(hex(0xF7F4EC, 0.94)); ctx.fillPath(using: .evenOdd)
+}
 
 let image = ctx.makeImage()!
 let url = URL(fileURLWithPath: CommandLine.arguments[1])
