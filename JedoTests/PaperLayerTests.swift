@@ -597,8 +597,15 @@ struct PaperPieceTests {
         #expect(layer.outline(pixelsPerMillimeter: 10)[2] == CGPoint(x: 1000, y: 1100))
     }
 
+    @Test func baekgangPaperHalvesEachSquareAndCrossesItsLowerHalf() {
+        let lines = GridRulings.lines(.baekgang)
+        // The first square: a level line through its middle, and a diagonal from its bottom left to the middle of its right side.
+        #expect(lines.contains { $0.from == CGPoint(x: 10, y: 15) && $0.to.y == 15 && $0.to.x > 100 })
+        #expect(lines.contains { $0.from == CGPoint(x: 10, y: 20) && $0.to == CGPoint(x: 20, y: 15) })
+    }
+
     @Test func everyWritingPaperHasItsPrintOnTheSheet() {
-        for pattern in [GridPattern.manuscript, .genkou, .manga, .squareBook, .staff, .fourLine] {
+        for pattern in [GridPattern.manuscript, .genkou, .manga, .squareBook, .baekgang, .staff, .fourLine] {
             let (w, h) = pattern.sizeMM
             let lines = GridRulings.lines(pattern)
             #expect(!lines.isEmpty, "\(pattern)")

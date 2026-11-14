@@ -274,6 +274,12 @@ final class DrawingSession {
                             canvas?.placeLayer(id, centreMM: at[0], angle: p.count > 2 ? p[2] : 0)
                             canvas?.selectSheet(nil)
                         }
+                    case "sheet":
+                        let pattern = GridPattern.allCases.first { "\($0)" == stroke.k } ?? .tracing
+                        if let id = canvas?.addGridLayer(pattern), let p = stroke.pts.first {
+                            canvas?.placeLayer(id, centreMM: at[0], angle: p.count > 2 ? p[2] : 0)
+                            canvas?.selectSheet(nil)
+                        }
                     case "carbon":
                         let ink = CarbonInk(rawValue: stroke.k ?? "") ?? .navy
                         if let id = canvas?.addCarbonLayer(ink), let p = stroke.pts.first {

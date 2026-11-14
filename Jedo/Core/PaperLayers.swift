@@ -98,6 +98,9 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
     /// The squared exercise book of Korean first graders (깍두기 공책): large
     /// squares with a dotted cross for placing each letter.
     case squareBook
+    /// Practice paper for the Baekgang exam hand (백강고시체): squares halved by a level line,
+    /// the letter written in the upper half, the lower half crossed corner to corner to set the slant.
+    case baekgang
     /// Music staff paper (오선지).
     case staff
     /// English four-line paper: the third line, the base line, in red.
@@ -108,6 +111,7 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
         case .genkou: "원고지 400자 (세로)"
         case .manga: "만화 원고용지 B4"
         case .squareBook: "깍두기 공책"
+        case .baekgang: "백강고시체 연습지"
         case .staff: "오선지"
         case .fourLine: "영어 4선 공책"
         case .square1: "모눈 방안 1mm"
@@ -132,6 +136,7 @@ enum GridPattern: CaseIterable, Hashable, Sendable {
         case .genkou: (226, 180)
         case .manga: (257, 364)
         case .squareBook: (160, 216)
+        case .baekgang: (180, 220)
         case .staff, .fourLine: (210, 297)
         }
     }
@@ -745,6 +750,8 @@ enum GridRulings {
             return manga(width: w, height: h)
         case .squareBook:
             return squareBook(width: w, height: h)
+        case .baekgang:
+            return baekgang(width: w, height: h)
         case .staff:
             return staff(width: w, height: h)
         case .fourLine:
@@ -923,6 +930,30 @@ enum GridRulings {
             out.append(Line(from: CGPoint(x: margin, y: y), to: CGPoint(x: right, y: y), weight: r == 0 || r == rows ? .bold : .medium, ink: .green))
             if r < rows {
                 out.append(Line(from: CGPoint(x: margin, y: y + cell / 2), to: CGPoint(x: right, y: y + cell / 2), weight: .fine, ink: .green, dashed: true))
+            }
+        }
+        return out
+    }
+
+    /// 10 mm squares. Each is halved by a level line, and its lower half is crossed
+    /// from the bottom left corner to the top right.
+    private static func baekgang(width: Double, height: Double) -> [Line] {
+        let cell = 10.0, margin = 10.0
+        let columns = Int(((width - 2 * margin) / cell).rounded(.down)), rows = Int(((height - 2 * margin) / cell).rounded(.down))
+        let right = margin + Double(columns) * cell, bottom = margin + Double(rows) * cell
+        var out: [Line] = []
+        for c in 0...columns {
+            let x = margin + Double(c) * cell
+            out.append(Line(from: CGPoint(x: x, y: margin), to: CGPoint(x: x, y: bottom), weight: c == 0 || c == columns ? .bold : .medium, ink: .blue))
+        }
+        for r in 0...rows {
+            let y = margin + Double(r) * cell
+            out.append(Line(from: CGPoint(x: margin, y: y), to: CGPoint(x: right, y: y), weight: r == 0 || r == rows ? .bold : .medium, ink: .blue))
+            guard r < rows else { continue }
+            out.append(Line(from: CGPoint(x: margin, y: y + cell / 2), to: CGPoint(x: right, y: y + cell / 2), weight: .medium, ink: .blue))
+            for c in 0..<columns {
+                let x = margin + Double(c) * cell
+                out.append(Line(from: CGPoint(x: x, y: y + cell), to: CGPoint(x: x + cell, y: y + cell / 2), weight: .medium, ink: .blue))
             }
         }
         return out
