@@ -89,6 +89,8 @@ enum DrawingStore {
             var tone: Tone?
             /// The piece left after cutting, as x, y pairs in millimetres.
             var piece: [Double]?
+            /// For carbon: its coating.
+            var carbonInk: CarbonInk?
         }
 
         init(_ s: DrawingState) {
@@ -106,7 +108,8 @@ enum DrawingStore {
                              pose: [Double(pose.center.x), Double(pose.center.y), pose.angle], hidden: sheet.hidden,
                              graphite: sheet.graphite.map(Raster.init), copies: sheet.copies.map(Raster.init),
                              tone: sheet.tone.map(Tone.init),
-                             piece: sheet.layer.pieceMM.map { $0.flatMap { [Double($0.x), Double($0.y)] } })
+                             piece: sheet.layer.pieceMM.map { $0.flatMap { [Double($0.x), Double($0.y)] } },
+                             carbonInk: sheet.layer.kind == .carbon ? sheet.layer.carbonInk : nil)
             }
             nextLayerID = s.nextLayerID
             pins = s.pins.flatMap { [Double($0.x), Double($0.y)] }
@@ -130,7 +133,7 @@ enum DrawingStore {
                     }
                     let layer = PaperLayer(id: sheet.id, kind: kind,
                                            pose: ToolPose(center: CGPoint(x: sheet.pose[0], y: sheet.pose[1]), angle: sheet.pose[2]),
-                                           pieceMM: piece)
+                                           pieceMM: piece, carbonInk: sheet.carbonInk ?? .navy)
                     let r = layer.rasterSize(pixelsPerMillimeter: pixelsPerMillimeter)
                     return DrawingState.Sheet(layer: layer, hidden: sheet.hidden,
                                               graphite: try sheet.graphite?.raster(width: r.width, height: r.height),

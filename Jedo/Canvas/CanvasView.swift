@@ -118,7 +118,7 @@ final class CanvasView: UIView {
                 let left = changes.filter { $0.key != id }
                 return left.isEmpty ? nil : .tones(left)
             case .pieces(let cuts):
-                let left = cuts.filter { $0.before.id != id && $0.piece.id != id }
+                let left = cuts.filter { $0.before.id != id && !$0.pieces.contains { $0.layer.id == id } }
                 return left.isEmpty ? nil : .pieces(left)
             case .group(let steps):
                 let left = steps.compactMap { $0.without(id) }
@@ -127,14 +127,17 @@ final class CanvasView: UIView {
         }
     }
 
-    /// A sheet cut in two: the sheet as it was and as it is left, and the new
-    /// piece with its own surfaces (kept here so its history survives undo).
+    /// A sheet cut in pieces: the sheet as it was and as it is left, and the
+    /// new pieces with their own surfaces (kept here so their history survives undo).
     private struct PieceCut {
+        struct Piece {
+            let layer: PaperLayer
+            let surface: GraphiteSurface?
+            let copies: GraphiteSurface?
+        }
         let before: PaperLayer
         let after: PaperLayer
-        let piece: PaperLayer
-        let surface: GraphiteSurface
-        let copies: GraphiteSurface
+        let pieces: [Piece]
     }
 
     /// Where the knife has been this stroke, in paper pixels.
@@ -243,7 +246,7 @@ final class CanvasView: UIView {
         let sheet = DraftingSheet(width: side, height: side, pixelsPerMillimeter: ppmm)
         self.sheet = sheet
         let paperSurface = GraphiteSurface(sheet: sheet, scale: scale)
-        let copySurface = GraphiteSurface(sheet: DraftingSheet(width: side, height: side, pixelsPerMillimeter: ppmm),
+        let copySurface = GraphiteSurface(sheet: DraftingSheet(width: side, height: side, pixelsPerMillimeter: ppmm, isCarbonCopy: true),
                                           scale: scale, shading: GraphiteShading.carbonLookup)
         inkLayer.addSublayer(paperSurface.layer)
         inkLayer.addSublayer(copySurface.layer)
@@ -880,7 +883,8 @@ final class CanvasView: UIView {
         let make = { (shading: [UInt32]) in
             GraphiteSurface(sheet: DraftingSheet(width: size.width, height: size.height,
                                                  pixelsPerMillimeter: sheet.pixelsPerMillimeter,
-                                                 paper: sheet.paper, historyBudgetBytes: DraftingSheet.defaultHistoryBudget / 8),
+                                                 paper: sheet.paper, historyBudgetBytes: DraftingSheet.defaultHistoryBudget / 8,
+                                                 isCarbonCopy: shading == GraphiteShading.carbonLookup),
                             scale: self.scale, shading: shading)
         }
         return (make(GraphiteShading.lookup), make(GraphiteShading.carbonLookup))
@@ -888,54 +892,70 @@ final class CanvasView: UIView {
 
     // MARK: Cutting paper
 
-    /// Parts every sheet of paper the knife has crossed from edge to edge.
-    /// Each becomes two pieces that move, draw and stamp on their own.
+    /// Parts every sheet of paper the knife went across or round: tracing,
+    /// writing paper and carbon alike. Each piece moves, draws and stamps on its own.
     private func cutSheets(along path: [CGPoint]) -> [PieceCut] {
         guard let sheet, path.count >= 2 else { return [] }
         let ppmm = sheet.pixelsPerMillimeter
         var cuts: [PieceCut] = []
-        for layer in layers where !hiddenLayers.contains(layer.id) {
-            guard case .grid = layer.kind, let surface = layerSurfaces[layer.id] else { continue }
+        for layer in layers where !hiddenLayers.contains(layer.id) && !layer.kind.isTone {
             let (w, h) = layer.kind.sizeMM
             let local = path.map { p -> CGPoint in
                 let q = layer.surfacePoint(p, pixelsPerMillimeter: ppmm)
                 return CGPoint(x: Double(q.x) / ppmm - w / 2, y: Double(q.y) / ppmm - h / 2)
             }
-            guard let (kept, cutOff) = Polygon.split(layer.outlineMM, along: local) else { continue }
+            guard let parts = Polygon.cut(layer.outlineMM, along: local), parts.count >= 2 else { continue }
+            // The sheet keeps its largest part; the rest are new pieces.
+            let order = parts.indices.sorted { abs(Polygon.signedArea(parts[$0])) > abs(Polygon.signedArea(parts[$1])) }
             var after = layer
-            after.pieceMM = kept
-            let piece = PaperLayer(id: nextLayerID, kind: layer.kind, pose: layer.pose, pieceMM: cutOff)
-            nextLayerID += 1
-            let (pieceSurface, pieceCopies) = makeSurfaces(piece, sheet: sheet)
-            pieceSurface.sheet.load(surface.sheet.graphite)
-            if let copies = layerCopies[layer.id] { pieceCopies.sheet.load(copies.sheet.graphite) }
-            cuts.append(PieceCut(before: layer, after: after, piece: piece, surface: pieceSurface, copies: pieceCopies))
+            after.pieceMM = parts[order[0]]
+            var pieces: [PieceCut.Piece] = []
+            for i in order.dropFirst() {
+                var piece = layer
+                piece = PaperLayer(id: nextLayerID, kind: layer.kind, pose: layer.pose, pieceMM: parts[i], carbonInk: layer.carbonInk)
+                nextLayerID += 1
+                var surface: GraphiteSurface?, copies: GraphiteSurface?
+                if case .grid = layer.kind, let own = layerSurfaces[layer.id] {
+                    let made = makeSurfaces(piece, sheet: sheet)
+                    made.0.sheet.load(own.sheet.graphite)
+                    if let c = layerCopies[layer.id] { made.1.sheet.load(c.sheet.graphite) }
+                    (surface, copies) = (made.0, made.1)
+                }
+                pieces.append(PieceCut.Piece(layer: piece, surface: surface, copies: copies))
+            }
+            cuts.append(PieceCut(before: layer, after: after, pieces: pieces))
         }
         for cut in cuts { part(cut) }
         return cuts
     }
 
-    /// Lays a cut down: the sheet trimmed to its piece, and the other piece just above it.
+    /// Lays a cut down: the sheet trimmed to its part, the other pieces just above it.
     private func part(_ cut: PieceCut) {
         guard let sheet, let i = layers.firstIndex(where: { $0.id == cut.before.id }) else { return }
-        layers[i] = cut.after
-        reshow(cut.after)
-        layerSurfaces[cut.piece.id] = cut.surface
-        layerCopies[cut.piece.id] = cut.copies
-        layers.insert(cut.piece, at: i + 1)
-        showLayer(cut.piece, surfaces: [cut.copies, cut.surface], sheet: sheet)
+        var trimmed = layers[i]
+        trimmed.pieceMM = cut.after.pieceMM
+        layers[i] = trimmed
+        reshow(trimmed)
+        for (k, piece) in cut.pieces.enumerated() {
+            if let surface = piece.surface { layerSurfaces[piece.layer.id] = surface }
+            if let copies = piece.copies { layerCopies[piece.layer.id] = copies }
+            layers.insert(piece.layer, at: i + 1 + k)
+            showLayer(piece.layer, surfaces: [piece.copies, piece.surface].compactMap { $0 }, sheet: sheet)
+        }
         layersChanged()
     }
 
-    /// Takes a cut back: the piece goes, the sheet is whole again.
+    /// Takes a cut back: the pieces go, the sheet is whole again.
     private func join(_ cut: PieceCut) {
-        let id = cut.piece.id
-        layers.removeAll { $0.id == id }
-        layerViews.removeValue(forKey: id)?.removeFromSuperview()
-        layerSurfaces[id] = nil
-        layerCopies[id] = nil
-        layerHolders[id] = nil
-        hiddenLayers.remove(id)
+        for piece in cut.pieces {
+            let id = piece.layer.id
+            layers.removeAll { $0.id == id }
+            layerViews.removeValue(forKey: id)?.removeFromSuperview()
+            layerSurfaces[id] = nil
+            layerCopies[id] = nil
+            layerHolders[id] = nil
+            hiddenLayers.remove(id)
+        }
         if let i = layers.firstIndex(where: { $0.id == cut.before.id }) {
             // Keep where it lies now; only its shape comes back.
             var whole = layers[i]
@@ -1055,9 +1075,19 @@ final class CanvasView: UIView {
     /// Presses a grid sheet onto the paper: what is drawn on it is printed
     /// where it lies now, as one step to undo. The sheet keeps its drawing.
     @discardableResult
-    func stampLayer(_ id: Int) -> Bool {
+    func stampLayer(_ id: Int, withPrint: Bool = false) -> Bool {
         guard activeTouch == nil, let sheet, let source = layerSurfaces[id]?.sheet,
               let layer = layers.first(where: { $0.id == id }), !layer.kind.isTone, layer.kind != .carbon else { return false }
+        // With its print: the rulings laid as graphite under what is drawn.
+        var drawing = source.graphite
+        if withPrint, case .grid(let pattern) = layer.kind {
+            let print = GridRulings.raster(pattern, pixelsPerMillimeter: sheet.pixelsPerMillimeter, width: drawing.width, height: drawing.height)
+            for (coord, tile) in print.tiles {
+                drawing.withMutableTile(coord) { b in
+                    for i in 0..<GraphiteRaster.tileArea where tile[i] > b[i] && b[i] >= 0 && b[i] <= 1 { b[i] = tile[i] }
+                }
+            }
+        }
         let outline = layer.outline(pixelsPerMillimeter: sheet.pixelsPerMillimeter)
         let xs = outline.map { Double($0.x) }, ys = outline.map { Double($0.y) }
         let area = PixelRect(minX: Int(xs.min()!.rounded(.down)), minY: Int(ys.min()!.rounded(.down)),
@@ -1065,16 +1095,21 @@ final class CanvasView: UIView {
         let ppmm = sheet.pixelsPerMillimeter
         // At each point, onto whatever lies just under the sheet: the next tracing sheet, or the paper.
         var changed: [SurfaceID] = []
-        for (id, mask) in layerStack().stampTargets(from: id) {
+        for (id, mask, carbon) in layerStack().stampRoutes(from: id) {
             guard let target = surface(id)?.sheet else { continue }
             let toTarget = onSurface(id).0
-            let targetLayer: PaperLayer? = if case .sheet(let t) = id { layers.first { $0.id == t } } else { nil }
+            let targetLayer: PaperLayer? = switch id {
+            case .sheet(let t), .sheetCopy(let t): layers.first { $0.id == t }
+            case .paper, .carbonCopy: nil
+            }
             // The source's footprint, in the target's own pixels.
             let corners = outline.map(toTarget)
             let txs = corners.map { Double($0.x) }, tys = corners.map { Double($0.y) }
             let footprint = PixelRect(minX: Int(txs.min()!.rounded(.down)) - 1, minY: Int(tys.min()!.rounded(.down)) - 1,
                                       maxX: Int(txs.max()!.rounded(.up)) + 1, maxY: Int(tys.max()!.rounded(.up)) + 1)
-            let laid = target.imprint(source.graphite, over: id == .paper ? area : footprint, mask: mask.mapped(toTarget)) { q in
+            let onPaper = id == .paper || id == .carbonCopy
+            let laid = target.imprint(drawing, over: onPaper ? area : footprint, mask: mask.mapped(toTarget),
+                                      colour: carbon.flatMap { carbonColour($0, onto: id) }) { q in
                 let onPaper = targetLayer?.paperPoint(fromSurface: q, pixelsPerMillimeter: ppmm) ?? q
                 return layer.surfacePoint(onPaper, pixelsPerMillimeter: ppmm)
             }
@@ -1110,18 +1145,54 @@ final class CanvasView: UIView {
         guard let sheet else { return }
         let id = Self.carbonID
         guard onDesk else {
-            layers.removeAll { $0.id == id }
-            layerViews.removeValue(forKey: id)?.removeFromSuperview()
-            layerHolders[id] = nil
-            hiddenLayers.remove(id)
+            // Every piece of it.
+            for carbon in layers where carbon.kind == .carbon {
+                layerViews.removeValue(forKey: carbon.id)?.removeFromSuperview()
+                layerHolders[carbon.id] = nil
+                hiddenLayers.remove(carbon.id)
+            }
+            layers.removeAll { $0.kind == .carbon }
             layersChanged()
             return
         }
-        guard !layers.contains(where: { $0.id == id }), let pose = screenPose(at: CGPoint(x: 0.5, y: 0.5)) else { return }
-        let layer = PaperLayer(id: id, kind: .carbon, pose: pose)
+        guard !layers.contains(where: { $0.kind == .carbon }), let pose = screenPose(at: CGPoint(x: 0.5, y: 0.5)) else { return }
+        let layer = PaperLayer(id: id, kind: .carbon, pose: pose, carbonInk: carbonInk)
         layers.insert(layer, at: 0)
         showLayer(layer, surfaces: [], sheet: sheet)
         layersChanged()
+    }
+
+    /// What the next carbon laid is coated with.
+    var carbonInk: CarbonInk = .navy
+
+    /// Recoats a carbon. What it already copied keeps its colour.
+    func setCarbonInk(_ id: Int, _ ink: CarbonInk) {
+        guard let i = layers.firstIndex(where: { $0.id == id && $0.kind == .carbon }) else { return }
+        layers[i].carbonInk = ink
+        reshow(layers[i])
+        layersChanged()
+    }
+
+    /// The colour a copy made through carbon `carbonID` takes at each pixel of `target`.
+    private func carbonColour(_ carbonID: Int, onto target: SurfaceID) -> (@Sendable (Int, Int) -> Int)? {
+        guard let sheet, let carbon = layers.first(where: { $0.id == carbonID && $0.kind == .carbon }) else { return nil }
+        let ppmm = sheet.pixelsPerMillimeter
+        let ink = carbon.carbonInk
+        guard ink.isGradient else {
+            let index = ink.paletteIndex(at: 0)
+            return { _, _ in index }
+        }
+        let host: PaperLayer? = switch target {
+        case .sheet(let t), .sheetCopy(let t): layers.first { $0.id == t }
+        case .paper, .carbonCopy: nil
+        }
+        let width = carbon.kind.sizeMM.width * ppmm
+        return { x, y in
+            let q = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
+            let onPaper = host?.paperPoint(fromSurface: q, pixelsPerMillimeter: ppmm) ?? q
+            let t = Double(carbon.surfacePoint(onPaper, pixelsPerMillimeter: ppmm).x) / width
+            return ink.paletteIndex(at: t)
+        }
     }
 
     private func showLayer(_ layer: PaperLayer, surfaces: [GraphiteSurface], sheet: DraftingSheet) {
@@ -1417,9 +1488,10 @@ final class CanvasView: UIView {
             let local = mask.mapped(onSurface(id).0)
             if erasing {
                 target.beginErasing(mask: local, kind: eraserKind)
-            } else if instrument == .stylus, id.isCarbonCopy {
-                // Pressed through the carbon, the stylus leaves a carbon line like any point would.
-                target.beginStroke(grade: .hb, instrument: .mechanical(.mm05), mask: local)
+            } else if id.isCarbonCopy {
+                // Pressed through the carbon: a line in its colour.
+                target.beginStroke(grade: grade, instrument: instrument, mask: local,
+                                   colour: layerStack().pressingCarbon.flatMap { carbonColour($0, onto: id) })
             } else {
                 target.beginStroke(grade: grade, instrument: instrument, mask: local)
             }
@@ -1517,7 +1589,8 @@ final class CanvasView: UIView {
             var changes: [Int: (before: ToneCut, after: ToneCut)] = [:]
             for (id, old) in before { if let now = toneCuts[id], now != old { changes[id] = (old, now) } }
             // Paper is parted only where the blade stood up and ran edge to edge.
-            let pieces = scraping ? [] : cutSheets(along: knifePath)
+            // Paper is cut however the blade is held; only tone is scraped.
+            let pieces = cutSheets(along: knifePath)
             knifePath = []
             var steps: [UndoStep] = []
             if !changes.isEmpty { steps.append(.tones(changes)) }

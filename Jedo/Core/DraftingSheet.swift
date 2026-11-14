@@ -39,12 +39,23 @@ final class DraftingSheet {
         var mask: StrokeMask = .everywhere
         /// Tiles as they were before the stroke, kept once an earlier pass has been laid down.
         var before: [TileCoord: [Float]?] = [:]
+        /// On a carbon copy: the palette colour at each pixel, from the carbon pressed through.
+        var colour: (@Sendable (Int, Int) -> Int)? = nil
 
         var erases: Bool {
             if case .eraser = lead { true } else { false }
         }
 
-        /// What `stroke` of this lead makes of `base`.
+        /// What `stroke` of this lead makes of `base` at pixel (x, y).
+        @inline(__always)
+        func laid(_ base: Float, _ stroke: Float, x: Int, y: Int) -> Float {
+            if let colour {
+                if case .eraser = lead { return CarbonPalette.erase(base: base, lift: stroke) }
+                return CarbonPalette.lay(base: base, stroke: min(stroke, 1), index: colour(x, y))
+            }
+            return laid(base, stroke)
+        }
+
         @inline(__always)
         func laid(_ base: Float, _ stroke: Float) -> Float {
             switch lead {
@@ -53,7 +64,7 @@ final class DraftingSheet {
                 base > 1 || base < 0 ? base : GraphiteMath.composite(base: base, stroke: stroke, maxDensity: maxDensity)
             case .ink: GraphiteMath.ink(base: base, coverage: stroke)
             case .stylus: GraphiteMath.dent(base: base, depth: stroke)
-            case .eraser(let eraser): GraphiteMath.erase(base: base, lift: stroke, inkLift: eraser.kind.inkLift)
+            case .eraser(let eraser): GraphiteMath.erase(base: base, lift: stroke, inkLift: eraser.kind.inkLift, dentLift: eraser.kind.dentLift)
             }
         }
     }
@@ -62,6 +73,10 @@ final class DraftingSheet {
     let height: Int
     let pixelsPerMillimeter: Double
     let paper: PaperTexture
+    /// A carbon copy: its values are palette colour and density (see `CarbonPalette`).
+    let isCarbonCopy: Bool
+    private static let plainColourFn: @Sendable (Int, Int) -> Int = { _, _ in 0 }
+    private var plainColour: @Sendable (Int, Int) -> Int { Self.plainColourFn }
 
     /// Applies to strokes started from now on.
     var grainStyle: GrainStyle = .standard
@@ -77,7 +92,9 @@ final class DraftingSheet {
     static let defaultHistoryBudget = 256 << 20
 
     init(width: Int, height: Int, pixelsPerMillimeter: Double,
-         paper: PaperTexture = PaperTexture(), historyBudgetBytes: Int = DraftingSheet.defaultHistoryBudget) {
+         paper: PaperTexture = PaperTexture(), historyBudgetBytes: Int = DraftingSheet.defaultHistoryBudget,
+         isCarbonCopy: Bool = false) {
+        self.isCarbonCopy = isCarbonCopy
         self.width = width
         self.height = height
         self.pixelsPerMillimeter = pixelsPerMillimeter
@@ -95,9 +112,19 @@ final class DraftingSheet {
     // MARK: Drawing
 
     /// Starts a stroke. Its first sample arrives through `extendStroke`.
-    func beginStroke(grade: PencilGrade, instrument: Instrument = .wood, mask: StrokeMask = .everywhere) {
+    func beginStroke(grade: PencilGrade, instrument: Instrument = .wood, mask: StrokeMask = .everywhere,
+                     colour: (@Sendable (Int, Int) -> Int)? = nil) {
         if stroke != nil { cancelStroke() }
         strokeCounter &+= 1
+        if isCarbonCopy {
+            // Whatever presses through carbon leaves a carbon line: a point's width, in the carbon's colour.
+            let point: Instrument = instrument.hasGrade ? instrument : .mechanical(.mm05)
+            stroke = ActiveStroke(
+                lead: .pencil(PencilDynamics(grade: .hb, pixelsPerMillimeter: pixelsPerMillimeter, instrument: point, style: grainStyle)),
+                buffer: GraphiteRaster(width: width, height: height),
+                seed: strokeCounter &* 0x9E37_79B9, maxDensity: 1, mask: mask, colour: colour ?? plainColour)
+            return
+        }
         if instrument == .stylus {
             stroke = ActiveStroke(lead: .stylus(StylusDynamics(pixelsPerMillimeter: pixelsPerMillimeter)),
                                   buffer: GraphiteRaster(width: width, height: height),
@@ -124,12 +151,14 @@ final class DraftingSheet {
     func beginErasing(mask: StrokeMask = .everywhere, kind: EraserKind = .rubber) {
         if stroke != nil { cancelStroke() }
         strokeCounter &+= 1
+        let plain: @Sendable (Int, Int) -> Int = { _, _ in 0 }
         stroke = ActiveStroke(
             lead: .eraser(EraserDynamics(pixelsPerMillimeter: pixelsPerMillimeter, kind: kind)),
             buffer: GraphiteRaster(width: width, height: height),
             seed: strokeCounter &* 0x9E37_79B9,
             maxDensity: 1,
-            mask: mask
+            mask: mask,
+            colour: isCarbonCopy ? plain : nil
         )
     }
 
@@ -260,10 +289,11 @@ final class DraftingSheet {
                 active.before[coord] = .some(graphite.tile(coord))
             }
             let current = active
+            let ts = GraphiteRaster.tileSize, ox = coord.x * ts, oy = coord.y * ts
             graphite.withMutableTile(coord) { base in
                 strokeTile.withUnsafeBufferPointer { s in
                     for i in 0..<GraphiteRaster.tileArea where s[i] > 0 {
-                        base[i] = current.laid(base[i], s[i])
+                        base[i] = current.laid(base[i], s[i], x: ox + i % ts, y: oy + i / ts)
                     }
                 }
             }
@@ -308,7 +338,7 @@ final class DraftingSheet {
     /// source is left as it was. Returns whether anything was laid.
     @discardableResult
     func imprint(_ source: GraphiteRaster, over area: PixelRect, mask: StrokeMask = .everywhere,
-                 sourcePoint: (CGPoint) -> CGPoint) -> Bool {
+                 colour: ((Int, Int) -> Int)? = nil, sourcePoint: (CGPoint) -> CGPoint) -> Bool {
         guard stroke == nil, !source.isEmpty else { return false }
         let ts = GraphiteRaster.tileSize
         var changes: [TileCoord: TileChange] = [:]
@@ -335,6 +365,11 @@ final class DraftingSheet {
                         let v = Self.sample(source, at: sourcePoint(p))
                         guard v > 0.002 else { continue }
                         let i = (y - coord.y * ts) * ts + (x - coord.x * ts)
+                        if isCarbonCopy {
+                            base[i] = CarbonPalette.lay(base: base[i], stroke: min(v, 1), index: colour?(x, y) ?? 0)
+                            laid = true
+                            continue
+                        }
                         // A dent keeps out what is pressed onto it, as it keeps out graphite.
                         if base[i] < 0, v <= 1 { continue }
                         base[i] = v > 1 ? GraphiteMath.ink(base: base[i], coverage: GraphiteMath.inkCoverage(v))
@@ -431,7 +466,7 @@ final class DraftingSheet {
         let base = graphite.value(x: x, y: y)
         guard let active = stroke else { return base }
         let s = max(active.buffer.value(x: x, y: y), prediction.value(x: x, y: y))
-        return s > 0 ? active.laid(base, s) : base
+        return s > 0 ? active.laid(base, s, x: x, y: y) : base
     }
 
     /// Writes premultiplied graphite pixels (to lay over the paper) for `rect`
@@ -457,8 +492,11 @@ final class DraftingSheet {
                 let i = row + px
                 var d = base?[i] ?? 0
                 let s = max(strokeTile?[i] ?? 0, predictedTile?[i] ?? 0)
-                if s > 0, let active { d = active.laid(d, s) }
-                if d < 0 {
+                if s > 0, let active { d = active.laid(d, s, x: px, y: py) }
+                if isCarbonCopy {
+                    let (index, density) = CarbonPalette.split(d)
+                    pixels[i] = CarbonPalette.lookups[index][min(Int(density * Float(top) + 0.5), top)]
+                } else if d < 0 {
                     pixels[i] = GraphiteShading.dentLookup[min(Int(-d * Float(top) + 0.5), top)]
                 } else if d > 1, let inkShading {
                     pixels[i] = inkShading[min(Int((d - 1) * Float(top) + 0.5), top)]

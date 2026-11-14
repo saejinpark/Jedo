@@ -41,9 +41,12 @@ final class PaperLayerView: UIView {
         let body = CAShapeLayer()
         body.path = outline
         switch sheet.kind {
+        case .carbon where sheet.carbonInk.isGradient:
+            body.fillColor = nil
         case .carbon:
             // Dark but see-through, so the drawing under it still shows faintly. Pitch black was tried and set aside.
-            body.fillColor = UIColor(red: 0.08, green: 0.09, blue: 0.16, alpha: 0.58).cgColor
+            let c = sheet.carbonInk == .navy ? (r: 0.08, g: 0.09, b: 0.16) : Self.coating(sheet.carbonInk.colour(at: 0))
+            body.fillColor = UIColor(red: c.r, green: c.g, blue: c.b, alpha: 0.58).cgColor
         case .grid(.butter):
             // Yellow trace: thin and warm, the drawing under it shows clearly.
             body.fillColor = UIColor(red: 1.0, green: 0.93, blue: 0.64, alpha: 0.30).cgColor
@@ -55,6 +58,20 @@ final class PaperLayerView: UIView {
             body.fillColor = UIColor(white: 1, alpha: 0.06).cgColor
         }
         layer.addSublayer(body)
+        if sheet.kind == .carbon, sheet.carbonInk.isGradient {
+            // A coating that runs across the sheet, as it prints.
+            let gradient = CAGradientLayer()
+            gradient.colors = stride(from: 0.0, through: 1.0, by: 0.125).map { t in
+                let c = Self.coating(sheet.carbonInk.colour(at: t))
+                return UIColor(red: c.r, green: c.g, blue: c.b, alpha: 0.62).cgColor
+            }
+            gradient.startPoint = CGPoint(x: 0, y: 0.5)
+            gradient.endPoint = CGPoint(x: 1, y: 0.5)
+            let clip = CAShapeLayer()
+            clip.path = outline
+            gradient.mask = clip
+            layer.addSublayer(gradient)
+        }
 
         if case .tone(let pattern) = sheet.kind {
             let print = CALayer()
@@ -180,6 +197,11 @@ final class PaperLayerView: UIView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    /// A carbon's coating seen on the sheet: the copy colour, deepened.
+    static func coating(_ c: (r: Double, g: Double, b: Double)) -> (r: Double, g: Double, b: Double) {
+        (c.r * 0.55, c.g * 0.55, c.b * 0.55)
+    }
 
     /// Lays the sheet where it is on the paper.
     func place(_ sheet: PaperLayer, scale: CGFloat) {

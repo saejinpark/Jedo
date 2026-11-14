@@ -206,6 +206,8 @@ struct PaperLayer: Identifiable, Equatable, Sendable {
     /// whole sheet's centre; nil while it is uncut. The surface stays the
     /// whole sheet's size, so a piece keeps its drawing where it was.
     var pieceMM: [CGPoint]? = nil
+    /// For carbon: what it is coated with.
+    var carbonInk: CarbonInk = .navy
 
     /// The sheet's outline in millimetres about its centre: the piece, or the whole sheet.
     var outlineMM: [CGPoint] { pieceMM ?? kind.outlineMM }
@@ -307,19 +309,44 @@ struct LayerStack: Sendable {
     /// sheet down, or where there is none, the paper. Carbon in between takes
     /// no part (it is not drawn on). Masks are on the paper.
     func stampTargets(from source: Int) -> [(surface: SurfaceID, mask: StrokeMask)] {
+        stampRoutes(from: source).map { ($0.surface, $0.mask) }
+    }
+
+    /// As `stampTargets`, but where a carbon lies between the sheet and what
+    /// takes the print, the print goes through it: a copy in the carbon's
+    /// colour (the carbon nearest the target), as if inked from it.
+    func stampRoutes(from source: Int) -> [(surface: SurfaceID, mask: StrokeMask, carbon: Int?)] {
         guard let i = sheets.firstIndex(where: { $0.id == source }) else { return [] }
         let outline = sheets[i].outline
         let below = sheets[..<i].enumerated().filter { !$0.element.isCarbon }
-        var out: [(SurfaceID, StrokeMask)] = []
+        var out: [(SurfaceID, StrokeMask, Int?)] = []
+        /// Splits a route by the carbons lying between `level` and the source.
+        func route(_ plain: SurfaceID, _ copy: SurfaceID, _ mask: StrokeMask, above level: Int) {
+            let carbons = sheets.enumerated().filter { $0.offset > level && $0.offset < i && $0.element.isCarbon }
+                .sorted { $0.offset < $1.offset }
+            var clear = mask
+            clear.outside += carbons.map(\.element.outline)
+            out.append((plain, clear, nil))
+            for (n, carbon) in carbons.enumerated() {
+                var through = mask
+                through.inside.append(carbon.element.outline)
+                // The carbon nearest the target colours it.
+                through.outside += carbons[..<n].map(\.element.outline)
+                out.append((copy, through, carbon.element.id))
+            }
+        }
         for (j, sheet) in below {
             // Under the source, on this sheet, and not under a sheet between them.
             let between = below.filter { $0.offset > j }.map(\.element.outline)
-            out.append((.sheet(sheet.id), StrokeMask(inside: [outline, sheet.outline], outside: between)))
+            route(.sheet(sheet.id), .sheetCopy(sheet.id), StrokeMask(inside: [outline, sheet.outline], outside: between), above: j)
         }
         let onPaper = paper.map { [$0] } ?? []
-        out.append((.paper, StrokeMask(inside: [outline] + onPaper, outside: below.map(\.element.outline))))
+        route(.paper, .carbonCopy, StrokeMask(inside: [outline] + onPaper, outside: below.map(\.element.outline)), above: -1)
         return out
     }
+
+    /// The carbon a pencil pressing through copies with: the topmost one.
+    var pressingCarbon: Int? { sheets.last(where: \.isCarbon)?.id }
 
     /// Every surface the stroke may mark, and where on the paper it may.
     func targets(erasing: Bool) -> [(surface: SurfaceID, mask: StrokeMask)] {
@@ -450,9 +477,20 @@ enum Polygon {
                                   CGPoint(x: Double(p.x) + Double(q.x - p.x) * u, y: Double(p.y) + Double(q.y - p.y) * u)))
             }
         }
-        guard crossings.count == 2 else { return nil }
+        guard crossings.count >= 2 else { return nil }
         crossings.sort { $0.s < $1.s }
-        let (enter, exit) = (crossings[0], crossings[1])
+        // The first stretch of the knife that runs through the sheet itself,
+        // not along an edge an earlier cut left.
+        func pointAt(_ s: Double) -> CGPoint {
+            let j = min(Int(s), path.count - 2), u = s - Double(j)
+            return CGPoint(x: Double(path[j].x) + Double(path[j + 1].x - path[j].x) * u,
+                           y: Double(path[j].y) + Double(path[j + 1].y - path[j].y) * u)
+        }
+        guard let k = (0..<(crossings.count - 1)).first(where: { k in
+            let mid = pointAt((crossings[k].s + crossings[k + 1].s) / 2)
+            return contains(mid, polygon) && distance(mid, to: polygon) > 0.05
+        }) else { return nil }
+        let (enter, exit) = (crossings[k], crossings[k + 1])
         // The knife's path inside the sheet, between the two crossings.
         let inner = path.indices.filter { Double($0) > enter.s && Double($0) < exit.s }.map { path[$0] }
         /// Rim corners met walking forward from one crossing to the other.
@@ -472,6 +510,51 @@ enum Polygon {
         // A sliver is not a piece.
         guard abs(signedArea(first)) > 1, abs(signedArea(second)) > 1 else { return nil }
         return (first, second)
+    }
+
+    /// Cuts a sheet with a knife stroke, every way it parts it: across from
+    /// edge to edge (again and again for a zigzag), or round in a closed loop
+    /// that lifts out a piece. A stroke stopping within `reach` of an edge
+    /// is taken to the edge. Nil when it parts nothing.
+    static func cut(_ polygon: [CGPoint], along stroke: [CGPoint], reach: Double = 3) -> [[CGPoint]]? {
+        var path = stroke.reduce(into: [CGPoint]()) { out, p in
+            if out.last.map({ hypot(Double(p.x - $0.x), Double(p.y - $0.y)) > 1e-6 }) ?? true { out.append(p) }
+        }
+        guard path.count >= 2 else { return nil }
+        let closed = hypot(Double(path[0].x - path[path.count - 1].x), Double(path[0].y - path[path.count - 1].y)) <= 4
+        if !closed {
+            func extend(_ from: CGPoint, _ to: CGPoint) -> CGPoint {
+                let dx = Double(to.x - from.x), dy = Double(to.y - from.y), l = hypot(dx, dy)
+                return l > 0 ? CGPoint(x: Double(to.x) + dx / l * reach, y: Double(to.y) + dy / l * reach) : to
+            }
+            path.insert(extend(path[1], path[0]), at: 0)
+            path.append(extend(path[path.count - 2], path[path.count - 1]))
+        }
+        var pieces = [polygon]
+        var parted = false
+        for _ in 0..<24 {
+            guard let i = pieces.indices.first(where: { split(pieces[$0], along: path) != nil }),
+                  let (a, b) = split(pieces[i], along: path) else { break }
+            pieces.replaceSubrange(i...i, with: [a, b])
+            parted = true
+        }
+        if parted { return pieces }
+        // A closed loop wholly inside lifts out what it went round.
+        guard closed, path.count >= 4, abs(signedArea(path)) / 2 > 20,
+              path.allSatisfy({ contains($0, polygon) }) else { return nil }
+        let loop = path
+        // Keep the rest as one sheet with a hole: the rim, a hairline in to the
+        // hole, round it, and back out the same way.
+        var best = (rim: 0, hole: 0, d: Double.infinity)
+        for (r, p) in polygon.enumerated() {
+            for (h, q) in loop.enumerated() {
+                let d = hypot(Double(p.x - q.x), Double(p.y - q.y))
+                if d < best.d { best = (r, h, d) }
+            }
+        }
+        let around = Array(loop[best.hole...]) + Array(loop[...best.hole])
+        let rest = Array(polygon[...best.rim]) + around + Array(polygon[best.rim...])
+        return [rest, loop]
     }
 
     /// Where segment pq meets segment ab, as fractions along each.
@@ -521,7 +604,17 @@ enum Polygon {
     static func classify(_ rect: PixelRect, _ polygon: [CGPoint]) -> Placement {
         let corners = [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
                        CGPoint(x: rect.maxX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.maxY)]
-        if corners.allSatisfy({ contains($0, polygon) }) { return .inside }
+        if corners.allSatisfy({ contains($0, polygon) }) {
+            // A cut-out piece may be notched or holed: wholly inside only if no rim reaches into the rectangle.
+            let reaches = polygon.indices.contains { i in
+                let a = polygon[i], b = polygon[(i + 1) % polygon.count]
+                if Double(a.x) > Double(rect.minX), Double(a.x) < Double(rect.maxX), Double(a.y) > Double(rect.minY), Double(a.y) < Double(rect.maxY) {
+                    return true
+                }
+                return (0..<4).contains { k in intersect(a, b, corners[k], corners[(k + 1) % 4]) != nil }
+            }
+            return reaches ? .part : .inside
+        }
         // Separated along an axis of the rectangle or of the polygon: wholly outside.
         var minX = Double.infinity, maxX = -Double.infinity, minY = Double.infinity, maxY = -Double.infinity
         for q in polygon {
@@ -604,6 +697,51 @@ enum GridRulings {
                 return Line(from: CGPoint(x: r, y: r), to: CGPoint(x: r + r * cos(a), y: r + r * sin(a)), weight: weight)
             }
         }
+    }
+
+    /// The print as graphite on a sheet's own surface, for stamping it with
+    /// the drawing: lines laid as a hard lead would, bolder lines darker.
+    static func raster(_ pattern: GridPattern, pixelsPerMillimeter ppmm: Double, width: Int, height: Int) -> GraphiteRaster {
+        var raster = GraphiteRaster(width: width, height: height)
+        let widths = [0.12, 0.18, 0.28], densities: [Float] = [0.35, 0.5, 0.7]
+        func dab(_ x: Double, _ y: Double, _ weight: Weight) {
+            let r = max(widths[weight.rawValue] / 2 * ppmm, 0.6)
+            let area = PixelRect(minX: Int(x - r - 1), minY: Int(y - r - 1), maxX: Int(x + r + 2), maxY: Int(y + r + 2)).intersection(raster.bounds)
+            guard !area.isEmpty else { return }
+            for coord in raster.tileCoords(overlapping: area) {
+                let rect = raster.rect(of: coord).intersection(area), ts = GraphiteRaster.tileSize
+                raster.withMutableTile(coord) { b in
+                    for py in rect.minY..<rect.maxY {
+                        for px in rect.minX..<rect.maxX {
+                            let d = hypot(Double(px) + 0.5 - x, Double(py) + 0.5 - y)
+                            let v = densities[weight.rawValue] * Float(min(max(r + 0.5 - d, 0), 1))
+                            let i = (py - coord.y * ts) * ts + (px - coord.x * ts)
+                            if v > b[i] { b[i] = v }
+                        }
+                    }
+                }
+            }
+        }
+        for line in lines(pattern) {
+            let ax = Double(line.from.x) * ppmm, ay = Double(line.from.y) * ppmm
+            let bx = Double(line.to.x) * ppmm, by = Double(line.to.y) * ppmm
+            let length = hypot(bx - ax, by - ay), steps = max(Int(length / 0.6), 1)
+            for k in 0...steps {
+                let t = Double(k) / Double(steps)
+                // Dashes of 0.8 mm, as printed.
+                if line.dashed, Int(t * length / (0.8 * ppmm)) % 2 == 1 { continue }
+                dab(ax + (bx - ax) * t, ay + (by - ay) * t, line.weight)
+            }
+        }
+        let c = (x: Double(width) / 2, y: Double(height) / 2)
+        for ring in rings(pattern) {
+            let r = ring.radius * ppmm, steps = max(Int(2 * .pi * r / 0.6), 8)
+            for k in 0..<steps {
+                let a = Double(k) / Double(steps) * 2 * .pi
+                dab(c.x + r * cos(a), c.y + r * sin(a), ring.weight)
+            }
+        }
+        return raster
     }
 
     static func rings(_ pattern: GridPattern) -> [Ring] {

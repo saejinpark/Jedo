@@ -83,6 +83,14 @@ enum Instrument: Hashable, Sendable {
     }
 
     var isInk: Bool { inkPen != nil }
+
+    /// Whether it holds lead, so the grade matters.
+    var hasGrade: Bool {
+        switch self {
+        case .wood, .mechanical: true
+        case .technicalPen, .dipPen, .stylus: false
+        }
+    }
 }
 
 /// How pressure and tilt change the mark of one lead.

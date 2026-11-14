@@ -49,6 +49,15 @@ enum EraserKind: CaseIterable, Hashable, Sendable {
         }
     }
 
+    /// How readily rubbing flattens a stylus groove back out, against graphite.
+    var dentLift: Float {
+        switch self {
+        case .rubber: 0.35
+        case .kneaded: 0.1
+        case .electric: 1
+        }
+    }
+
     /// Width of the part that touches the paper.
     var widthMM: Double {
         switch self {

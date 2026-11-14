@@ -229,9 +229,10 @@ private struct PencilGroup: View {
     var body: some View {
         VStack(alignment: slot.horizontalAlignment, spacing: Metric.groupGap) {
             InstrumentGroup(session: session)
-            // Ink and the stylus have no grade: the grades rest while they are in hand.
+            // Only lead has a grade: with ink or the stylus in hand the grades can't be chosen.
             ControlGroup { PencilGrades(selection: $session.grade) }
-                .opacity(session.instrument.isInk || session.instrument == .stylus ? 0.4 : 1)
+                .disabled(!session.instrument.hasGrade)
+                .opacity(session.instrument.hasGrade ? 1 : 0.35)
         }
     }
 }
@@ -583,11 +584,21 @@ private struct SheetsPanel: View {
             }
             Divider()
             PanelSection(title: "먹지") {
-                HStack {
-                    Chip(title: session.carbonOnDesk ? "먹지 치우기" : "먹지 깔기", selected: session.carbonOnDesk) {
-                        session.carbonOnDesk.toggle()
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Chip(title: session.carbonOnDesk ? "먹지 치우기" : "먹지 깔기", selected: session.carbonOnDesk) {
+                            session.carbonOnDesk.toggle()
+                        }
+                        Spacer()
                     }
-                    Spacer()
+                    // The coating of the next carbon laid; a carbon in the list above is recoated from its own row.
+                    HStack(spacing: 6) {
+                        ForEach(CarbonInk.allCases, id: \.self) { ink in
+                            Button { session.carbonInk = ink } label: { CarbonSwatch(ink: ink, selected: session.carbonInk == ink) }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("먹지 \(ink.name)")
+                        }
+                    }
                 }
                 .padding(.horizontal, 16)
             }
@@ -628,7 +639,16 @@ private struct SheetsPanel: View {
                 .foregroundStyle(row.isCarbon || row.isTone ? Palette.ink : Palette.ruling)
             Text(row.name).lineLimit(1).opacity(row.hidden ? 0.4 : 1)
             Spacer(minLength: 8)
-            if row.canStamp {
+            if row.canStamp && row.hasPrint {
+                // Printed paper: the drawing alone, or the print with it (manuscript squares onto the paper).
+                Menu {
+                    Button("그린 것만 찍기") { session.stampLayer(row.id) }
+                    Button("인쇄까지 찍기") { session.stampLayer(row.id, withPrint: true) }
+                } label: {
+                    Image(systemName: "arrow.down.to.line.compact").frame(width: 30, height: 30)
+                }
+                .accessibilityLabel("찍기")
+            } else if row.canStamp {
                 iconButton("arrow.down.to.line.compact", label: "종이에 찍기") { session.stampLayer(row.id) }
             }
             iconButton(row.hidden ? "eye.slash" : "eye", label: row.hidden ? "보이기" : "숨기기") {
@@ -638,6 +658,18 @@ private struct SheetsPanel: View {
             iconButton("chevron.down", label: "아래로", enabled: row.canLower) { session.shiftLayer(row.id, up: false) }
             if !row.isCarbon && !row.isTone {
                 iconButton("eraser.line.dashed", label: "비우기") { session.clearLayer(row.id) }
+            }
+            if let ink = row.carbonInk {
+                Menu {
+                    ForEach(CarbonInk.allCases, id: \.self) { choice in
+                        Button { session.setCarbonInk(row.id, choice) } label: {
+                            Label(choice.name, systemImage: choice == ink ? "checkmark" : "")
+                        }
+                    }
+                } label: {
+                    CarbonSwatch(ink: ink, selected: false).frame(width: 30, height: 30)
+                }
+                .accessibilityLabel("먹지 색")
             }
             iconButton("trash", label: row.isCarbon ? "먹지 치우기" : "치우기 (그린 것도 함께)") { session.removeLayer(row.id) }
                 .foregroundStyle(.red)
@@ -650,6 +682,23 @@ private struct SheetsPanel: View {
             .buttonStyle(.borderless)
             .disabled(!enabled)
             .accessibilityLabel(label)
+    }
+}
+
+/// A carbon's coating, as a small chip.
+private struct CarbonSwatch: View {
+    let ink: CarbonInk
+    let selected: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 5)
+            .fill(LinearGradient(colors: stride(from: 0.0, through: 1.0, by: 0.25).map { t in
+                let c = ink.colour(at: t)
+                return Color(red: c.r, green: c.g, blue: c.b)
+            }, startPoint: .leading, endPoint: .trailing))
+            .frame(width: 26, height: 20)
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Palette.ink.opacity(selected ? 0.9 : 0.15), lineWidth: selected ? 2 : 0.5))
+            .padding(2)
     }
 }
 

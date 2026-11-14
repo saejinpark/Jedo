@@ -103,14 +103,17 @@ struct StylusTests {
         #expect(sheet.graphite.value(x: 100, y: 40) > 0.2)
     }
 
-    @Test func erasingLeavesTheGrooveAndInkFillsIt() {
+    @Test func inkFillsTheGrooveAndTheElectricEraserFlattensIt() {
         let sheet = DraftingSheet(width: 200, height: 100, pixelsPerMillimeter: 10)
         pass(sheet, .stylus, y: 50, pressure: 0.8)
-        sheet.beginErasing(kind: .electric)
-        sheet.extendStroke(with: stride(from: 20.0, through: 180, by: 2).map { StrokeSample(location: CGPoint(x: $0, y: 50), pressure: 1) },
-                           predicted: [])
-        sheet.endStroke()
-        #expect(sheet.graphite.value(x: 100, y: 50) < 0)
+        for _ in 0..<3 {
+            sheet.beginErasing(kind: .electric)
+            sheet.extendStroke(with: stride(from: 20.0, through: 180, by: 2).map { StrokeSample(location: CGPoint(x: $0, y: 50), pressure: 1) },
+                               predicted: [])
+            sheet.endStroke()
+        }
+        #expect(sheet.graphite.value(x: 100, y: 50) == 0)
+        pass(sheet, .stylus, y: 50, pressure: 0.8)
         pass(sheet, .technicalPen(.w05), y: 50, pressure: 0.5)
         #expect(sheet.graphite.value(x: 100, y: 50) == 2)
     }

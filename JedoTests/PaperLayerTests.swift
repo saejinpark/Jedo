@@ -521,18 +521,29 @@ struct StampTargetTests {
     func grid(_ id: Int, _ o: [CGPoint]) -> LayerStack.Sheet { .init(id: id, outline: o, isCarbon: false) }
 
     @Test func aSheetStampsOntoTheSheetJustBelowItAndThePaperElsewhere() {
-        // Bottom first: a big tracing sheet, carbon, then the butter paper stamped.
-        let lower = square(100, 100, 400, 400), carbon = LayerStack.Sheet(id: 0, outline: square(0, 0, 900, 900), isCarbon: true)
-        let top = square(300, 300, 600, 600)
-        let stack = LayerStack(sheets: [grid(1, lower), carbon, grid(2, top)], paper: paper)
+        let lower = square(100, 100, 400, 400), top = square(300, 300, 600, 600)
+        let stack = LayerStack(sheets: [grid(1, lower), grid(2, top)], paper: paper)
         let t = Dictionary(uniqueKeysWithValues: stack.stampTargets(from: 2).map { ($0.surface, $0.mask) })
-        #expect(t.count == 2, "the tracing sheet below and the paper; not the carbon")
+        #expect(t.count == 2, "the tracing sheet below and the paper")
         let overBoth = CGPoint(x: 350, y: 350), overPaper = CGPoint(x: 500, y: 500)
         #expect(t[.sheet(1)]!.contains(overBoth))
         #expect(!t[.paper]!.contains(overBoth), "the sheet below takes it there")
         #expect(t[.paper]!.contains(overPaper))
         #expect(!t[.sheet(1)]!.contains(overPaper))
         #expect(!t[.paper]!.contains(CGPoint(x: 700, y: 700)), "nothing outside the stamped sheet")
+    }
+
+    @Test func throughCarbonTheStampLandsAsACopy() {
+        // Bottom first: a tracing sheet, carbon over it, then the sheet stamped.
+        let lower = square(100, 100, 400, 400), carbon = LayerStack.Sheet(id: 0, outline: square(0, 0, 900, 900), isCarbon: true)
+        let top = square(300, 300, 600, 600)
+        let routes = LayerStack(sheets: [grid(1, lower), carbon, grid(2, top)], paper: paper).stampRoutes(from: 2)
+        let overBoth = CGPoint(x: 350, y: 350), overPaper = CGPoint(x: 500, y: 500)
+        let copyOnSheet = routes.first { $0.surface == .sheetCopy(1) }!, copyOnPaper = routes.first { $0.surface == .carbonCopy }!
+        #expect(copyOnSheet.carbon == 0 && copyOnSheet.mask.contains(overBoth))
+        #expect(copyOnPaper.carbon == 0 && copyOnPaper.mask.contains(overPaper))
+        #expect(!routes.first { $0.surface == .sheet(1) }!.mask.contains(overBoth), "the carbon takes it, not the plain sheet")
+        #expect(!routes.first { $0.surface == .paper }!.mask.contains(overPaper))
     }
 
     @Test func onlyTheNearestSheetBelowTakesIt() {
@@ -599,5 +610,55 @@ struct PaperPieceTests {
         }
         #expect(GridRulings.lines(.fourLine).contains { $0.ink == .red })
         #expect(GridRulings.lines(.manga).allSatisfy { $0.ink == .blue })
+    }
+}
+
+struct KnifeCutTests {
+    private let sheet = [CGPoint(x: -50, y: -50), CGPoint(x: 50, y: -50), CGPoint(x: 50, y: 50), CGPoint(x: -50, y: 50)]
+
+    @Test func aCutStoppingJustShortOfAnEdgeStillParts() throws {
+        let parts = try #require(Polygon.cut(sheet, along: [CGPoint(x: 0, y: -48), CGPoint(x: 0, y: 48)]))
+        #expect(parts.count == 2)
+    }
+
+    @Test func aZigzagCutsSeveralPieces() throws {
+        let path = [CGPoint(x: -30, y: -60), CGPoint(x: -30, y: 60), CGPoint(x: 0, y: 60), CGPoint(x: 0, y: -60),
+                    CGPoint(x: 30, y: -60), CGPoint(x: 30, y: 60)]
+        let parts = try #require(Polygon.cut(sheet, along: path))
+        #expect(parts.count == 4)
+        let total = parts.map { abs(Polygon.signedArea($0)) / 2 }.reduce(0, +)
+        #expect(abs(total - 10000) < 1e-6)
+    }
+
+    @Test func aClosedLoopLiftsOutAPieceAndLeavesAHole() throws {
+        let loop = (0...24).map { k -> CGPoint in
+            let t = Double(k) / 24 * 2 * .pi
+            return CGPoint(x: 10 * cos(t), y: 10 * sin(t))
+        }
+        let parts = try #require(Polygon.cut(sheet, along: loop))
+        #expect(parts.count == 2)
+        let rest = parts[0], piece = parts[1]
+        #expect(Polygon.contains(.zero, piece))
+        #expect(!Polygon.contains(.zero, rest))
+        #expect(Polygon.contains(CGPoint(x: 30, y: 30), rest))
+    }
+
+    @Test func aHoledSheetIsNotWhollyInsideATileOverItsHole() {
+        let holed = [CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 0), CGPoint(x: 100, y: 100), CGPoint(x: 0, y: 100), CGPoint(x: 0, y: 0),
+                     CGPoint(x: 40, y: 40), CGPoint(x: 60, y: 40), CGPoint(x: 60, y: 60), CGPoint(x: 40, y: 60), CGPoint(x: 40, y: 40)]
+        #expect(Polygon.classify(PixelRect(minX: 20, minY: 20, maxX: 80, maxY: 80), holed) == .part)
+    }
+}
+
+struct PrintStampTests {
+    @Test func manuscriptPrintBecomesGraphiteOnItsRulings() {
+        let ppmm = 4.0
+        let (w, h) = GridPattern.manuscript.sizeMM
+        let r = GridRulings.raster(.manuscript, pixelsPerMillimeter: ppmm, width: Int(w * ppmm), height: Int(h * ppmm))
+        // The frame's top-left corner, 10 mm in.
+        #expect(r.value(x: Int(10 * ppmm), y: Int(10 * ppmm)) > 0.3)
+        // The middle of a square is blank.
+        #expect(r.value(x: Int(14 * ppmm), y: Int(14 * ppmm)) == 0)
+        #expect(GridRulings.raster(.tracing, pixelsPerMillimeter: ppmm, width: 100, height: 100).isEmpty)
     }
 }

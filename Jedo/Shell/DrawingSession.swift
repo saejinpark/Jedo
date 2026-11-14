@@ -7,7 +7,9 @@ import SwiftUI
 final class DrawingSession {
     var grade: PencilGrade = .hb
     /// What holds the lead: drafting mechanical pencils for lines, a wood pencil for shading.
-    var instrument: Instrument = .mechanical(.mm05)
+    var instrument: Instrument = .mechanical(.mm05) {
+        didSet { if instrument == .stylus, oldValue != .stylus { show(.stylus) } }
+    }
     /// The drawing paper, chosen once at the start.
     private(set) var paper: PaperSize?
     /// Tools lying on the paper.
@@ -22,6 +24,10 @@ final class DrawingSession {
         let isTone: Bool
         /// Whether it can be pressed onto the paper (grid sheets).
         let canStamp: Bool
+        /// Whether it has a print that can be stamped with it.
+        let hasPrint: Bool
+        /// For carbon: its coating.
+        let carbonInk: CarbonInk?
         /// The sheet's symbol in the panel.
         let symbol: String
         let hidden: Bool
@@ -100,6 +106,8 @@ final class DrawingSession {
         case eraser
         /// The knife was picked up.
         case knife
+        /// The stylus was picked up.
+        case stylus
         /// A tool was taken out and waits to be laid.
         case place(ToolKind)
         /// The spot pressed for it is taken.
@@ -111,6 +119,7 @@ final class DrawingSession {
             case .compass: "손가락으로 종이를 길게 누르면 그 자리에 컴퍼스 바늘이 꽂힙니다."
             case .eraser: "손가락으로 문지르면 지워집니다. 펜슬은 그대로 긋습니다."
             case .place(let kind): "\(kind.name): 놓을 자리를 손가락으로 누르세요. 누른 채 끌어 맞춥니다."
+            case .stylus: "철필은 흑연 없이 홈만 냅니다. 그 위를 연필로 칠하면 홈이 하얗게 남습니다. 홈은 지우개로 문지르면 펴집니다."
             case .spotTaken: "그 자리에는 다른 도구가 있습니다. 빈 곳을 누르거나 그 도구를 먼저 치우세요."
             case .knife: "세워 그으면 톤이 잘리고, 종이를 끝에서 끝까지 가르면 두 조각이 됩니다. 눕혀 문지르면 망점이 긁혀 나갑니다."
             }
@@ -123,6 +132,7 @@ final class DrawingSession {
             case .eraser: "eraser"
             case .knife: "scissors"
             case .place: "hand.point.down"
+            case .stylus: "pencil.tip"
             case .spotTaken: "exclamationmark.circle"
             }
         }
@@ -228,14 +238,22 @@ final class DrawingSession {
     func clearLayer(_ id: Int?) { canvas?.clearLayer(id) }
 
     /// Prints a grid sheet's drawing onto the paper where it lies.
-    func stampLayer(_ id: Int) { canvas?.stampLayer(id) }
+    func stampLayer(_ id: Int, withPrint: Bool = false) { canvas?.stampLayer(id, withPrint: withPrint) }
 
     func setLayer(_ id: Int, hidden: Bool) { canvas?.setLayer(id, hidden: hidden) }
     func shiftLayer(_ id: Int, up: Bool) { canvas?.shiftLayer(id, up: up) }
 
-    /// Takes a sheet off the paper: a grid sheet with what was drawn on it, or the carbon.
-    func removeLayer(_ id: Int) {
-        if id == CanvasView.carbonID { carbonOnDesk = false } else { removeSheet(id) }
+    /// Takes a sheet off the paper: with what was drawn on it, or a piece of carbon.
+    func removeLayer(_ id: Int) { removeSheet(id) }
+
+    /// What the next carbon laid is coated with.
+    var carbonInk: CarbonInk = .navy {
+        didSet { canvas?.carbonInk = carbonInk }
+    }
+
+    func setCarbonInk(_ id: Int, _ ink: CarbonInk) {
+        carbonInk = ink
+        canvas?.setCarbonInk(id, ink)
     }
 
     /// Whether any tone lies on the paper.
@@ -251,6 +269,8 @@ final class DrawingSession {
             LayerRow(id: layer.id, name: Self.name(of: layer, among: layers), isCarbon: layer.kind == .carbon,
                      isTone: layer.kind.isTone,
                      canStamp: { if case .grid = layer.kind { true } else { false } }(),
+                     hasPrint: { if case .grid(let p) = layer.kind { !p.isPlain } else { false } }(),
+                     carbonInk: layer.kind == .carbon ? layer.carbonInk : nil,
                      symbol: layer.kind == .carbon ? "square.fill" : layer.kind.isTone ? "circle.grid.3x3.fill"
                         : { if case .grid(let p) = layer.kind, p.isPlain { "doc.plaintext" } else { "squareshape.split.3x3" } }(),
                      hidden: hidden.contains(layer.id), canRaise: i < layers.count - 1, canLower: i > 0)

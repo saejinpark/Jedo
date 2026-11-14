@@ -159,8 +159,12 @@ extension GraphiteMath {
     /// ink gives up only `inkLift` of that, since ink sits in the paper.
     /// A dent stays a dent.
     @inline(__always)
-    static func erase(base: Float, lift: Float, inkLift: Float) -> Float {
-        guard base >= 0 else { return base }
+    static func erase(base: Float, lift: Float, inkLift: Float, dentLift: Float = 0) -> Float {
+        if base < 0 {
+            // Rubbing flattens the groove back into the paper, a little each pass.
+            let left = base * (1 - lift * dentLift)
+            return left > -0.03 ? 0 : left
+        }
         guard base > 1 else { return erase(base: base, lift: lift) }
         let left = inkCoverage(base) * (1 - lift * inkLift)
         return left > 0.02 ? 1 + left : 0
