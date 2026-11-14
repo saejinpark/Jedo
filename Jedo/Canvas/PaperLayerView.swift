@@ -203,12 +203,31 @@ final class PaperLayerView: UIView {
         (c.r * 0.55, c.g * 0.55, c.b * 0.55)
     }
 
+    private let selectionRim = CAShapeLayer()
+
+    /// Marks the sheet picked out with a dashed rim.
+    func showSelected(_ selected: Bool) {
+        if selectionRim.superlayer == nil, let path = (layer.sublayers?.first as? CAShapeLayer)?.path {
+            selectionRim.path = path
+            selectionRim.frame = bounds
+            selectionRim.fillColor = nil
+            selectionRim.strokeColor = UIColor(red: 0.16, green: 0.17, blue: 0.20, alpha: 0.75).cgColor
+            selectionRim.lineWidth = 1.6
+            selectionRim.lineDashPattern = [6, 4]
+            selectionRim.actions = CanvasView.noAnimations
+            layer.addSublayer(selectionRim)
+        }
+        selectionRim.isHidden = !selected
+    }
+
     /// Lays the sheet where it is on the paper.
     func place(_ sheet: PaperLayer, scale: CGFloat) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         center = CGPoint(x: sheet.pose.center.x / scale, y: sheet.pose.center.y / scale)
+        // Mirrored first, about its own centre, then turned: as `PaperLayer` maps it.
         transform = CGAffineTransform(rotationAngle: sheet.pose.angle)
+            .scaledBy(x: sheet.flippedX ? -1 : 1, y: sheet.flippedY ? -1 : 1)
         CATransaction.commit()
     }
 }

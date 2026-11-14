@@ -208,6 +208,17 @@ struct PaperLayer: Identifiable, Equatable, Sendable {
     var pieceMM: [CGPoint]? = nil
     /// For carbon: what it is coated with.
     var carbonInk: CarbonInk = .navy
+    /// Turned over left to right, or top to bottom: what is drawn on it shows
+    /// through mirrored, as tracing paper turned over does.
+    var flippedX = false
+    var flippedY = false
+
+    /// The same sheet under another id: a piece cut from it.
+    func piece(id: Int, outline: [CGPoint]) -> PaperLayer {
+        PaperLayer(id: id, kind: kind, pose: pose, pieceMM: outline, carbonInk: carbonInk, flippedX: flippedX, flippedY: flippedY)
+    }
+
+    private var mirror: (x: Double, y: Double) { (flippedX ? -1 : 1, flippedY ? -1 : 1) }
 
     /// The sheet's outline in millimetres about its centre: the piece, or the whole sheet.
     var outlineMM: [CGPoint] { pieceMM ?? kind.outlineMM }
@@ -228,13 +239,13 @@ struct PaperLayer: Identifiable, Equatable, Sendable {
         let dx = Double(p.x - pose.center.x), dy = Double(p.y - pose.center.y)
         let c = cos(pose.angle), s = sin(pose.angle)
         let (w, h) = kind.sizeMM
-        return CGPoint(x: dx * c + dy * s + w * ppmm / 2, y: -dx * s + dy * c + h * ppmm / 2)
+        return CGPoint(x: (dx * c + dy * s) * mirror.x + w * ppmm / 2, y: (-dx * s + dy * c) * mirror.y + h * ppmm / 2)
     }
 
     /// A point in the sheet's own pixels, back on the paper.
     func paperPoint(fromSurface q: CGPoint, pixelsPerMillimeter ppmm: Double) -> CGPoint {
         let (w, h) = kind.sizeMM
-        let u = Double(q.x) - w * ppmm / 2, v = Double(q.y) - h * ppmm / 2
+        let u = (Double(q.x) - w * ppmm / 2) * mirror.x, v = (Double(q.y) - h * ppmm / 2) * mirror.y
         let c = cos(pose.angle), s = sin(pose.angle)
         return CGPoint(x: Double(pose.center.x) + u * c - v * s, y: Double(pose.center.y) + u * s + v * c)
     }
@@ -244,6 +255,9 @@ struct PaperLayer: Identifiable, Equatable, Sendable {
         var s = sample
         s.location = surfacePoint(sample.location, pixelsPerMillimeter: ppmm)
         s.azimuth -= pose.angle
+        // The lean is mirrored too.
+        if flippedX { s.azimuth = .pi - s.azimuth }
+        if flippedY { s.azimuth = -s.azimuth }
         return s
     }
 
@@ -258,8 +272,9 @@ struct PaperLayer: Identifiable, Equatable, Sendable {
 
     private func world(_ q: CGPoint) -> CGPoint {
         let c = cos(pose.angle), s = sin(pose.angle)
-        return CGPoint(x: Double(pose.center.x) + Double(q.x) * c - Double(q.y) * s,
-                       y: Double(pose.center.y) + Double(q.x) * s + Double(q.y) * c)
+        let x = Double(q.x) * mirror.x, y = Double(q.y) * mirror.y
+        return CGPoint(x: Double(pose.center.x) + x * c - y * s,
+                       y: Double(pose.center.y) + x * s + y * c)
     }
 }
 

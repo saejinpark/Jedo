@@ -18,6 +18,7 @@ struct CanvasRepresentable: UIViewControllerRepresentable {
         view.onToolInHandChange = { [weak session] kind in session?.toolInHandChanged(kind) }
         view.onToolPutBack = { [weak session] kind in session?.toolPutBack(kind) }
         view.onToolSpotTaken = { [weak session] kind in session?.toolSpotTaken(kind) }
+        view.onSheetSelect = { [weak session] id in session?.selectedSheet = id }
         session.canvas = view
         session.desk = controller.desk
         controller.desk.mapOrigin = session.mapOrigin

@@ -662,3 +662,28 @@ struct PrintStampTests {
         #expect(GridRulings.raster(.tracing, pixelsPerMillimeter: ppmm, width: 100, height: 100).isEmpty)
     }
 }
+
+struct FlipTests {
+    @Test func aTurnedOverSheetMirrorsAboutItsMiddleAndMapsBack() {
+        var layer = PaperLayer(id: 1, kind: .grid(.square5), pose: ToolPose(center: CGPoint(x: 500, y: 400), angle: 0.3))
+        let p = CGPoint(x: 560, y: 380)
+        let before = layer.surfacePoint(p, pixelsPerMillimeter: 10)
+        layer.flippedX = true
+        let after = layer.surfacePoint(p, pixelsPerMillimeter: 10)
+        let w = GridPattern.square5.sizeMM.width * 10
+        #expect(abs(Double(after.x) - (w - Double(before.x))) < 1e-9)
+        #expect(abs(Double(after.y - before.y)) < 1e-9)
+        layer.flippedY = true
+        let back = layer.paperPoint(fromSurface: layer.surfacePoint(p, pixelsPerMillimeter: 10), pixelsPerMillimeter: 10)
+        #expect(abs(Double(back.x - p.x)) < 1e-9 && abs(Double(back.y - p.y)) < 1e-9)
+    }
+
+    @Test func aTurnedOverPieceKeepsItsPlaceOnTheSheet() {
+        var layer = PaperLayer(id: 1, kind: .grid(.tracing), pose: ToolPose(center: CGPoint(x: 0, y: 0), angle: 0),
+                               pieceMM: [CGPoint(x: 10, y: -10), CGPoint(x: 50, y: -10), CGPoint(x: 50, y: 10)])
+        layer.flippedX = true
+        // The piece that was on the right now lies on the left.
+        #expect(layer.outline(pixelsPerMillimeter: 1).allSatisfy { $0.x <= -10 })
+        #expect(layer.piece(id: 2, outline: layer.pieceMM!).flippedX)
+    }
+}

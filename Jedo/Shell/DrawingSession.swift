@@ -242,6 +242,13 @@ final class DrawingSession {
     func stampLayer(_ id: Int, withPrint: Bool = false) { canvas?.stampLayer(id, withPrint: withPrint) }
 
     func setLayer(_ id: Int, hidden: Bool) { canvas?.setLayer(id, hidden: hidden) }
+
+    /// The sheet picked out on the desk, whose bar of actions shows.
+    var selectedSheet: Int?
+    var selectedRow: LayerRow? { selectedSheet.flatMap { id in layerRows.first { $0.id == id } } }
+
+    func selectSheet(_ id: Int?) { canvas?.selectSheet(id) }
+    func flipLayer(_ id: Int, leftRight: Bool) { canvas?.flipLayer(id, leftRight: leftRight) }
     func shiftLayer(_ id: Int, up: Bool) { canvas?.shiftLayer(id, up: up) }
 
     /// Takes a sheet off the paper: with what was drawn on it, or a piece of carbon.

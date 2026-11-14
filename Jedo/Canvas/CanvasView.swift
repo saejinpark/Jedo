@@ -911,8 +911,7 @@ final class CanvasView: UIView {
             after.pieceMM = parts[order[0]]
             var pieces: [PieceCut.Piece] = []
             for i in order.dropFirst() {
-                var piece = layer
-                piece = PaperLayer(id: nextLayerID, kind: layer.kind, pose: layer.pose, pieceMM: parts[i], carbonInk: layer.carbonInk)
+                let piece = layer.piece(id: nextLayerID, outline: parts[i])
                 nextLayerID += 1
                 var surface: GraphiteSurface?, copies: GraphiteSurface?
                 if case .grid = layer.kind, let own = layerSurfaces[layer.id] {
@@ -1200,10 +1199,44 @@ final class CanvasView: UIView {
         layerViews[layer.id] = view
         sheetsView.addSubview(view)
         view.place(layer, scale: scale)
+        view.showSelected(layer.id == selectedSheet)
     }
 
     /// Restacks the sheets' views in the order the sheets lie.
+    /// The sheet picked out, whose bar of actions shows.
+    private(set) var selectedSheet: Int?
+    var onSheetSelect: ((Int?) -> Void)?
+
+    func selectSheet(_ id: Int?) {
+        let id = id.flatMap { want in layers.contains { $0.id == want } ? want : nil }
+        guard id != selectedSheet else { return }
+        selectedSheet = id
+        for (lid, view) in layerViews { view.showSelected(lid == id) }
+        onSheetSelect?(id)
+    }
+
+    /// The topmost visible sheet under a point, where there is something of it there.
+    private func sheetUnder(_ p: CGPoint) -> Int? {
+        guard let sheet else { return nil }
+        return layers.indices.last {
+            !hiddenLayers.contains(layers[$0].id) && Polygon.contains(p, layers[$0].outline(pixelsPerMillimeter: sheet.pixelsPerMillimeter))
+                && toneLeft($0, near: p)
+        }
+    }
+
+    /// Turns a sheet over, about its own middle: left to right, or top to bottom.
+    func flipLayer(_ id: Int, leftRight: Bool) {
+        guard activeTouch == nil || !marking.contains(.sheet(id)), let i = layers.firstIndex(where: { $0.id == id }) else { return }
+        if leftRight { layers[i].flippedX.toggle() } else { layers[i].flippedY.toggle() }
+        layerViews[id]?.place(layers[i], scale: scale)
+        layersChanged()
+    }
+
     private func layersChanged() {
+        if let s = selectedSheet, !layers.contains(where: { $0.id == s && !hiddenLayers.contains(s) }) {
+            selectedSheet = nil
+            onSheetSelect?(nil)
+        }
         for layer in layers { if let view = layerViews[layer.id] { sheetsView.bringSubviewToFront(view) } }
         onLayersChange?(layers, hiddenLayers)
         onOverviewChange?()
@@ -1271,6 +1304,7 @@ final class CanvasView: UIView {
 
     private func hold(_ i: Int, with fingers: [(touch: UITouch, point: CGPoint)]) {
         let id = layers[i].id
+        selectSheet(id)
         layerHolders[id] = fingers
         // A grid sheet comes up over the others; the carbon keeps its place, as it is slid about under things.
         if activeTouch == nil, layers[i].kind != .carbon {
@@ -1655,6 +1689,11 @@ final class CanvasView: UIView {
                 pullNeedle()
             } else if knifeInHand, activeTouch == nil, peel(at: point) {
                 continue
+            } else if activeTouch == nil, let i = sheetUnder(point) {
+                // A tap on a sheet picks it out, to stamp, turn over or put away from its bar.
+                selectSheet(layers[i].id)
+            } else if selectedSheet != nil {
+                selectSheet(nil)
             } else if isDeliberateFinger(touch) {
                 onFingerTouch?()
             }

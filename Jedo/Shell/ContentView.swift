@@ -42,12 +42,18 @@ struct ContentView: View {
                             // The map is drawn by the desk; while arranging, a card stands in for it to drag.
                             placed(.map, at: c, grid: grid, cells: cells)
                         }
+                        let spot = grid.hintSpot(avoiding: Array(cells.values))
+                        if let row = session.selectedRow, !arranging {
+                            // What can be done with the sheet picked out, right where the eye is.
+                            SheetBar(session: session, row: row)
+                                .position(x: spot.midX, y: spot.minY + ShellLayout.unit / 2)
+                                .transition(.opacity)
+                        }
                         if let hint = session.hint {
-                            let spot = grid.hintSpot(avoiding: Array(cells.values))
                             HintBubble(hint: hint)
                                 .frame(maxWidth: min(spot.width - 8, 560))
                                 .fixedSize(horizontal: false, vertical: true)
-                                .position(x: spot.midX, y: spot.midY)
+                                .position(x: spot.midX, y: session.selectedRow == nil ? spot.midY : spot.maxY + ShellLayout.unit / 2)
                                 .transition(.opacity)
                                 .allowsHitTesting(false)
                         }
@@ -59,6 +65,7 @@ struct ContentView: View {
                 }
                 .ignoresSafeArea()
                 .animation(.spring(duration: 0.35), value: session.hint)
+                .animation(.snappy(duration: 0.2), value: session.selectedSheet)
                 .animation(.snappy(duration: 0.25), value: savedLayout)
             }
         }
@@ -337,6 +344,57 @@ private struct PinMenu: View {
     }
 }
 
+/// The sheet picked out on the desk and everything that can be done to it,
+/// one tap each: stamp, turn over, restack, hide, empty, put away.
+private struct SheetBar: View {
+    @Bindable var session: DrawingSession
+    let row: DrawingSession.LayerRow
+
+    var body: some View {
+        ControlGroup {
+            TextFace(title: row.name, selected: false, width: 2 * ShellLayout.unit - 8)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            if row.canStamp {
+                ToolButton(icon: .symbol("arrow.down.to.line.compact"), label: "그린 것 찍기") { session.stampLayer(row.id) }
+                if row.hasPrint {
+                    ToolButton(icon: .symbol("printer"), label: "인쇄까지 찍기") {
+                        session.stampLayer(row.id, withPrint: true)
+                    }
+                }
+            }
+            ToolButton(icon: .symbol("arrow.left.and.right.righttriangle.left.righttriangle.right"), label: "좌우로 뒤집기") {
+                session.flipLayer(row.id, leftRight: true)
+            }
+            ToolButton(icon: .symbol("arrow.up.and.down.righttriangle.up.righttriangle.down"), label: "위아래로 뒤집기") {
+                session.flipLayer(row.id, leftRight: false)
+            }
+            ToolButton(icon: .symbol("chevron.up"), label: "한 장 위로", enabled: row.canRaise) { session.shiftLayer(row.id, up: true) }
+            ToolButton(icon: .symbol("chevron.down"), label: "한 장 아래로", enabled: row.canLower) { session.shiftLayer(row.id, up: false) }
+            if !row.isCarbon && !row.isTone {
+                ToolButton(icon: .symbol("eraser.line.dashed"), label: "비우기") { session.clearLayer(row.id) }
+            }
+            if let ink = row.carbonInk {
+                Menu {
+                    ForEach(CarbonInk.allCases, id: \.self) { choice in
+                        Button { session.setCarbonInk(row.id, choice) } label: {
+                            Label(choice.name, systemImage: choice == ink ? "checkmark" : "")
+                        }
+                    }
+                } label: {
+                    CarbonSwatch(ink: ink, selected: false)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .accessibilityLabel("먹지 색")
+            }
+            ToolButton(icon: .symbol("eye.slash"), label: "숨기기") { session.setLayer(row.id, hidden: true) }
+            ToolButton(icon: .symbol("trash"), label: "치우기") { session.removeLayer(row.id) }
+            ToolButton(icon: .symbol("xmark"), label: "닫기") { session.selectSheet(nil) }
+        }
+    }
+}
+
 /// The soft sheets: one panel to lay them on and order them.
 private struct SheetsGroup: View {
     @Bindable var session: DrawingSession
@@ -602,7 +660,12 @@ private struct SheetsPanel: View {
             Image(systemName: row.symbol)
                 .frame(width: 22)
                 .foregroundStyle(row.isCarbon || row.isTone ? Palette.ink : Palette.ruling)
-            Text(row.name).lineLimit(1).opacity(row.hidden ? 0.4 : 1)
+            // Tapping the name picks the sheet out on the desk.
+            Button { session.selectSheet(row.id) } label: {
+                Text(row.name).lineLimit(1).opacity(row.hidden ? 0.4 : 1)
+            }
+            .buttonStyle(.plain)
+            .disabled(row.hidden)
             Spacer(minLength: 8)
             if row.canStamp && row.hasPrint {
                 // Printed paper: the drawing alone, or the print with it (manuscript squares onto the paper).

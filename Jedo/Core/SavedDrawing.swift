@@ -91,6 +91,8 @@ enum DrawingStore {
             var piece: [Double]?
             /// For carbon: its coating.
             var carbonInk: CarbonInk?
+            /// Turned over: [left-right, top-bottom].
+            var flipped: [Bool]?
         }
 
         init(_ s: DrawingState) {
@@ -109,7 +111,8 @@ enum DrawingStore {
                              graphite: sheet.graphite.map(Raster.init), copies: sheet.copies.map(Raster.init),
                              tone: sheet.tone.map(Tone.init),
                              piece: sheet.layer.pieceMM.map { $0.flatMap { [Double($0.x), Double($0.y)] } },
-                             carbonInk: sheet.layer.kind == .carbon ? sheet.layer.carbonInk : nil)
+                             carbonInk: sheet.layer.kind == .carbon ? sheet.layer.carbonInk : nil,
+                             flipped: sheet.layer.flippedX || sheet.layer.flippedY ? [sheet.layer.flippedX, sheet.layer.flippedY] : nil)
             }
             nextLayerID = s.nextLayerID
             pins = s.pins.flatMap { [Double($0.x), Double($0.y)] }
@@ -133,7 +136,8 @@ enum DrawingStore {
                     }
                     let layer = PaperLayer(id: sheet.id, kind: kind,
                                            pose: ToolPose(center: CGPoint(x: sheet.pose[0], y: sheet.pose[1]), angle: sheet.pose[2]),
-                                           pieceMM: piece, carbonInk: sheet.carbonInk ?? .navy)
+                                           pieceMM: piece, carbonInk: sheet.carbonInk ?? .navy,
+                                           flippedX: sheet.flipped?.first ?? false, flippedY: sheet.flipped?.last ?? false)
                     let r = layer.rasterSize(pixelsPerMillimeter: pixelsPerMillimeter)
                     return DrawingState.Sheet(layer: layer, hidden: sheet.hidden,
                                               graphite: try sheet.graphite?.raster(width: r.width, height: r.height),
