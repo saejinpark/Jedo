@@ -23,6 +23,11 @@ final class PaperDeskController: UIViewController {
         super.viewWillTransition(to: size, with: coordinator)
         let interfaceTurn = QuarterTurns(approximating: coordinator.targetTransform)
         guard interfaceTurn.count != 0 else { return }
+        // No paper yet: nothing to keep in place. The paper is laid as the iPad is held when it is chosen.
+        guard canvas.sheet != nil else {
+            coordinator.animate(alongsideTransition: { [canvas, desk] _ in canvas.center = desk.canvasCenter(in: size) })
+            return
+        }
         turns = turns + -interfaceTurn
         desk.turnView(by: -interfaceTurn)
         let target = turns.transform

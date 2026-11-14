@@ -143,7 +143,7 @@ final class DrawingSession {
             case .roller: "롤러는 먹지 위를 굴릴 때만 찍힙니다. 굴린 폭 30mm만큼 먹지 색이 밑으로 옮겨지고, 세게 누를수록 진합니다."
             case .stylus: "철필은 흑연 없이 홈만 냅니다. 그 위를 연필로 칠하면 홈이 하얗게 남습니다. 홈은 지우개로 문지르면 펴집니다."
             case .spotTaken: "그 자리에는 다른 도구가 있습니다. 빈 곳을 누르거나 그 도구를 먼저 치우세요."
-            case .knife: "세워 그으면 톤이 잘리고, 종이를 끝에서 끝까지 가르면 두 조각이 됩니다. 눕혀 문지르면 망점이 긁혀 나갑니다."
+            case .knife: "종이를 가로질러 그으면 갈라지고, 한 바퀴 돌려 처음 자리로 오면 그 모양대로 오려집니다. 톤은 눕혀 문지르면 긁힙니다."
             }
         }
 
@@ -152,7 +152,7 @@ final class DrawingSession {
             case .pencil: "applepencil.tip"
             case .compass: "compass.drawing"
             case .eraser: "eraser"
-            case .knife: "scissors"
+            case .knife: "scissors.badge.ellipsis"
             case .place: "hand.point.down"
             case .roller: "paintbrush.pointed"
             case .stylus: "pencil.tip"

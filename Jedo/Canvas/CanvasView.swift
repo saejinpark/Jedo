@@ -1732,8 +1732,9 @@ final class CanvasView: UIView {
             defer { lastCut = nil; cutStart = nil }
             // A knife merely touched down cuts nothing. (In the simulator, where
             // there is no lone fingertip, that click peels instead.)
-            if let start = cutStart, let end = lastCut, let sheet,
-               hypot(Double(end.x - start.x), Double(end.y - start.y)) < sheet.pixelsPerMillimeter {
+            // Measured along the way it went: a loop cut round a shape ends where it started.
+            let travelled = zip(knifePath, knifePath.dropFirst()).reduce(0.0) { $0 + hypot(Double($1.1.x - $1.0.x), Double($1.1.y - $1.0.y)) }
+            if cutStart != nil, let end = lastCut, let sheet, travelled < sheet.pixelsPerMillimeter {
                 for (id, old) in before { setTone(id, old) }
                 if Self.mouseDraws { _ = peel(at: end) }
                 return

@@ -121,7 +121,18 @@ final class PaperLayerView: UIView {
         for surface in surfaces { layer.addSublayer(surface.layer) }
 
         let rim = CAShapeLayer()
-        rim.path = outline
+        // A piece with a hole is one outline that runs in to the hole and back out the same way:
+        // that hairline is not an edge, so it is left out of the rim.
+        let corners = sheet.outlineMM.map { CGPoint(x: (CGFloat($0.x) + CGFloat(w) / 2) * pt, y: (CGFloat($0.y) + CGFloat(h) / 2) * pt) }
+        let rimPath = CGMutablePath()
+        func same(_ a: CGPoint, _ b: CGPoint) -> Bool { abs(a.x - b.x) < 0.01 && abs(a.y - b.y) < 0.01 }
+        let edges = corners.indices.map { (corners[$0], corners[($0 + 1) % corners.count]) }
+        for (a, b) in edges where !same(a, b) && !edges.contains(where: { same($0.0, b) && same($0.1, a) }) {
+            rimPath.move(to: a)
+            rimPath.addLine(to: b)
+        }
+        rim.path = rimPath
+        self.rimPath = rimPath
         rim.fillColor = nil
         rim.strokeColor = UIColor(white: 0.30, alpha: 0.45).cgColor
         rim.lineWidth = 0.7
@@ -215,10 +226,11 @@ final class PaperLayerView: UIView {
     }
 
     private let selectionRim = CAShapeLayer()
+    private var rimPath: CGPath?
 
     /// Marks the sheet picked out with a dashed rim.
     func showSelected(_ selected: Bool) {
-        if selectionRim.superlayer == nil, let path = (layer.sublayers?.first as? CAShapeLayer)?.path {
+        if selectionRim.superlayer == nil, let path = rimPath {
             selectionRim.path = path
             selectionRim.frame = bounds
             selectionRim.fillColor = nil
